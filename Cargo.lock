@@ -1745,6 +1745,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "vault-native-host"
+version = "0.1.0"
+dependencies = [
+ "rpassword",
+ "serde",
+ "serde_json",
+ "vault-core",
+ "vault-ipc",
+ "zeroize",
+]
+
+[[package]]
 name = "vaultd"
 version = "0.1.0"
 dependencies = [

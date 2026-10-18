@@ -11,8 +11,10 @@ Status: v1 feature-complete on Linux, not yet audited. Do not trust it with real
 | `vault-ipc` | Wire protocol between the daemon and clients. |
 | `vaultd` | The daemon: storage, unlock, FIDO2 and TPM factors, socket server. |
 | `vault-cli` | The `vault` command. |
+| `vault-native-host` | Native messaging host for the browser extension. |
+| `extension/` | Browser autofill extension (Manifest V3). |
 
-Start with [`docs/vaultd.md`](docs/vaultd.md) to build and run it.
+Start with [`docs/vaultd.md`](docs/vaultd.md) to build and run it, then [`docs/browser.md`](docs/browser.md) for autofill.
 
 - [`docs/brief.md`](docs/brief.md): project brief, the source of truth for scope and design.
 - [`docs/threat-model.md`](docs/threat-model.md): v1 threat model.

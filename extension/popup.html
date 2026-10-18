@@ -1,0 +1,18 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header><span id="origin"></span><button id="lock" hidden>Lock</button></header>
+  <form id="unlock" hidden>
+    <input id="password" type="password" placeholder="Vault password" autocomplete="off" autofocus>
+    <button type="submit">Unlock</button>
+  </form>
+  <ul id="items"></ul>
+  <p id="message"></p>
+  <footer><button id="generate">Generate password</button></footer>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
