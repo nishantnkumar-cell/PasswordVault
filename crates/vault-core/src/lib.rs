@@ -11,9 +11,13 @@
 mod crypto;
 mod error;
 mod format;
+pub mod generator;
+pub mod item;
+pub mod origin;
 mod recovery;
 mod rng;
 mod secret;
+pub mod totp;
 mod vault;
 
 pub use error::Error;
