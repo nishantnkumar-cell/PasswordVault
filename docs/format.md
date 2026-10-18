@@ -7,7 +7,7 @@ Source of truth for `vault-core`. Implements the Vault Project Brief, Revision 2
 
 - Integers are little-endian unless stated otherwise.
 - `||` is byte concatenation. String literals are ASCII with no terminator.
-- Structured fields are encoded with `postcard` (serde, version 1.x). Postcard is deterministic for a given struct and has no maps. MACs and AAD are always computed over **the exact stored bytes**, never over a re-serialization, so canonicalization never matters.
+- Structured fields are encoded with `postcard` (serde, version 1.x). Postcard is deterministic for a given struct and has no maps. Readers decode each encoded structure and reject it unless re-encoding reproduces the stored bytes exactly (no trailing bytes, no non-minimal varints). So the stored bytes and the re-encoded structure always agree, and MACs and AAD can be computed over either.
 - `HKDF(ikm, salt, info)` is HKDF-SHA256 with a 32-byte output unless stated otherwise.
 - `AEAD` is XChaCha20-Poly1305 (`chacha20poly1305` crate). Nonces are 24 random bytes from `getrandom`, fresh for every encryption.
 - All random values come from `getrandom`.
@@ -181,11 +181,10 @@ body_aad = "vault/body-aad/v1" || vault_id || u16(format_version) || header_mac
 
 Binding `header_mac` into the body AAD ties the body to exactly this header, so a body cannot be moved onto a different header of the same vault.
 
-The plaintext is `postcard(Body)` followed by zero padding to the next size bucket: the next multiple of 4 KiB up to 64 KiB, then the next multiple of 64 KiB. The true length is the first field of `Body`.
+The plaintext is `u64(len) || postcard(Body) || zero padding`, where `len` is the length of `postcard(Body)`. The total is padded to the next size bucket: the next multiple of 4 KiB up to 64 KiB, then the next multiple of 64 KiB. Readers reject non-zero padding and a plaintext whose length is not exactly the bucket size.
 
 ```rust
 struct Body {
-    plaintext_len: u64,
     generation: u64,              // +1 on every write; rollback detection (threat model A5)
     slot_labels: Vec<([u8; 16], String)>, // slot id -> label
     items: Vec<ItemRecord>,
@@ -261,7 +260,9 @@ vault/body/v1          vault/body-aad/v1      vault/item-key/v1
 vault/item-data/v1     vault/recovery-check/v1
 ```
 
-## 9. Test vectors (to produce with `vault-core`)
+## 9. Test vectors
+
+`vault-core` pins a golden file built from a deterministic random source (`golden_file_is_stable`): any change to its length or SHA-256 is a format change. Still to add as standalone hex vectors:
 
 - KEK derivation for each factor type with fixed inputs (FIDO2 and TPM using fixed `hw_key` values).
 - Commit and AEAD for a fixed key, nonce and AAD.
