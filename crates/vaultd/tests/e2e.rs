@@ -1,7 +1,6 @@
-//! End-to-end: a real daemon on a real Unix socket, with software stand-ins
+//! End-to-end: a real daemon on a real Unix socket or named pipe, with software stand-ins
 //! for the FIDO2 key and the TPM.
 
-use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -40,7 +39,29 @@ fn soft_hw() -> Hardware {
     }
 }
 
-fn start(dir: &Path, owner: u32, idle: Duration) -> std::path::PathBuf {
+/// A socket in the test's directory, or a uniquely named pipe on Windows.
+fn endpoint(dir: &Path) -> std::path::PathBuf {
+    #[cfg(unix)]
+    return dir.join("run/vaultd.sock");
+    #[cfg(windows)]
+    {
+        static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let _ = dir;
+        let n = N.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        format!(r"\\.\pipe\vaultd-test-{}-{n}", std::process::id()).into()
+    }
+}
+
+/// Some user other than the one running the tests.
+fn other_user() -> server::Owner {
+    #[cfg(unix)]
+    return server::current_user() + 1;
+    // LocalSystem, S-1-5-18.
+    #[cfg(windows)]
+    return vec![1, 1, 0, 0, 0, 0, 0, 5, 18, 0, 0, 0];
+}
+
+fn start(dir: &Path, owner: server::Owner, idle: Duration) -> std::path::PathBuf {
     let store = Store::open(dir.join("data/vault.svault"), dir.join("state")).unwrap();
     let d = Arc::new(Mutex::new(Daemon::new(
         store,
@@ -48,7 +69,7 @@ fn start(dir: &Path, owner: u32, idle: Duration) -> std::path::PathBuf {
         KdfCost::MINIMUM,
         idle,
     )));
-    let sock = dir.join("run/vaultd.sock");
+    let sock = endpoint(dir);
     let l = server::bind(&sock, false).unwrap();
     let d2 = d.clone();
     std::thread::spawn(move || server::serve(l, d2, owner));
@@ -57,14 +78,14 @@ fn start(dir: &Path, owner: u32, idle: Duration) -> std::path::PathBuf {
 }
 
 struct C {
-    s: UnixStream,
+    s: vault_ipc::local::Stream,
     token: Option<ClientToken>,
 }
 
 impl C {
     fn new(sock: &Path) -> C {
         C {
-            s: UnixStream::connect(sock).unwrap(),
+            s: vault_ipc::local::connect(sock).unwrap(),
             token: None,
         }
     }
@@ -121,11 +142,7 @@ fn status(c: &mut C) -> vault_ipc::StatusInfo {
 #[test]
 fn full_lifecycle() {
     let dir = tempfile::tempdir().unwrap();
-    let sock = start(
-        dir.path(),
-        nix::unistd::getuid().as_raw(),
-        Duration::from_secs(600),
-    );
+    let sock = start(dir.path(), server::current_user(), Duration::from_secs(600));
     let mut c = C::new(&sock);
 
     // Init: password + recovery, returns a token, leaves the vault unlocked.
@@ -377,11 +394,7 @@ fn full_lifecycle() {
 #[test]
 fn rate_limits_failed_unlocks() {
     let dir = tempfile::tempdir().unwrap();
-    let sock = start(
-        dir.path(),
-        nix::unistd::getuid().as_raw(),
-        Duration::from_secs(600),
-    );
+    let sock = start(dir.path(), server::current_user(), Duration::from_secs(600));
     let mut c = C::new(&sock);
     let Response::Initialized { token, .. } = c.ok(Request::Init {
         password: s(PW),
@@ -404,11 +417,7 @@ fn rate_limits_failed_unlocks() {
 #[test]
 fn locks_when_idle() {
     let dir = tempfile::tempdir().unwrap();
-    let sock = start(
-        dir.path(),
-        nix::unistd::getuid().as_raw(),
-        Duration::from_secs(1),
-    );
+    let sock = start(dir.path(), server::current_user(), Duration::from_secs(1));
     let mut c = C::new(&sock);
     let Response::Initialized { token, .. } = c.ok(Request::Init {
         password: s(PW),
@@ -425,11 +434,7 @@ fn locks_when_idle() {
 #[test]
 fn refuses_other_users() {
     let dir = tempfile::tempdir().unwrap();
-    let sock = start(
-        dir.path(),
-        nix::unistd::getuid().as_raw() + 1,
-        Duration::from_secs(600),
-    );
+    let sock = start(dir.path(), other_user(), Duration::from_secs(600));
     assert!(C::new(&sock).err(Request::Status).contains("another user"));
 }
 

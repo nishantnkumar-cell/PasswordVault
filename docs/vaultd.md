@@ -67,5 +67,5 @@ It creates throwaway credentials, asks for hmac-secret twice in touch-only mode 
 ## Not done yet
 
 - An approval prompt drawn by the daemon for pairing; pairing currently requires a factor instead.
-- vaultd itself on macOS and Windows (the FIDO2 check already runs there).
+- vaultd on macOS (the FIDO2 check already runs there). Windows: see windows.md.
 - The desktop app (docs/desktop.md) has no file picker for imports and no revoke; use the CLI for revoke.

@@ -4206,6 +4206,7 @@ dependencies = [
  "postcard",
  "serde",
  "vault-core",
+ "windows-sys 0.61.2",
  "zeroize",
 ]
 
@@ -4235,6 +4236,7 @@ dependencies = [
  "vault-hw",
  "vault-import",
  "vault-ipc",
+ "windows-sys 0.61.2",
  "zbus",
  "zeroize",
 ]

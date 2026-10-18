@@ -26,19 +26,24 @@ fn start(dir: &Path, idle: Duration) -> PathBuf {
         tpm: None,
     };
     let d = Arc::new(Mutex::new(Daemon::new(store, hw, KdfCost::MINIMUM, idle)));
-    let sock = dir.join("run/vaultd.sock");
+    let sock = endpoint(dir);
     let l = server::bind(&sock, false).unwrap();
     let d2 = d.clone();
-    let me = my_uid(dir);
-    std::thread::spawn(move || server::serve(l, d2, me));
+    std::thread::spawn(move || server::serve(l, d2, server::current_user()));
     std::thread::spawn(move || server::idle_locker(d));
     sock
 }
 
-/// Our UID, read from a directory we just created.
-fn my_uid(dir: &Path) -> u32 {
-    use std::os::unix::fs::MetadataExt;
-    std::fs::metadata(dir).unwrap().uid()
+/// A socket in the test's directory, or a uniquely named pipe on Windows.
+fn endpoint(dir: &Path) -> PathBuf {
+    #[cfg(unix)]
+    return dir.join("run/vaultd.sock");
+    #[cfg(windows)]
+    return format!(
+        r"\\.\pipe\vault-gui-test-{}",
+        dir.file_name().unwrap().to_string_lossy()
+    )
+    .into();
 }
 
 #[derive(Clone, Default)]
@@ -347,15 +352,13 @@ fn forgets_a_token_the_daemon_does_not_know() {
     let first = created(&dir, Duration::from_secs(300), FakeClip::default());
     drop(first);
     std::fs::write(dir.join("stale"), [7u8; 32]).unwrap();
-    let sock = dir.join("run/vaultd.sock");
-    let mut h = window(sock, dir.join("stale"), FakeClip::default());
+    let mut h = window(endpoint(&dir), dir.join("stale"), FakeClip::default());
     wait_for(&mut h, Screen::Pair);
     assert!(h.state().error().unwrap().contains("Pair it again"));
     assert!(!dir.join("stale").exists());
 }
 
 fn tempdir() -> PathBuf {
-    use std::os::unix::fs::PermissionsExt;
     static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
     let d = std::env::temp_dir().join(format!(
         "vault-gui-test-{}-{}",
@@ -364,6 +367,10 @@ fn tempdir() -> PathBuf {
     ));
     let _ = std::fs::remove_dir_all(&d);
     std::fs::create_dir_all(&d).unwrap();
-    std::fs::set_permissions(&d, std::fs::Permissions::from_mode(0o700)).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&d, std::fs::Permissions::from_mode(0o700)).unwrap();
+    }
     d
 }

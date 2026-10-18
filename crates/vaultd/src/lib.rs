@@ -1,5 +1,6 @@
 //! `vaultd`: owns the vault file, holds keys while unlocked, talks to
-//! hardware factors and serves paired clients over a Unix socket.
+//! hardware factors and serves paired clients over a Unix socket or a
+//! Windows named pipe.
 
 pub mod daemon;
 pub use vault_hw as hw;
@@ -7,3 +8,5 @@ pub use vault_hw as hw;
 pub mod logind;
 pub mod server;
 pub mod store;
+#[cfg(windows)]
+pub mod winsession;

@@ -36,13 +36,20 @@ jobs:
       - run: npm test
         working-directory: extension
 
-  # vaultd and vault-cli are Unix-only for now; the core crates must build everywhere.
-  portable:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+  # Everything, including the daemon over a named pipe, on Windows.
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked
+
+  # vaultd is not ported to macOS yet; the core crates and the key check must build there.
+  macos:
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

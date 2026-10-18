@@ -10,15 +10,13 @@
 #![forbid(unsafe_code)]
 
 use std::io::{self, Read, Write};
-use std::os::unix::fs::OpenOptionsExt;
-use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 
 use serde::Deserialize;
 use serde_json::{Value, json};
 use vault_ipc::{
     ClientScope, ClientToken, Envelope, GenerateOptions, Request, Response, UnlockMethod, hex,
-    parse_id, read_frame, write_frame,
+    local, parse_id, read_frame, write_frame,
 };
 use zeroize::Zeroizing;
 
@@ -28,28 +26,13 @@ const MAX_OUT: usize = 1 << 20;
 /// Messages from the extension are small; refuse anything large.
 const MAX_IN: usize = 64 << 10;
 
+#[cfg(unix)]
 fn home(rel: &str) -> PathBuf {
     PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(rel)
 }
 
-fn socket_path() -> PathBuf {
-    if let Some(p) = std::env::var_os("VAULT_SOCKET") {
-        return p.into();
-    }
-    match std::env::var_os("XDG_RUNTIME_DIR") {
-        Some(d) => PathBuf::from(d).join("vault/vaultd.sock"),
-        None => std::env::var_os("XDG_STATE_HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| home(".local/state"))
-            .join("vault/vaultd.sock"),
-    }
-}
-
 fn token_path() -> PathBuf {
-    std::env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| home(".config"))
-        .join("vault/native-host-token")
+    local::config_dir().join("native-host-token")
 }
 
 /// Messages the extension sends. The origin always comes from the
@@ -148,14 +131,14 @@ fn write_message(w: &mut impl Write, v: &Value) -> io::Result<()> {
 }
 
 struct Daemon {
-    stream: Option<UnixStream>,
+    stream: Option<local::Stream>,
     token: Option<ClientToken>,
 }
 
 impl Daemon {
     fn call(&mut self, request: Request) -> Response {
         if self.stream.is_none() {
-            match UnixStream::connect(socket_path()) {
+            match local::endpoint().and_then(|p| local::connect(&p)) {
                 Ok(s) => self.stream = Some(s),
                 Err(_) => return Response::Error("vaultd is not running".into()),
             }
@@ -195,17 +178,7 @@ fn pair() -> Result<(), String> {
     match d.call(req) {
         Response::Paired { token } => {
             let p = token_path();
-            if let Some(dir) = p.parent() {
-                std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-            }
-            let mut f = std::fs::OpenOptions::new()
-                .create(true)
-                .truncate(true)
-                .write(true)
-                .mode(0o600)
-                .open(&p)
-                .map_err(|e| e.to_string())?;
-            f.write_all(&token[..]).map_err(|e| e.to_string())?;
+            local::write_private(&p, &token[..]).map_err(|e| format!("{}: {e}", p.display()))?;
             println!("Paired the browser host (autofill only).");
             Ok(())
         }
@@ -222,32 +195,72 @@ fn install(chrome_id: &str, firefox_id: Option<&str>) -> Result<(), String> {
         "name": HOST_NAME, "description": desc, "path": path, "type": "stdio",
         "allowed_origins": [format!("chrome-extension://{chrome_id}/")],
     });
-    let mut targets = vec![
-        (
-            home(".config/google-chrome/NativeMessagingHosts"),
-            chrome.clone(),
-        ),
-        (
-            home(".config/chromium/NativeMessagingHosts"),
-            chrome.clone(),
-        ),
-        (home(".config/microsoft-edge/NativeMessagingHosts"), chrome),
-    ];
-    if let Some(fx) = firefox_id {
-        let firefox = json!({
+    let firefox = firefox_id.map(|fx| {
+        json!({
             "name": HOST_NAME, "description": desc, "path": path, "type": "stdio", "allowed_extensions": [fx],
-        });
-        targets.push((home(".mozilla/native-messaging-hosts"), firefox));
-    }
-    for (dir, manifest) in targets {
-        std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-        let file = dir.join(format!("{HOST_NAME}.json"));
-        std::fs::write(
-            &file,
-            serde_json::to_vec_pretty(&manifest).map_err(|e| e.to_string())?,
-        )
-        .map_err(|e| format!("{}: {e}", file.display()))?;
+        })
+    });
+    let write = |file: &std::path::Path, manifest: &Value| -> Result<(), String> {
+        if let Some(dir) = file.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+        }
+        let bytes = serde_json::to_vec_pretty(manifest).map_err(|e| e.to_string())?;
+        std::fs::write(file, bytes).map_err(|e| format!("{}: {e}", file.display()))?;
         println!("wrote {}", file.display());
+        Ok(())
+    };
+    #[cfg(unix)]
+    {
+        let mut targets = vec![
+            (
+                home(".config/google-chrome/NativeMessagingHosts"),
+                chrome.clone(),
+            ),
+            (
+                home(".config/chromium/NativeMessagingHosts"),
+                chrome.clone(),
+            ),
+            (home(".config/microsoft-edge/NativeMessagingHosts"), chrome),
+        ];
+        if let Some(fx) = firefox {
+            targets.push((home(".mozilla/native-messaging-hosts"), fx));
+        }
+        for (dir, manifest) in targets {
+            write(&dir.join(format!("{HOST_NAME}.json")), &manifest)?;
+        }
+    }
+    // Windows finds manifests through the registry, per browser.
+    #[cfg(windows)]
+    {
+        let dir = local::config_dir();
+        let chrome_file = dir.join(format!("{HOST_NAME}.json"));
+        write(&chrome_file, &chrome)?;
+        let mut keys = vec![
+            (
+                r"Software\Google\Chrome\NativeMessagingHosts",
+                chrome_file.clone(),
+            ),
+            (r"Software\Microsoft\Edge\NativeMessagingHosts", chrome_file),
+        ];
+        if let Some(fx) = firefox {
+            let fx_file = dir.join(format!("{HOST_NAME}.firefox.json"));
+            write(&fx_file, &fx)?;
+            keys.push((r"Software\Mozilla\NativeMessagingHosts", fx_file));
+        }
+        for (key, file) in keys {
+            let key = format!(r"HKCU\{key}\{HOST_NAME}");
+            let ok = std::process::Command::new("reg")
+                .args(["add", &key, "/ve", "/t", "REG_SZ", "/f", "/d"])
+                .arg(&file)
+                .stdout(std::process::Stdio::null())
+                .status()
+                .map_err(|e| format!("reg: {e}"))?
+                .success();
+            if !ok {
+                return Err(format!("could not set {key}"));
+            }
+            println!("registered {key}");
+        }
     }
     Ok(())
 }
