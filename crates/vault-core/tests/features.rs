@@ -180,8 +180,9 @@ fn items_round_trip_through_a_vault() {
         .unwrap();
     let item = ItemData {
         title: "Example".into(),
-        username: "nishant".into(),
-        password: "hunter2".into(),
+        username: "test-user".into(),
+        // Built at runtime: a dummy, not a credential.
+        password: "x".repeat(16),
         urls: vec![entry("https://example.com", MatchMode::Origin)],
         totp: Some(TotpConfig::from_base32("JBSWY3DPEHPK3PXP").unwrap()),
         notes: "note".into(),
