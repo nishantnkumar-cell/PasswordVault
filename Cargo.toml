@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/vault-core"]
+members = ["crates/vault-cli", "crates/vault-core", "crates/vault-import", "crates/vault-ipc", "crates/vaultd"]
 
 [workspace.package]
 edition = "2024"

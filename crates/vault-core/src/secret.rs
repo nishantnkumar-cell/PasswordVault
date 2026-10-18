@@ -26,6 +26,12 @@ impl HwKey {
         HwKey(bytes)
     }
 
+    /// Constant-time comparison, for callers that verify a factor round-trips.
+    pub fn ct_eq(&self, other: &[u8; 32]) -> bool {
+        use subtle::ConstantTimeEq;
+        self.0.ct_eq(other).into()
+    }
+
     pub(crate) fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
