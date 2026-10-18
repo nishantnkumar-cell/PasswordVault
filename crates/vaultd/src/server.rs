@@ -15,8 +15,16 @@ use crate::daemon::Daemon;
 
 pub type Shared = Arc<Mutex<Daemon>>;
 
-/// Bind the socket with mode 0600, replacing a stale one.
-pub fn bind(path: &Path) -> io::Result<UnixListener> {
+/// Bind the socket, replacing a stale one. A daemon serving its own user
+/// makes the socket 0600 in a 0700 directory. A daemon running as a separate
+/// system user (`shared`) must let the owner reach it, so the socket is 0666
+/// in a 0755 directory and the peer-UID check in [`serve`] is the gate.
+pub fn bind(path: &Path, shared: bool) -> io::Result<UnixListener> {
+    let (dir_mode, sock_mode) = if shared {
+        (0o755, 0o666)
+    } else {
+        (0o700, 0o600)
+    };
     if path.exists() {
         if UnixStream::connect(path).is_ok() {
             return Err(io::Error::other(
@@ -27,10 +35,10 @@ pub fn bind(path: &Path) -> io::Result<UnixListener> {
     }
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
-        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(dir_mode))?;
     }
     let l = UnixListener::bind(path)?;
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(sock_mode))?;
     Ok(l)
 }
 

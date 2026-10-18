@@ -32,6 +32,11 @@ impl HwKey {
         self.0.ct_eq(other).into()
     }
 
+    /// Constant-time comparison of two hardware secrets.
+    pub fn ct_eq_key(&self, other: &HwKey) -> bool {
+        self.ct_eq(&other.0)
+    }
+
     pub(crate) fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }

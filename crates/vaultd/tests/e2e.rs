@@ -49,7 +49,7 @@ fn start(dir: &Path, owner: u32, idle: Duration) -> std::path::PathBuf {
         idle,
     )));
     let sock = dir.join("run/vaultd.sock");
-    let l = server::bind(&sock).unwrap();
+    let l = server::bind(&sock, false).unwrap();
     let d2 = d.clone();
     std::thread::spawn(move || server::serve(l, d2, owner));
     std::thread::spawn(move || server::idle_locker(d));

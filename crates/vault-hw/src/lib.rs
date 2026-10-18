@@ -1,12 +1,13 @@
-//! Hardware factors. Real implementations talk to devices; tests use the soft
-//! ones in `soft`.
+//! Hardware unlock factors. Real implementations talk to devices; tests use
+//! the soft ones in `soft`. Kept apart from `vaultd` so the FIDO2 code builds
+//! and can be checked on any OS (`cargo run -p vault-hw --example fido2-check`).
 
 use vault_core::HwKey;
 
 #[cfg(feature = "fido2")]
 pub mod fido2;
 pub mod soft;
-#[cfg(feature = "tpm")]
+#[cfg(all(feature = "tpm", target_os = "linux"))]
 pub mod tpm;
 
 pub type HwResult<T> = Result<T, String>;
@@ -49,9 +50,9 @@ impl Hardware {
             fido2: Some(Box::new(fido2::HidFido2)),
             #[cfg(not(feature = "fido2"))]
             fido2: None,
-            #[cfg(feature = "tpm")]
+            #[cfg(all(feature = "tpm", target_os = "linux"))]
             tpm: Some(Box::new(tpm::SystemTpm)),
-            #[cfg(not(feature = "tpm"))]
+            #[cfg(not(all(feature = "tpm", target_os = "linux")))]
             tpm: None,
         }
     }

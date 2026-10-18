@@ -1,0 +1,55 @@
+# System service: vaultd runs as the dedicated "vault" user, so processes
+# running as you cannot read its memory (threat model A3). One instance per
+# person; the instance name is your login name.
+#
+#   sudo install -m644 contrib/sysusers.d/vault.conf /etc/sysusers.d/ && sudo systemd-sysusers
+#   sudo install -m644 contrib/udev/70-vault-fido.rules /etc/udev/rules.d/ && sudo udevadm control --reload && sudo udevadm trigger
+#   sudo install -m755 target/release/vaultd /usr/local/bin/
+#   sudo install -m644 contrib/systemd/vaultd@.service /etc/systemd/system/
+#   sudo systemctl enable --now vaultd@$USER
+#   export VAULT_SOCKET=/run/vault/$USER/vaultd.sock   # in your shell profile
+
+[Unit]
+Description=Secret Vault daemon for %i
+After=systemd-logind.service
+
+[Service]
+User=vault
+Group=vault
+# tss: /dev/tpmrm0. FIDO2 keys are given to group vault by the udev rule.
+SupplementaryGroups=tss
+ExecStart=/usr/local/bin/vaultd --owner-user %i --vault /var/lib/vault/%i/vault.svault --state-dir /var/lib/vault/%i/state --socket /run/vault/%i/vaultd.sock
+StateDirectory=vault/%i
+StateDirectoryMode=0700
+RuntimeDirectory=vault/%i
+RuntimeDirectoryMode=0755
+Restart=on-failure
+LimitCORE=0
+LimitMEMLOCK=infinity
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+SystemCallArchitectures=native
+SystemCallFilter=@system-service @memlock
+PrivateTmp=yes
+PrivateNetwork=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+UMask=0077
+DevicePolicy=closed
+DeviceAllow=/dev/tpmrm0 rw
+DeviceAllow=char-hidraw rw
+
+[Install]
+WantedBy=multi-user.target

@@ -17,8 +17,9 @@ function row(item) {
   fill.textContent = "Fill";
   fill.onclick = async () => {
     const r = await ask({ type: "fill", id: item.id });
-    if (r.ok) window.close();
-    else say(r.error);
+    if (r.ok) return window.close();
+    if (r.crossOrigin) return offerFrames(item, r.crossOrigin);
+    say(r.error);
   };
   li.append(who, fill);
   if (item.hasTotp) {
@@ -34,6 +35,29 @@ function row(item) {
     li.append(totp);
   }
   return li;
+}
+
+// The form may sit in a frame from another site (a bank's login widget, or an
+// attacker's iframe). Say which site, and fill there only if the user agrees.
+function offerFrames(item, origins) {
+  const box = $("frames");
+  box.replaceChildren();
+  const p = document.createElement("p");
+  p.textContent = `The login form may be in a frame from another site. Only fill it if you trust that site with your ${item.title} login.`;
+  box.append(p);
+  for (const origin of origins) {
+    const b = document.createElement("button");
+    b.textContent = `Fill in ${origin}`;
+    b.onclick = async () => {
+      // Requesting the permission here is what lets the browser show its own prompt.
+      if (!(await api.permissions.request({ origins: [`${origin}/*`] }))) return say("Not filled.");
+      const r = await ask({ type: "fillFrame", id: item.id, frameOrigin: origin });
+      if (r.ok) window.close();
+      else say(r.error);
+    };
+    box.append(b);
+  }
+  box.hidden = false;
 }
 
 async function refresh() {

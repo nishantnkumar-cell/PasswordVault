@@ -19,6 +19,7 @@ OPTIONS:
   --state-dir PATH   daemon state    [default: $XDG_STATE_HOME/vault]
   --socket PATH      Unix socket     [default: $XDG_RUNTIME_DIR/vault/vaultd.sock]
   --owner-uid UID    the only UID allowed to connect [default: this process's UID]
+  --owner-user NAME  same, by user name (for a system unit running as its own user)
   --idle-secs N      lock after N idle seconds [default: 900]
   --fast-kdf         minimum Argon2id cost for new slots (testing only)
   -h, --help         this text";
@@ -29,12 +30,27 @@ fn env_dir(var: &str, fallback: &str) -> PathBuf {
     })
 }
 
-/// No core dumps, no ptrace attach from same-UID processes (threat model A3).
+/// No core dumps, no ptrace attach from same-UID processes, and keys kept
+/// out of swap (threat model A3 and section 6).
 fn harden() {
-    use nix::sys::resource::{Resource, setrlimit};
+    use nix::sys::resource::{Resource, getrlimit, setrlimit};
     let _ = setrlimit(Resource::RLIMIT_CORE, 0, 0);
     if let Err(e) = nix::sys::prctl::set_dumpable(false) {
         eprintln!("vaultd: warning: could not clear the dumpable flag: {e}");
+    }
+    // Lock all memory, including future Argon2id buffers (up to 4 GiB), but
+    // only when the limit allows it: past the limit, allocations would fail.
+    const NEEDED: u64 = 5 << 30;
+    match getrlimit(Resource::RLIMIT_MEMLOCK) {
+        Ok((soft, _)) if soft == nix::sys::resource::RLIM_INFINITY || soft >= NEEDED => {
+            use nix::sys::mman::{MlockAllFlags, mlockall};
+            if let Err(e) = mlockall(MlockAllFlags::MCL_CURRENT | MlockAllFlags::MCL_FUTURE) {
+                eprintln!("vaultd: warning: could not lock memory, keys may reach swap: {e}");
+            }
+        }
+        _ => eprintln!(
+            "vaultd: warning: RLIMIT_MEMLOCK is too low to lock memory, keys may reach swap (set LimitMEMLOCK=infinity)"
+        ),
     }
 }
 
@@ -59,6 +75,13 @@ fn main() {
             "--vault" => vault = val().into(),
             "--state-dir" => state = val().into(),
             "--socket" => socket = val().into(),
+            "--owner-user" => {
+                let name = val();
+                owner = match nix::unistd::User::from_name(&name) {
+                    Ok(Some(u)) => u.uid.as_raw(),
+                    _ => die(&format!("no such user {name}")),
+                }
+            }
             "--owner-uid" => {
                 owner = val()
                     .parse()
@@ -85,8 +108,8 @@ fn main() {
         cost,
         Duration::from_secs(idle),
     )));
-    let listener =
-        server::bind(&socket).unwrap_or_else(|e| die(&format!("{}: {e}", socket.display())));
+    let listener = server::bind(&socket, owner != nix::unistd::getuid().as_raw())
+        .unwrap_or_else(|e| die(&format!("{}: {e}", socket.display())));
 
     // Lock and exit cleanly on SIGTERM / SIGINT / SIGHUP.
     let mut signals = signal_hook::iterator::Signals::new([
@@ -109,6 +132,11 @@ fn main() {
     {
         let d = daemon.clone();
         std::thread::spawn(move || server::idle_locker(d));
+    }
+    #[cfg(all(feature = "logind", target_os = "linux"))]
+    {
+        let d = daemon.clone();
+        std::thread::spawn(move || vaultd::logind::run(d));
     }
     eprintln!("vaultd: listening on {}", socket.display());
     server::serve(listener, daemon, owner);
