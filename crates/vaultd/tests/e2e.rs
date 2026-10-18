@@ -13,6 +13,7 @@ use vault_ipc::{
     ClientScope, ClientToken, Envelope, GenerateOptions, ImportFormat, Request, Response, Secret,
     SlotId, UnlockMethod, read_frame, write_frame,
 };
+use vaultd::approve::PairPrompt;
 use vaultd::daemon::Daemon;
 use vaultd::hw::Hardware;
 use vaultd::hw::soft::{SoftFido2, SoftTpm};
@@ -62,6 +63,14 @@ fn other_user() -> server::Owner {
 }
 
 fn start(dir: &Path, owner: server::Owner, idle: Duration) -> std::path::PathBuf {
+    start_daemon(dir, owner, idle).0
+}
+
+fn start_daemon(
+    dir: &Path,
+    owner: server::Owner,
+    idle: Duration,
+) -> (std::path::PathBuf, server::Shared) {
     let store = Store::open(dir.join("data/vault.svault"), dir.join("state")).unwrap();
     let d = Arc::new(Mutex::new(Daemon::new(
         store,
@@ -73,8 +82,9 @@ fn start(dir: &Path, owner: server::Owner, idle: Duration) -> std::path::PathBuf
     let l = server::bind(&sock, false).unwrap();
     let d2 = d.clone();
     std::thread::spawn(move || server::serve(l, d2, owner));
-    std::thread::spawn(move || server::idle_locker(d));
-    sock
+    let d3 = d.clone();
+    std::thread::spawn(move || server::idle_locker(d3));
+    (sock, d)
 }
 
 struct C {
@@ -305,7 +315,7 @@ fn full_lifecycle() {
     let Response::Paired { token: at } = a.ok(Request::Pair {
         client_name: "browser".into(),
         scope: ClientScope::Autofill,
-        method: pw(),
+        method: Some(pw()),
     }) else {
         panic!()
     };
@@ -443,4 +453,93 @@ fn one_daemon_per_state_dir() {
     let dir = tempfile::tempdir().unwrap();
     let _a = Store::open(dir.path().join("v"), dir.path().join("state")).unwrap();
     assert!(Store::open(dir.path().join("v"), dir.path().join("state")).is_err());
+}
+
+fn pair_request(name: &str) -> Request {
+    Request::Pair {
+        client_name: name.into(),
+        scope: ClientScope::Autofill,
+        method: None,
+    }
+}
+
+#[test]
+fn pairs_through_the_daemons_own_prompt() {
+    let dir = tempfile::tempdir().unwrap();
+    let (sock, d) = start_daemon(dir.path(), server::current_user(), Duration::from_secs(600));
+    let mut c = C::new(&sock);
+    assert!(c.err(pair_request("early")).contains("no vault"));
+    let Response::Initialized { token, .. } = c.ok(Request::Init {
+        password: s(PW),
+        client_name: "cli".into(),
+    }) else {
+        panic!()
+    };
+    c.token = Some(token);
+    assert!(
+        C::new(&sock)
+            .err(pair_request("x"))
+            .contains("cannot show an approval prompt")
+    );
+
+    // The user's answers: allow everything except "deny"; "slow" takes a while.
+    let seen = Arc::new(Mutex::new(Vec::<PairPrompt>::new()));
+    let log = seen.clone();
+    d.lock()
+        .unwrap()
+        .set_approver(Arc::new(move |p: &PairPrompt| -> Result<bool, String> {
+            log.lock().unwrap().push(p.clone());
+            if p.client_name == "slow" {
+                std::thread::sleep(Duration::from_millis(800));
+            }
+            Ok(p.client_name != "deny")
+        }));
+
+    // One prompt at a time, and the daemon keeps serving while it is open.
+    let slow_sock = sock.clone();
+    let slow = std::thread::spawn(move || C::new(&slow_sock).call(pair_request("slow")));
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(
+        C::new(&sock)
+            .err(pair_request("second"))
+            .contains("another pairing request")
+    );
+    assert!(status(&mut c).unlocked);
+    let Response::Paired { token } = slow.join().unwrap() else {
+        panic!("slow pairing failed")
+    };
+
+    // The approved client got exactly the scope it asked for.
+    let mut a = C::new(&sock);
+    a.token = Some(token);
+    a.ok(Request::FindForOrigin {
+        origin: "https://example.com".into(),
+    });
+    assert!(a.err(Request::ListItems).contains("autofill"));
+
+    // The prompt names the program that connected, and a cleaned-up name.
+    let mut b = C::new(&sock);
+    b.ok(pair_request("  my\nbrowser "));
+    {
+        let seen = seen.lock().unwrap();
+        let last = seen.last().unwrap();
+        assert_eq!(last.client_name, "mybrowser");
+        assert_eq!(last.scope, ClientScope::Autofill);
+        #[cfg(any(target_os = "linux", windows))]
+        assert_eq!(
+            last.program
+                .as_deref()
+                .and_then(|p| std::path::Path::new(p).file_name()),
+            std::env::current_exe().unwrap().file_name()
+        );
+    }
+
+    // A decline is final and holds off the next prompt for a while.
+    assert!(C::new(&sock).err(pair_request("deny")).contains("declined"));
+    assert!(
+        C::new(&sock)
+            .err(pair_request("again"))
+            .contains("just declined")
+    );
+    assert_eq!(seen.lock().unwrap().len(), 3);
 }

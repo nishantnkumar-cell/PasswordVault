@@ -7,6 +7,7 @@
 ```sh
 sudo apt-get install libtss2-dev libudev-dev libhidapi-dev pkg-config   # Debian/Ubuntu
 cargo install --path crates/vaultd && cargo install --path crates/vault-cli
+cargo install --path crates/vault-gui    # the desktop app and vault-prompt, the pairing window
 vaultd &                      # or: contrib/systemd/vaultd.service as a user service
 vault init                    # master password; prints the recovery code once
 vault add --generate
@@ -31,7 +32,18 @@ Build without hardware support with `cargo build -p vaultd --no-default-features
 `crates/vault-ipc`: each frame is a u32 little-endian length (max 16 MiB) and a postcard body. A client sends `Envelope { token, request }` and gets one `Response`.
 
 - The server checks the peer's UID with `SO_PEERCRED` and refuses every other UID.
-- `Status`, `Init` and `Pair` need no token. `Pair` requires proving a factor (a full unlock) and returns a 32-byte token; the daemon stores only its SHA-256.
+- `Status`, `Init` and `Pair` need no token. `Pair` returns a 32-byte token; the daemon stores only its SHA-256. It is granted either by proving an unlock method (`method: Some`, which also unlocks) or, with `method: None`, by the user in an approval window the daemon opens itself (below).
+
+## Pairing by approval
+
+A client asks with no factor. vaultd runs `vault-prompt` (found next to `vaultd`, or at `VAULT_PROMPT`), which shows the name the client gave, what it would be allowed to do, and the program that connected (`/proc/<pid>/exe` from the socket's peer credentials, or the pipe client's image path on Windows). Deny has the focus, Escape denies and the window denies by itself after a minute. The client cannot answer: it only learns the outcome.
+
+- One prompt at a time; a second request is refused while one is open.
+- After a decline or a timeout, new requests are refused for 10 seconds, so a client cannot keep the window popping up.
+- The program path is informational: on Linux the PID could be reused between connecting and the lookup (pidfd-based identification is still open), and a same-user program can always pose as another one.
+- `--no-prompt` turns it off, and a daemon running as its own system user (`vaultd@.service`) never shows it, since it has no desktop: pairing there needs an unlock method.
+
+`vault pair` and `vault-native-host --pair` use the prompt unless given a method (`--password`, `--fido2`, `--tpm`, `--recovery`; the host takes `--password`). The browser extension's Connect button and the desktop app's "Ask for approval" use it too.
 - Tokens have a scope. `Full` is for the CLI. `Autofill` is for the browser's native host: it may unlock, lock, look up items by origin, fetch one item or TOTP code only if that item may be filled on the given origin, and generate passwords. It cannot list, export, edit or manage slots.
 
 ## Behaviour
@@ -66,6 +78,6 @@ It creates throwaway credentials, asks for hmac-secret twice in touch-only mode 
 
 ## Not done yet
 
-- An approval prompt drawn by the daemon for pairing; pairing currently requires a factor instead.
+- Identifying the pairing client by pidfd (`SO_PEERPIDFD`) instead of its PID.
 - vaultd on macOS (the FIDO2 check already runs there). Windows: see windows.md.
 - The desktop app (docs/desktop.md) has no file picker for imports and no revoke; use the CLI for revoke.

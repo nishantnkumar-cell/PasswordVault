@@ -7,7 +7,9 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use vault_ipc::{Envelope, Response, read_frame, write_frame};
+use vault_ipc::{ClientScope, Envelope, Request, Response, read_frame, write_frame};
+
+use crate::approve::{self, PairPrompt};
 
 use crate::daemon::Daemon;
 
@@ -25,7 +27,29 @@ fn refuse(s: &mut impl Write) -> io::Result<()> {
     )
 }
 
-fn connection(mut s: impl Read + Write, daemon: &Shared) -> io::Result<()> {
+/// Ask the user, without holding the daemon lock while the window is open.
+fn pair_by_prompt(
+    daemon: &Shared,
+    client_name: &str,
+    scope: ClientScope,
+    pid: Option<u32>,
+) -> Response {
+    let lock = || daemon.lock().unwrap_or_else(|p| p.into_inner());
+    let approver = match lock().begin_prompt() {
+        Ok(a) => a,
+        Err(m) => return Response::Error(m),
+    };
+    let prompt = PairPrompt {
+        client_name: approve::clean_name(client_name),
+        scope,
+        program: pid.and_then(approve::program_of),
+    };
+    let answer = approver.approve(&prompt);
+    lock().end_prompt(&prompt, answer)
+}
+
+/// Serve one client. `pid` is the peer process, for the pairing prompt.
+fn connection(mut s: impl Read + Write, daemon: &Shared, pid: Option<u32>) -> io::Result<()> {
     loop {
         let env: Envelope = match read_frame(&mut s) {
             Ok(e) => e,
@@ -35,7 +59,20 @@ fn connection(mut s: impl Read + Write, daemon: &Shared) -> io::Result<()> {
                 return Err(e);
             }
         };
-        let resp = daemon.lock().unwrap_or_else(|p| p.into_inner()).handle(env);
+        let resp = match env.request {
+            Request::Pair {
+                client_name,
+                scope,
+                method: None,
+            } => pair_by_prompt(daemon, &client_name, scope, pid),
+            request => daemon
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .handle(Envelope {
+                    token: env.token,
+                    request,
+                }),
+        };
         write_frame(&mut s, &resp)?;
     }
 }
@@ -108,7 +145,8 @@ mod unix {
                     return;
                 }
                 let _ = conn.set_read_timeout(Some(Duration::from_secs(600)));
-                let _ = connection(conn, &d);
+                let pid = cred.pid().try_into().ok();
+                let _ = connection(conn, &d, pid);
             });
         }
     }
@@ -263,12 +301,13 @@ mod windows {
             let d = daemon.clone();
             let owner = owner.clone();
             std::thread::spawn(move || {
-                let peer = win::pipe_client_pid(&conn).and_then(win::process_user);
-                if peer.ok().as_ref() != Some(&owner) {
+                let pid = win::pipe_client_pid(&conn).ok();
+                let peer = pid.map(win::process_user);
+                if !matches!(peer, Some(Ok(u)) if u == owner) {
                     let _ = refuse(&mut conn);
                     return;
                 }
-                let _ = connection(conn, &d);
+                let _ = connection(conn, &d, pid);
             });
         }
     }

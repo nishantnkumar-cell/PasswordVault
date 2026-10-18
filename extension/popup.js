@@ -66,6 +66,8 @@ async function refresh() {
   const s = await ask({ type: "status" });
   if (!s.ok) return say(s.error);
   if (!s.initialized) return say("No vault yet. Run `vault init` in a terminal.");
+  $("connect").hidden = s.paired;
+  if (!s.paired) return;
   $("unlock").hidden = s.unlocked;
   $("lock").hidden = !s.unlocked;
   if (!s.unlocked) return $("password").focus();
@@ -81,6 +83,14 @@ $("unlock").onsubmit = async (e) => {
   const password = $("password").value;
   $("password").value = "";
   const r = await ask({ type: "unlock", password });
+  if (!r.ok) return say(r.error);
+  refresh();
+};
+$("pair").onclick = async () => {
+  $("pair").disabled = true;
+  say("Approve the request in the window vaultd opened.");
+  const r = await ask({ type: "pair" });
+  $("pair").disabled = false;
   if (!r.ok) return say(r.error);
   refresh();
 };

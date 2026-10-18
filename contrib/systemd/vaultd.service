@@ -2,6 +2,11 @@
 #   systemctl --user daemon-reload && systemctl --user enable --now vaultd
 # This runs vaultd as you. vaultd@.service runs it as a separate system user,
 # which also protects its memory from other programs running as you.
+#
+# The pairing approval window (vault-prompt) runs as a child of this unit and
+# needs DISPLAY or WAYLAND_DISPLAY; desktop sessions import those into the
+# user manager. That is also why MemoryDenyWriteExecute is off here: OpenGL
+# drivers that compile code at run time (llvmpipe) need it.
 
 [Unit]
 Description=Secret Vault daemon
@@ -14,7 +19,6 @@ LimitCORE=0
 LimitMEMLOCK=infinity
 NoNewPrivileges=yes
 LockPersonality=yes
-MemoryDenyWriteExecute=yes
 RestrictRealtime=yes
 RestrictNamespaces=yes
 RestrictAddressFamilies=AF_UNIX

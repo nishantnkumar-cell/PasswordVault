@@ -73,7 +73,7 @@ Status: **M** = mitigated by the design, **P** = partially mitigated, **A** = ac
 | Threat | Mitigation | Status |
 | --- | --- | --- |
 | Read `vaultd` memory or attach ptrace | Separate system user (`vaultd@.service`; the per-user unit does not give this), `PR_SET_DUMPABLE=0`, Yama ptrace scope, no core dumps | M with the system unit, P with the user unit |
-| Connect to the socket and request secrets | One-time client pairing approved in `vaultd`'s own prompt; peer identified by pidfd; fresh user presence for non-allowlisted release; rate limit | P |
+| Connect to the socket and request secrets | One-time client pairing, by proving an unlock method or approved in `vaultd`'s own prompt (one at a time, 10 s cooldown after a decline); fresh user presence for non-allowlisted release; rate limit. The prompt names the peer by PID-derived path, not yet by pidfd | P |
 | Impersonate a paired client binary | Pairing key stored in the client's own storage, readable by the same user | A on Linux (no per-app isolation) |
 | Keylog the master password | Wayland: partially mitigated by compositor isolation. X11: any client can keylog | A on X11, P on Wayland |
 | Read the clipboard | Prefer autofill; auto-clear; password-manager MIME hint (verify) | P |

@@ -1,6 +1,7 @@
 //! Request handling: authorization, unlock with rate limiting, the vault
 //! operations, rollback refusal and idle lock.
 
+use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use vault_core::generator::{Charset, generate_password};
@@ -16,6 +17,7 @@ use vault_ipc::{
 };
 use zeroize::Zeroizing;
 
+use crate::approve::{Approver, PairPrompt};
 use crate::hw::{Hardware, prf_salt};
 use crate::store::Store;
 
@@ -37,7 +39,13 @@ pub struct Daemon {
     rollback: bool,
     failures: u32,
     next_attempt: Option<Instant>,
+    approver: Option<Arc<dyn Approver>>,
+    prompting: bool,
+    next_prompt: Option<Instant>,
 }
+
+/// Wait after a declined or unanswered pairing prompt before showing another.
+const PROMPT_COOLDOWN: Duration = Duration::from_secs(10);
 
 type R<T> = Result<T, String>;
 
@@ -97,6 +105,9 @@ impl Daemon {
             rollback: false,
             failures: 0,
             next_attempt: None,
+            approver: None,
+            prompting: false,
+            next_prompt: None,
         }
     }
 
@@ -110,6 +121,49 @@ impl Daemon {
     /// Drop the vault and its keys.
     pub fn lock(&mut self) {
         self.vault = None;
+    }
+
+    /// Let clients pair by asking the user through `approver`.
+    pub fn set_approver(&mut self, approver: Arc<dyn Approver>) {
+        self.approver = Some(approver);
+    }
+
+    /// Claim the one pairing prompt that may be open at a time. The caller
+    /// asks without holding the daemon lock, then calls [`Self::end_prompt`].
+    pub fn begin_prompt(&mut self) -> R<Arc<dyn Approver>> {
+        if !self.store.exists() {
+            return Err("no vault exists yet".into());
+        }
+        let a = self.approver.clone().ok_or(
+            "this daemon cannot show an approval prompt; pair by proving an unlock method instead",
+        )?;
+        if self.prompting {
+            return Err("another pairing request is waiting for approval".into());
+        }
+        if self.next_prompt.is_some_and(|t| Instant::now() < t) {
+            return Err("a pairing request was just declined; try again in a few seconds".into());
+        }
+        self.prompting = true;
+        Ok(a)
+    }
+
+    /// Finish a prompt from [`Self::begin_prompt`]: pair if approved.
+    pub fn end_prompt(&mut self, prompt: &PairPrompt, answer: Result<bool, String>) -> Response {
+        self.prompting = false;
+        let r = match answer {
+            Ok(true) => token(&mut OsRandom).and_then(|t| {
+                self.store
+                    .add_client(&prompt.client_name, prompt.scope, &t)
+                    .map_err(|e| e.to_string())?;
+                Ok(Response::Paired { token: t })
+            }),
+            Ok(false) => Err("pairing was declined".into()),
+            Err(m) => Err(format!("could not show the approval prompt: {m}")),
+        };
+        if r.is_err() {
+            self.next_prompt = Some(Instant::now() + PROMPT_COOLDOWN);
+        }
+        r.unwrap_or_else(Response::Error)
     }
 
     pub fn handle(&mut self, env: Envelope) -> Response {
@@ -160,7 +214,7 @@ impl Daemon {
             Request::Pair {
                 client_name,
                 scope,
-                method,
+                method: Some(method),
             } => {
                 self.vault = Some(self.prove(&method)?);
                 let t = token(&mut OsRandom)?;
@@ -168,6 +222,9 @@ impl Daemon {
                     .add_client(&client_name, scope, &t)
                     .map_err(|e| e.to_string())?;
                 Ok(Response::Paired { token: t })
+            }
+            Request::Pair { method: None, .. } => {
+                Err("pairing without a factor goes through the server's approval prompt".into())
             }
             Request::Unlock { method } => {
                 self.vault = Some(self.prove(&method)?);

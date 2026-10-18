@@ -771,11 +771,29 @@ impl App {
                     Request::Pair {
                         client_name: CLIENT_NAME.into(),
                         scope: ClientScope::Full,
-                        method,
+                        method: Some(method),
                     },
                 );
             } else {
                 self.act(busy, Op::Unlock, Request::Unlock { method });
+            }
+        }
+        if pair {
+            ui.add_space(12.0);
+            ui.label("Or approve this app in a window vaultd opens, without typing anything here.");
+            if ui
+                .add_enabled(ok, egui::Button::new("Ask for approval"))
+                .clicked()
+            {
+                self.act(
+                    "Approve the request in the window vaultd opened…",
+                    Op::Pair,
+                    Request::Pair {
+                        client_name: CLIENT_NAME.into(),
+                        scope: ClientScope::Full,
+                        method: None,
+                    },
+                );
             }
         }
     }

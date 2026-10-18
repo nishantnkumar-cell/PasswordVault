@@ -21,7 +21,8 @@ USAGE: vault <COMMAND> [ARGS]
 
 SETUP
   init                         create a vault (password + recovery code)
-  pair [--autofill] [METHOD]   pair this client with an existing vault
+  pair [--autofill] [METHOD]   pair this client: approve it in the window vaultd opens,
+                               or prove METHOD instead
   status                       daemon and vault state
 
 UNLOCKING                      METHOD is one of --password (default), --fido2, --tpm, --recovery
@@ -338,10 +339,16 @@ fn main() {
             } else {
                 ClientScope::Full
             };
+            let by_method = ["--password", "--fido2", "--tpm", "--recovery"]
+                .iter()
+                .any(|m| rest.iter().any(|a| a == m));
+            if !by_method {
+                eprintln!("Approve the request in the window vaultd opens...");
+            }
             let Response::Paired { token } = c.call(Request::Pair {
                 client_name: "vault-cli".into(),
                 scope,
-                method: method(rest),
+                method: by_method.then(|| method(rest)),
             }) else {
                 die("unexpected response")
             };

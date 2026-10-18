@@ -93,3 +93,27 @@ pub fn pipe_client_pid(pipe: &impl AsRawHandle) -> io::Result<u32> {
     check(unsafe { GetNamedPipeClientProcessId(pipe.as_raw_handle() as HANDLE, &mut pid) })?;
     Ok(pid)
 }
+
+/// Full path of process `pid`'s executable.
+pub fn process_path(pid: u32) -> io::Result<String> {
+    use windows_sys::Win32::System::Threading::{PROCESS_NAME_WIN32, QueryFullProcessImageNameW};
+    // SAFETY: returns a new handle or null.
+    let h = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+    if h.is_null() {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: OpenProcess succeeded, so the handle is ours to close.
+    let h = unsafe { OwnedHandle::from_raw_handle(h as RawHandle) };
+    let mut buf = vec![0u16; 32 * 1024];
+    let mut len = buf.len() as u32;
+    // SAFETY: `buf` holds `len` UTF-16 units.
+    check(unsafe {
+        QueryFullProcessImageNameW(
+            h.as_raw_handle() as HANDLE,
+            PROCESS_NAME_WIN32,
+            buf.as_mut_ptr(),
+            &mut len,
+        )
+    })?;
+    Ok(String::from_utf16_lossy(&buf[..len as usize]))
+}

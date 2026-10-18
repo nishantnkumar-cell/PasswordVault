@@ -3,7 +3,9 @@
 //! it relays each message to `vaultd` with a token of `Autofill` scope, so the
 //! daemon itself refuses anything beyond origin-bound lookups and fills.
 //!
-//! `vault-native-host --pair` pairs it (run once, in a terminal).
+//! It pairs itself when the extension asks (`{"type":"pair"}`): vaultd shows
+//! its own approval window. `vault-native-host --pair [--password]` does the
+//! same from a terminal, or pairs by typing the vault password instead.
 //! `vault-native-host --install CHROME_EXTENSION_ID [FIREFOX_EXTENSION_ID]`
 //! writes the browsers' host manifests.
 
@@ -41,6 +43,7 @@ fn token_path() -> PathBuf {
 #[serde(tag = "type", rename_all = "lowercase")]
 enum HostRequest {
     Status,
+    Pair,
     Unlock { password: Zeroizing<String> },
     Lock,
     Find { origin: String },
@@ -57,6 +60,7 @@ fn id(s: &str) -> Result<[u8; 16], String> {
 fn handle(req: HostRequest, call: &mut dyn FnMut(Request) -> Response) -> Value {
     let request = match req {
         HostRequest::Status => Request::Status,
+        HostRequest::Pair => return json!({ "ok": false, "error": "already paired" }),
         HostRequest::Unlock { password } => Request::Unlock {
             method: UnlockMethod::Password { password },
         },
@@ -82,7 +86,7 @@ fn handle(req: HostRequest, call: &mut dyn FnMut(Request) -> Response) -> Value 
         Response::Ok => json!({ "ok": true }),
         Response::Error(e) => json!({ "ok": false, "error": e }),
         Response::Status(s) => {
-            json!({ "ok": true, "initialized": s.initialized, "unlocked": s.unlocked })
+            json!({ "ok": true, "paired": true, "initialized": s.initialized, "unlocked": s.unlocked })
         }
         Response::Items(items) => json!({
             "ok": true,
@@ -163,28 +167,42 @@ fn load_token() -> Option<ClientToken> {
     Some(Zeroizing::new(b.as_slice().try_into().ok()?))
 }
 
-fn pair() -> Result<(), String> {
-    let password =
-        Zeroizing::new(rpassword::prompt_password("Vault password: ").map_err(|e| e.to_string())?);
-    let mut d = Daemon {
-        stream: None,
-        token: None,
-    };
+/// Ask vaultd for an autofill token, by its approval window or (with a
+/// password) by proving the password, and save it.
+fn pair_with(d: &mut Daemon, password: Option<Zeroizing<String>>) -> Result<(), String> {
     let req = Request::Pair {
         client_name: "browser".into(),
         scope: ClientScope::Autofill,
-        method: UnlockMethod::Password { password },
+        method: password.map(|password| UnlockMethod::Password { password }),
     };
     match d.call(req) {
         Response::Paired { token } => {
             let p = token_path();
             local::write_private(&p, &token[..]).map_err(|e| format!("{}: {e}", p.display()))?;
-            println!("Paired the browser host (autofill only).");
+            d.token = Some(token);
             Ok(())
         }
         Response::Error(e) => Err(e),
         _ => Err("unexpected response".into()),
     }
+}
+
+fn pair(with_password: bool) -> Result<(), String> {
+    let password = if with_password {
+        Some(Zeroizing::new(
+            rpassword::prompt_password("Vault password: ").map_err(|e| e.to_string())?,
+        ))
+    } else {
+        eprintln!("Approve the request in the window vaultd opens...");
+        None
+    };
+    let mut d = Daemon {
+        stream: None,
+        token: None,
+    };
+    pair_with(&mut d, password)?;
+    println!("Paired the browser host (autofill only).");
+    Ok(())
 }
 
 fn install(chrome_id: &str, firefox_id: Option<&str>) -> Result<(), String> {
@@ -268,7 +286,7 @@ fn install(chrome_id: &str, firefox_id: Option<&str>) -> Result<(), String> {
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.first().map(String::as_str) {
-        Some("--pair") => pair(),
+        Some("--pair") => pair(args.iter().any(|a| a == "--password")),
         Some("--install") => match args.get(1) {
             Some(id) => install(id, args.get(2).map(String::as_str)),
             None => Err(
@@ -293,8 +311,18 @@ fn serve() -> Result<(), String> {
     let (mut input, mut output) = (io::stdin().lock(), io::stdout().lock());
     while let Some(msg) = read_message(&mut input).map_err(|e| e.to_string())? {
         let reply = match serde_json::from_slice::<HostRequest>(&msg) {
+            Ok(HostRequest::Pair) if d.token.is_none() => match pair_with(&mut d, None) {
+                Ok(()) => json!({ "ok": true }),
+                Err(e) => json!({ "ok": false, "error": e }),
+            },
+            // Status works unpaired, so the popup can offer to pair.
+            Ok(HostRequest::Status) if d.token.is_none() => {
+                let mut v = handle(HostRequest::Status, &mut |r| d.call(r));
+                v["paired"] = json!(false);
+                v
+            }
             Ok(_) if d.token.is_none() => {
-                json!({ "ok": false, "error": "not paired; run `vault-native-host --pair` in a terminal" })
+                json!({ "ok": false, "error": "not paired yet: press Connect in the extension" })
             }
             Ok(req) => handle(req, &mut |r| d.call(r)),
             Err(e) => json!({ "ok": false, "error": format!("bad message: {e}") }),

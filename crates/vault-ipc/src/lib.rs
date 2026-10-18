@@ -94,11 +94,13 @@ pub enum Request {
         password: Secret,
         client_name: String,
     },
-    /// Pair this client by proving a factor. Returns a client token.
+    /// Pair this client. Returns a client token. With a `method`, by proving
+    /// that factor; without one, the daemon asks the user in an approval
+    /// window it opens itself, so a client cannot approve its own pairing.
     Pair {
         client_name: String,
         scope: ClientScope,
-        method: UnlockMethod,
+        method: Option<UnlockMethod>,
     },
     /// Unlock the vault.
     Unlock { method: UnlockMethod },

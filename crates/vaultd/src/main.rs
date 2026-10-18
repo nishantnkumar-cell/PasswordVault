@@ -23,6 +23,9 @@ OPTIONS:
   --owner-user NAME  same, by user name (for a system unit running as its own user) (Unix)
   --idle-secs N      lock after N idle seconds [default: 900]
   --fast-kdf         minimum Argon2id cost for new slots (testing only)
+  --no-prompt        never show the pairing approval window (pairing then needs
+                     an unlock method); VAULT_PROMPT names the window program
+                     [default: vault-prompt next to vaultd]
   -h, --help         this text";
 
 /// No core dumps, no ptrace attach from same-UID processes, and keys kept
@@ -60,6 +63,7 @@ fn main() {
     let mut owner = server::current_user();
     let mut idle = 900u64;
     let mut cost = KdfCost::DEFAULT;
+    let mut prompt = true;
 
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
@@ -91,6 +95,7 @@ fn main() {
                     .unwrap_or_else(|_| die("--idle-secs must be a number"))
             }
             "--fast-kdf" => cost = KdfCost::MINIMUM,
+            "--no-prompt" => prompt = false,
             "-h" | "--help" => {
                 println!("{HELP}");
                 return;
@@ -106,6 +111,18 @@ fn main() {
         cost,
         Duration::from_secs(idle),
     )));
+    // A daemon running as its own system user has no desktop to draw on.
+    if prompt && owner == server::current_user() {
+        match vaultd::approve::Helper::find() {
+            Some(h) => daemon
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .set_approver(Arc::new(h)),
+            None => eprintln!(
+                "vaultd: no vault-prompt next to vaultd; pairing will need an unlock method"
+            ),
+        }
+    }
     let listener = server::bind(&socket, owner != server::current_user())
         .unwrap_or_else(|e| die(&format!("{}: {e}", socket.display())));
 
