@@ -20,6 +20,10 @@ fn password() -> String {
 }
 
 fn start(dir: &Path, idle: Duration) -> PathBuf {
+    start_daemon(dir, idle).0
+}
+
+fn start_daemon(dir: &Path, idle: Duration) -> (PathBuf, server::Shared) {
     let store = Store::open(dir.join("data/vault.svault"), dir.join("state")).unwrap();
     let hw = Hardware {
         fido2: None,
@@ -30,8 +34,9 @@ fn start(dir: &Path, idle: Duration) -> PathBuf {
     let l = server::bind(&sock, false).unwrap();
     let d2 = d.clone();
     std::thread::spawn(move || server::serve(l, d2, server::current_user()));
-    std::thread::spawn(move || server::idle_locker(d));
-    sock
+    let d3 = d.clone();
+    std::thread::spawn(move || server::idle_locker(d3));
+    (sock, d)
 }
 
 /// A socket in the test's directory, or a uniquely named pipe on Windows.
@@ -356,6 +361,37 @@ fn forgets_a_token_the_daemon_does_not_know() {
     wait_for(&mut h, Screen::Pair);
     assert!(h.state().error().unwrap().contains("Pair it again"));
     assert!(!dir.join("stale").exists());
+}
+
+#[test]
+fn pairs_by_approval_in_the_daemons_window() {
+    let dir = tempdir();
+    let (sock, d) = start_daemon(&dir, Duration::from_secs(300));
+    let pw = password();
+    let mut first = window(sock.clone(), dir.join("first"), FakeClip::default());
+    wait_for(&mut first, Screen::Create);
+    type_into(&mut first, Role::PasswordInput, "Master password", &pw);
+    type_into(&mut first, Role::PasswordInput, "Repeat it", &pw);
+    click(&mut first, "Create vault");
+    wait_for(&mut first, Screen::ShowRecovery);
+
+    let asked = Arc::new(Mutex::new(Vec::new()));
+    let log = asked.clone();
+    d.lock().unwrap().set_approver(Arc::new(
+        move |p: &vaultd::approve::PairPrompt| -> Result<bool, String> {
+            log.lock().unwrap().push((p.client_name.clone(), p.scope));
+            Ok(true)
+        },
+    ));
+    let mut second = window(sock, dir.join("second"), FakeClip::default());
+    wait_for(&mut second, Screen::Pair);
+    click(&mut second, "Ask for approval");
+    wait_for(&mut second, Screen::Unlocked);
+    assert!(dir.join("second").exists());
+    assert_eq!(
+        *asked.lock().unwrap(),
+        vec![("desktop app".to_owned(), vault_ipc::ClientScope::Full)]
+    );
 }
 
 fn tempdir() -> PathBuf {

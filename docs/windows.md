@@ -54,11 +54,10 @@ Closing the window stops the daemon; the keys go with the process.
 ## Browser autofill
 
     target\release\vault-native-host.exe --install CHROME_EXTENSION_ID [FIREFOX_EXTENSION_ID]
-    target\release\vault-native-host.exe --pair
 
 `--install` writes the host manifests to `%APPDATA%\vault\` and registers
 them for Chrome, Edge and (with an ID) Firefox under
-`HKCU\Software\...\NativeMessagingHosts`.
+`HKCU\Software\...\NativeMessagingHosts`. Then press Connect in the extension and allow it in the window vaultd opens.
 
 ## Locking
 

@@ -6,7 +6,6 @@ Two parts: the extension in `extension/` (Manifest V3, Chrome, Chromium, Edge an
 
 ```sh
 cargo install --path crates/vault-native-host
-vault-native-host --pair          # vault password; gives the host an autofill-only token
 ```
 
 Load the extension unpacked: `chrome://extensions`, Developer mode, Load unpacked, pick `extension/`. Copy the extension ID it shows, then:
@@ -16,6 +15,8 @@ vault-native-host --install <EXTENSION_ID> [autofill@passwordvault.dev]   # seco
 ```
 
 This writes `dev.passwordvault.host.json` into the browsers' `NativeMessagingHosts` folders, allowing only that extension to start the host.
+
+Then open the extension and press **Connect**: vaultd opens a window asking you to allow "browser" with autofill access. That gives the host an autofill-only token. Without a desktop, run `vault-native-host --pair --password` in a terminal instead.
 
 ## How a fill happens
 

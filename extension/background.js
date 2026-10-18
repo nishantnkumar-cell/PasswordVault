@@ -60,6 +60,8 @@ async function handle(msg) {
   switch (msg.type) {
     case "status":
       return host({ type: "status" });
+    case "pair":
+      return host({ type: "pair" });
     case "unlock":
       return host({ type: "unlock", password: msg.password });
     case "lock":

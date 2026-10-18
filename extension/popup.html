@@ -6,6 +6,10 @@
 </head>
 <body>
   <header><span id="origin"></span><button id="lock" hidden>Lock</button></header>
+  <div id="connect" hidden>
+    <p>Connect this browser to your vault. vaultd will open a window asking you to allow it.</p>
+    <button id="pair">Connect</button>
+  </div>
   <form id="unlock" hidden>
     <input id="password" type="password" placeholder="Vault password" autocomplete="off" autofocus>
     <button type="submit">Unlock</button>

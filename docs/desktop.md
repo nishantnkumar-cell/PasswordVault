@@ -19,7 +19,7 @@ Like vaultd, it runs on Linux and Windows; macOS follows the daemon port.
 
 - First run with no vault: choose a master password, then the recovery code
   is shown once.
-- First run with a vault: pair by proving any unlock method once. The token
+- First run with a vault: pair by proving any unlock method once, or press "Ask for approval" and allow it in the window vaultd opens. The token
   goes to `$XDG_CONFIG_HOME/vault/desktop-token` (0600), separate from the
   CLI's so either can be revoked alone. `VAULT_SOCKET` and
   `VAULT_DESKTOP_TOKEN_FILE` override the paths.

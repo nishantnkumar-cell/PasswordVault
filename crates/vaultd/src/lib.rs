@@ -2,6 +2,7 @@
 //! hardware factors and serves paired clients over a Unix socket or a
 //! Windows named pipe.
 
+pub mod approve;
 pub mod daemon;
 pub use vault_hw as hw;
 #[cfg(all(feature = "logind", target_os = "linux"))]
