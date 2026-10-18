@@ -1,0 +1,17 @@
+:root { --bg: #fff; --fg: #1d1d1f; --muted: #6e6e73; --line: #d2d2d7; --accent: #0a5cd6; color-scheme: light dark; }
+@media (prefers-color-scheme: dark) { :root { --bg: #1c1c1e; --fg: #f2f2f7; --muted: #a1a1a6; --line: #3a3a3c; --accent: #4c8dff; } }
+body { margin: 0; width: 320px; font: 13px system-ui, sans-serif; background: var(--bg); color: var(--fg); }
+header, footer, form, #message { padding: 8px 12px; }
+header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--line); color: var(--muted); }
+#origin { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+form { display: flex; gap: 6px; }
+input { flex: 1; padding: 6px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; }
+button { padding: 5px 10px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; cursor: pointer; }
+ul { list-style: none; margin: 0; padding: 0; }
+li { display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+li .who { flex: 1; min-width: 0; }
+li .who b, li .who span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+li .who span { color: var(--muted); }
+li button.fill { border-color: var(--accent); color: var(--accent); }
+#message { color: var(--muted); margin: 0; }
+#message:empty { display: none; }
