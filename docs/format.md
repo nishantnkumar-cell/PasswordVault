@@ -272,4 +272,4 @@ vault/item-data/v1     vault/recovery-check/v1
 ## 10. Open items
 
 - Confirm `postcard` 1.x encoding stability guarantees across minor versions (verify), or pin the exact version in `Cargo.lock` and keep a golden-file test.
-- TPM blob structure and SRK template (verify against `tss-esapi` and `systemd-cryptenroll`'s choices).
+- TPM blob: `u16 LE len || marshalled TPMT_PUBLIC || TPM2B_PRIVATE`, sealed under a transient ECC P-256 storage key from the standard template in the owner hierarchy (`crates/vaultd/src/hw/tpm.rs`). Decided; compare with `systemd-cryptenroll` before freezing.

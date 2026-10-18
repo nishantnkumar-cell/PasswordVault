@@ -1,0 +1,35 @@
+# User service: install to ~/.config/systemd/user/ and run
+#   systemctl --user daemon-reload && systemctl --user enable --now vaultd
+# Running vaultd as a separate system user (threat model A3) needs a system
+# unit with User=vault, --owner-uid set to your UID, and the socket placed in
+# a directory both users can reach; that setup is not shipped yet.
+
+[Unit]
+Description=Secret Vault daemon
+
+[Service]
+ExecStart=%h/.cargo/bin/vaultd
+Restart=on-failure
+# Keys must never reach swap or a core dump.
+LimitCORE=0
+LimitMEMLOCK=infinity
+NoNewPrivileges=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_UNIX
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ReadWritePaths=%h/.local/share/vault %h/.local/state/vault %t/vault
+# FIDO2 keys (hidraw) and the TPM resource manager.
+DeviceAllow=/dev/tpmrm0 rw
+DeviceAllow=char-hidraw rw
+
+[Install]
+WantedBy=default.target

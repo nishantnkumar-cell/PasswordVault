@@ -55,6 +55,42 @@ impl TotpConfig {
         })
     }
 
+    /// Parse an `otpauth://totp/...` URI or, failing that, a bare Base32 secret.
+    pub fn parse(s: &str) -> Result<TotpConfig, Error> {
+        let s = s.trim();
+        if !s.to_ascii_lowercase().starts_with("otpauth://") {
+            return TotpConfig::from_base32(s);
+        }
+        let u = url::Url::parse(s).map_err(|_| Error::Malformed)?;
+        if u.host_str() != Some("totp") {
+            return Err(Error::Malformed);
+        }
+        let mut cfg: Option<TotpConfig> = None;
+        let (mut digits, mut period, mut algorithm) = (6u8, 30u32, TotpAlgorithm::Sha1);
+        for (k, v) in u.query_pairs() {
+            match k.as_ref() {
+                "secret" => cfg = Some(TotpConfig::from_base32(&v)?),
+                "digits" => digits = v.parse().map_err(|_| Error::Malformed)?,
+                "period" => period = v.parse().map_err(|_| Error::Malformed)?,
+                "algorithm" => {
+                    algorithm = match v.to_ascii_uppercase().as_str() {
+                        "SHA1" => TotpAlgorithm::Sha1,
+                        "SHA256" => TotpAlgorithm::Sha256,
+                        "SHA512" => TotpAlgorithm::Sha512,
+                        _ => return Err(Error::Malformed),
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut cfg = cfg.ok_or(Error::Malformed)?;
+        if !(6..=8).contains(&digits) || period == 0 {
+            return Err(Error::Malformed);
+        }
+        (cfg.digits, cfg.period, cfg.algorithm) = (digits, period, algorithm);
+        Ok(cfg)
+    }
+
     /// The code for Unix time `now` (seconds).
     pub fn code_at(&self, now: u64) -> Result<String, Error> {
         if !(6..=8).contains(&self.digits) || self.period == 0 {
