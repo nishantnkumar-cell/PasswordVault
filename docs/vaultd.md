@@ -43,9 +43,28 @@ Build without hardware support with `cargo build -p vaultd --no-default-features
 - **TPM.** Sealed under a transient ECC P-256 storage key; every seal and unseal runs in a session salted to that key with parameter encryption. With a PIN the object is subject to the TPM's dictionary-attack lockout. With `--pcr7`, a change to Secure Boot state makes the slot unusable until it is re-enrolled; use another slot to unlock and re-add it.
 - **Hardening.** `RLIMIT_CORE=0` and `PR_SET_DUMPABLE=0` at start. Secrets in the protocol and the item model are zeroized on drop.
 
+## Running as a separate system user
+
+`contrib/systemd/vaultd@.service` runs the daemon as the `vault` user, one instance per person (`vaultd@yourname`), with the vault in `/var/lib/vault/yourname/` and the socket at `/run/vault/yourname/vaultd.sock`. The socket is world-connectable, and the daemon accepts only the UID named by `--owner-user`. Install steps are at the top of the unit file. Set `VAULT_SOCKET` for `vault` and the browser host. The unit expects a `tss` group for the TPM; remove `SupplementaryGroups=tss` on distributions without one.
+
+`contrib/udev/70-vault-fido.rules` gives the `vault` group access to FIDO2 keys (it relies on systemd's `ID_FIDO_TOKEN` tagging), while your own session keeps access too.
+
+## Memory and session locking
+
+- With `RLIMIT_MEMLOCK` unlimited (both units set `LimitMEMLOCK=infinity`), all daemon memory is locked with `mlockall`, so keys never reach swap. With a lower limit it warns and continues unlocked, because locking would make large Argon2id allocations fail.
+- With the default `logind` feature, the daemon listens on the system bus and locks when logind announces suspend (`PrepareForSleep`) or any session `Lock`. Signals from anything other than logind's bus name are ignored.
+
+## Checking a FIDO2 key
+
+On Linux, macOS or Windows, with the key plugged in:
+
+```sh
+cargo run -p vault-hw --example fido2-check
+```
+
+It creates throwaway credentials, asks for hmac-secret twice in touch-only mode and, if you give a PIN, twice with the PIN, and prints PASS if the key returns the same secret each time. Touch the key whenever it blinks. On Linux it needs `libudev-dev` and `libhidapi-dev`, and access to `/dev/hidraw*`.
+
 ## Not done yet
 
-- Running as a separate system user (the threat model's A3 defence). Today the daemon runs as the user; `--owner-uid` and the socket check are in place for a system unit.
-- `mlock` of key pages, and locking on suspend or screen lock (logind).
 - An approval prompt drawn by the daemon for pairing; pairing currently requires a factor instead.
-- FIDO2 has been compiled but not tested against a real security key.
+- vaultd itself on macOS and Windows (the FIDO2 check already runs there).

@@ -46,6 +46,20 @@ try {
   // A frame whose origin changed since the item was released is not filled.
   assert.equal(await page.evaluate(`(${fillInPage})("https://other.example", "a", "b")`), 0);
 
+  // A login form inside a frame from another origin: filled only when the
+  // expected origin is the frame's own (what the user confirmed), never the top's.
+  const other = createServer((req, res) => res.end(PAGE)).listen(0);
+  try {
+    const frameUrl = `http://localhost:${other.address().port}/`;
+    await page.setContent(`<iframe src="${frameUrl}" width="600" height="400"></iframe>`);
+    const frame = page.frames().find((f) => f.url() === frameUrl) ?? (await page.waitForEvent("frameattached"));
+    await frame.waitForLoadState();
+    assert.equal(await frame.evaluate(`(${fillInPage})(${JSON.stringify(origin)}, "a", "b")`), 0);
+    assert.equal(await frame.evaluate(`(${fillInPage})(${JSON.stringify(new URL(frameUrl).origin)}, "a", "b")`), 2);
+  } finally {
+    other.close();
+  }
+
   // The packaged extension loads and its background script starts.
   const worker = ctx.serviceWorkers()[0] ?? (await ctx.waitForEvent("serviceworker", { timeout: 10000 }));
   assert.match(worker.url(), /background\.js$/);

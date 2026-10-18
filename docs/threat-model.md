@@ -63,7 +63,7 @@ Status: **M** = mitigated by the design, **P** = partially mitigated, **A** = ac
 | Lookalike domain | Full-origin match by default, punycode normalization, homograph warnings | M |
 | Subdomain takeover on a site using eTLD+1 matching | eTLD+1 matching is opt-in per item only | P |
 | Hidden or invisible form harvesting | Fill needs a user gesture; hidden and zero-size fields never filled | M |
-| Cross-origin iframe on a trusted page | Top frame or same-origin frames only; cross-origin needs an explicit prompt | M |
+| Cross-origin iframe on a trusted page | Top frame or same-origin frames only; a cross-origin frame is filled only after the user picks its origin in the popup and the browser's permission prompt | M |
 | Origin spoofed from page content | Origin taken only from browser-provided `sender` data in the background script | M |
 | XSS on the legitimate origin | Out of reach: the origin is genuinely correct | A |
 | Downgrade to `http` | `https` only unless a per-item override | M |
@@ -72,7 +72,7 @@ Status: **M** = mitigated by the design, **P** = partially mitigated, **A** = ac
 
 | Threat | Mitigation | Status |
 | --- | --- | --- |
-| Read `vaultd` memory or attach ptrace | Separate system user, `PR_SET_DUMPABLE=0`, Yama ptrace scope, no core dumps | M |
+| Read `vaultd` memory or attach ptrace | Separate system user (`vaultd@.service`; the per-user unit does not give this), `PR_SET_DUMPABLE=0`, Yama ptrace scope, no core dumps | M with the system unit, P with the user unit |
 | Connect to the socket and request secrets | One-time client pairing approved in `vaultd`'s own prompt; peer identified by pidfd; fresh user presence for non-allowlisted release; rate limit | P |
 | Impersonate a paired client binary | Pairing key stored in the client's own storage, readable by the same user | A on Linux (no per-app isolation) |
 | Keylog the master password | Wayland: partially mitigated by compositor isolation. X11: any client can keylog | A on X11, P on Wayland |
@@ -101,8 +101,8 @@ v1 uses only symmetric primitives with 256-bit keys (XChaCha20-Poly1305, HKDF-SH
 ## 6. Memory and process hygiene
 
 - All secret types use `zeroize` / `secrecy` wrappers that do not implement `Debug`, `Clone` or `Serialize` except where explicitly needed. Enforced by wrapper types, not review alone.
-- Key pages `mlock`ed; `RLIMIT_CORE=0`; `PR_SET_DUMPABLE=0`.
-- Keys are zeroized on lock, suspend, screen lock (logind) and idle timeout.
+- All daemon memory `mlockall`ed when `RLIMIT_MEMLOCK` allows (the shipped units set it); `RLIMIT_CORE=0`; `PR_SET_DUMPABLE=0`.
+- Keys are zeroized on lock, suspend and screen lock (logind D-Bus signals), idle timeout and SIGTERM.
 
 ## 7. Explicitly out of scope for v1
 

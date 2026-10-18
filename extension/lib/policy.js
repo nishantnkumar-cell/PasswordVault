@@ -28,3 +28,21 @@ export function fillableFrames(frames, topOrigin) {
 export function fromPopup(sender, runtimeId, popupUrl) {
   return sender.id === runtimeId && typeof sender.url === "string" && sender.url.startsWith(popupUrl) && !sender.tab;
 }
+
+/**
+ * Origins of https child frames that are not the top frame's origin. These
+ * are never filled without the user confirming that frame's origin.
+ */
+export function crossOriginFrames(frames, topOrigin) {
+  const out = new Set();
+  for (const f of frames) {
+    const o = originOf(f.url);
+    if (f.frameId !== 0 && o && o !== topOrigin && o.startsWith("https:")) out.add(o);
+  }
+  return [...out];
+}
+
+/** Frame IDs whose own URL has exactly `origin`. */
+export function framesWithOrigin(frames, origin) {
+  return frames.filter((f) => f.frameId !== 0 && originOf(f.url) === origin).map((f) => f.frameId);
+}

@@ -3,7 +3,7 @@
 // from page content, and fills only on a user gesture (the popup or the
 // keyboard command), in the top frame and same-origin frames.
 
-import { fillableFrames, fromPopup, originOf } from "./lib/policy.js";
+import { crossOriginFrames, fillableFrames, framesWithOrigin, fromPopup, originOf } from "./lib/policy.js";
 import { fillInPage } from "./lib/fill.js";
 
 const HOST = "dev.passwordvault.host";
@@ -24,18 +24,36 @@ async function activeTab() {
   return { tab, origin };
 }
 
-async function fill(id) {
+async function inject(tabId, frameIds, expectedOrigin, item) {
+  if (!frameIds.length) return 0;
+  const results = await api.scripting.executeScript({
+    target: { tabId, frameIds },
+    func: fillInPage,
+    args: [expectedOrigin, item.username, item.password],
+  });
+  return results.reduce((n, r) => n + (r.result || 0), 0);
+}
+
+// The item is always released for the tab's own origin; the frame origin
+// only decides where it is typed, after the user confirmed that origin.
+async function fill(id, frameOrigin) {
   const { tab, origin } = await activeTab();
   const item = await host({ type: "fill", id, origin });
   if (!item.ok) return item;
   const frames = await api.webNavigation.getAllFrames({ tabId: tab.id });
-  const results = await api.scripting.executeScript({
-    target: { tabId: tab.id, frameIds: fillableFrames(frames, origin) },
-    func: fillInPage,
-    args: [origin, item.username, item.password],
-  });
-  const filled = results.reduce((n, r) => n + (r.result || 0), 0);
-  return filled ? { ok: true, filled } : { ok: false, error: "no visible login form on this page" };
+  if (frameOrigin) {
+    try {
+      const filled = await inject(tab.id, framesWithOrigin(frames, frameOrigin), frameOrigin, item);
+      return filled ? { ok: true, filled } : { ok: false, error: `no visible login form in the frame from ${frameOrigin}` };
+    } finally {
+      await api.permissions.remove({ origins: [`${frameOrigin}/*`] }).catch(() => {});
+    }
+  }
+  const filled = await inject(tab.id, fillableFrames(frames, origin), origin, item);
+  if (filled) return { ok: true, filled };
+  const others = crossOriginFrames(frames, origin);
+  if (others.length) return { ok: false, crossOrigin: others, error: "no visible login form on this page itself" };
+  return { ok: false, error: "no visible login form on this page" };
 }
 
 async function handle(msg) {
@@ -52,6 +70,8 @@ async function handle(msg) {
     }
     case "fill":
       return fill(msg.id);
+    case "fillFrame":
+      return fill(msg.id, msg.frameOrigin);
     case "totp": {
       const { origin } = await activeTab();
       return host({ type: "totp", id: msg.id, origin });

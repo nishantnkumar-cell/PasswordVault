@@ -25,11 +25,12 @@ This writes `dev.passwordvault.host.json` into the browsers' `NativeMessagingHos
 4. On Fill, `vaultd` releases the username and password only if the item is bound to that origin (`GetForFill`). The host's token cannot list, export or edit items.
 5. The fill function is injected into the top frame and into child frames whose URL has the same origin. It checks the frame's origin again, then fills only the first visible password field and the visible text field before it. Hidden, zero-size, off-screen, transparent, disabled and read-only fields are skipped.
 
+If the page itself has no visible login form but contains https frames from other sites, the popup names each frame's site and fills there only when you pick one; the browser then asks you to grant the extension access to that site, which is removed again right after the fill. The item is still released only for the tab's own site.
+
 TOTP codes and generated passwords are copied to the clipboard from the popup.
 
 ## Limits
 
-- Cross-origin frames are never filled. The design calls for an explicit prompt instead; that prompt is not built yet.
 - The master password typed into the popup passes through the extension and the host. Unlocking with `vault unlock` in a terminal avoids that.
 - Passkeys are not handled (post-v1).
 

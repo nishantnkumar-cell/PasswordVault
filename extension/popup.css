@@ -15,3 +15,6 @@ li .who span { color: var(--muted); }
 li button.fill { border-color: var(--accent); color: var(--accent); }
 #message { color: var(--muted); margin: 0; }
 #message:empty { display: none; }
+#frames { padding: 8px 12px; border-top: 1px solid var(--line); display: grid; gap: 6px; }
+#frames p { margin: 0; color: var(--muted); }
+#frames[hidden] { display: none; }

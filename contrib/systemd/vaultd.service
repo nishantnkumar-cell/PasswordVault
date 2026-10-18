@@ -1,8 +1,7 @@
 # User service: install to ~/.config/systemd/user/ and run
 #   systemctl --user daemon-reload && systemctl --user enable --now vaultd
-# Running vaultd as a separate system user (threat model A3) needs a system
-# unit with User=vault, --owner-uid set to your UID, and the socket placed in
-# a directory both users can reach; that setup is not shipped yet.
+# This runs vaultd as you. vaultd@.service runs it as a separate system user,
+# which also protects its memory from other programs running as you.
 
 [Unit]
 Description=Secret Vault daemon

@@ -1,0 +1,4 @@
+# Give the vault daemon's group access to FIDO2 security keys. systemd's
+# 60-fido-id.rules sets ID_FIDO_TOKEN; the logged-in user keeps access
+# through the uaccess tag.
+SUBSYSTEM=="hidraw", ENV{ID_FIDO_TOKEN}=="1", GROUP="vault", MODE="0660"
