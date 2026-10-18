@@ -641,7 +641,11 @@ impl App {
                     }
                     Screen::Unreachable(m) => {
                         ui.label(m);
-                        ui.label("Start it with `systemctl --user start vaultd`.");
+                        ui.label(if cfg!(windows) {
+                            "Start vaultd.exe, or sign out and in if it starts at login."
+                        } else {
+                            "Start it with `systemctl --user start vaultd`."
+                        });
                         if ui.button("Try again").clicked() {
                             self.screen = Screen::Connecting;
                             self.refresh();

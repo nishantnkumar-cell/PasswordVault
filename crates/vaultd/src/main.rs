@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use vault_core::KdfCost;
+use vault_ipc::local;
 use vaultd::daemon::Daemon;
 use vaultd::hw::Hardware;
 use vaultd::server;
@@ -15,23 +16,18 @@ const HELP: &str = "vaultd: the vault daemon
 USAGE: vaultd [OPTIONS]
 
 OPTIONS:
-  --vault PATH       vault file      [default: $XDG_DATA_HOME/vault/vault.svault]
-  --state-dir PATH   daemon state    [default: $XDG_STATE_HOME/vault]
-  --socket PATH      Unix socket     [default: $XDG_RUNTIME_DIR/vault/vaultd.sock]
-  --owner-uid UID    the only UID allowed to connect [default: this process's UID]
-  --owner-user NAME  same, by user name (for a system unit running as its own user)
+  --vault PATH       vault file      [default: DATA/vault.svault]
+  --state-dir PATH   daemon state    [default: STATE]
+  --socket PATH      Unix socket or Windows pipe [default: see docs/vaultd.md]
+  --owner-uid UID    the only UID allowed to connect [default: this process's UID] (Unix)
+  --owner-user NAME  same, by user name (for a system unit running as its own user) (Unix)
   --idle-secs N      lock after N idle seconds [default: 900]
   --fast-kdf         minimum Argon2id cost for new slots (testing only)
   -h, --help         this text";
 
-fn env_dir(var: &str, fallback: &str) -> PathBuf {
-    std::env::var_os(var).map(PathBuf::from).unwrap_or_else(|| {
-        PathBuf::from(std::env::var_os("HOME").expect("HOME is not set")).join(fallback)
-    })
-}
-
 /// No core dumps, no ptrace attach from same-UID processes, and keys kept
-/// out of swap (threat model A3 and section 6).
+/// out of swap (threat model A3 and section 6). Not yet on Windows.
+#[cfg(unix)]
 fn harden() {
     use nix::sys::resource::{Resource, getrlimit, setrlimit};
     let _ = setrlimit(Resource::RLIMIT_CORE, 0, 0);
@@ -55,13 +51,13 @@ fn harden() {
 }
 
 fn main() {
+    #[cfg(unix)]
     harden();
-    let mut vault = env_dir("XDG_DATA_HOME", ".local/share").join("vault/vault.svault");
-    let mut state = env_dir("XDG_STATE_HOME", ".local/state").join("vault");
-    let mut socket = std::env::var_os("XDG_RUNTIME_DIR")
-        .map(|d| PathBuf::from(d).join("vault/vaultd.sock"))
-        .unwrap_or_else(|| state.join("vaultd.sock"));
-    let mut owner = nix::unistd::getuid().as_raw();
+    let mut vault = local::data_dir().join("vault.svault");
+    let mut state: PathBuf = local::state_dir();
+    let mut socket = local::endpoint().unwrap_or_else(|e| die(&e.to_string()));
+    #[cfg_attr(windows, allow(unused_mut))]
+    let mut owner = server::current_user();
     let mut idle = 900u64;
     let mut cost = KdfCost::DEFAULT;
 
@@ -75,6 +71,7 @@ fn main() {
             "--vault" => vault = val().into(),
             "--state-dir" => state = val().into(),
             "--socket" => socket = val().into(),
+            #[cfg(unix)]
             "--owner-user" => {
                 let name = val();
                 owner = match nix::unistd::User::from_name(&name) {
@@ -82,6 +79,7 @@ fn main() {
                     _ => die(&format!("no such user {name}")),
                 }
             }
+            #[cfg(unix)]
             "--owner-uid" => {
                 owner = val()
                     .parse()
@@ -108,16 +106,18 @@ fn main() {
         cost,
         Duration::from_secs(idle),
     )));
-    let listener = server::bind(&socket, owner != nix::unistd::getuid().as_raw())
+    let listener = server::bind(&socket, owner != server::current_user())
         .unwrap_or_else(|e| die(&format!("{}: {e}", socket.display())));
 
     // Lock and exit cleanly on SIGTERM / SIGINT / SIGHUP.
+    #[cfg(unix)]
     let mut signals = signal_hook::iterator::Signals::new([
         signal_hook::consts::SIGTERM,
         signal_hook::consts::SIGINT,
         signal_hook::consts::SIGHUP,
     ])
     .unwrap_or_else(|e| die(&e.to_string()));
+    #[cfg(unix)]
     {
         let d = daemon.clone();
         let sock = socket.clone();
@@ -137,6 +137,11 @@ fn main() {
     {
         let d = daemon.clone();
         std::thread::spawn(move || vaultd::logind::run(d));
+    }
+    #[cfg(windows)]
+    {
+        let d = daemon.clone();
+        std::thread::spawn(move || vaultd::winsession::run(d));
     }
     eprintln!("vaultd: listening on {}", socket.display());
     server::serve(listener, daemon, owner);

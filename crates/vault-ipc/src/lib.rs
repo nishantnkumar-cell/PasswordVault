@@ -1,7 +1,12 @@
 //! Wire protocol between `vaultd` and its clients: length-prefixed postcard
-//! frames over a Unix socket. One request, one response, per frame pair.
+//! frames over a Unix socket or a Windows named pipe. One request, one
+//! response, per frame pair.
 
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
+
+pub mod local;
+#[cfg(windows)]
+pub mod win;
 
 use std::io::{self, Read, Write};
 

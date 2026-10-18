@@ -1,12 +1,9 @@
 //! Talking to `vaultd` off the UI thread, and where the pairing token lives.
 
-use std::io::Write;
-use std::os::unix::fs::OpenOptionsExt;
-use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
-use vault_ipc::{ClientToken, Envelope, Request, Response, read_frame, write_frame};
+use vault_ipc::{ClientToken, Envelope, Request, Response, local, read_frame, write_frame};
 use zeroize::Zeroizing;
 
 /// Socket and token file locations.
@@ -18,31 +15,14 @@ pub struct Paths {
     pub token: PathBuf,
 }
 
-fn home(rel: &str) -> PathBuf {
-    PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(rel)
-}
-
 impl Paths {
-    /// The same defaults as the `vault` CLI, with the app's own token file
-    /// so it can be revoked separately.
+    /// The same daemon as the `vault` CLI, with the app's own token file so
+    /// it can be revoked separately.
     pub fn from_env() -> Paths {
-        let socket = match (
-            std::env::var_os("VAULT_SOCKET"),
-            std::env::var_os("XDG_RUNTIME_DIR"),
-        ) {
-            (Some(p), _) => p.into(),
-            (None, Some(d)) => PathBuf::from(d).join("vault/vaultd.sock"),
-            (None, None) => std::env::var_os("XDG_STATE_HOME")
-                .map(PathBuf::from)
-                .unwrap_or_else(|| home(".local/state"))
-                .join("vault/vaultd.sock"),
-        };
+        let socket = local::endpoint().unwrap_or_default();
         let token = match std::env::var_os("VAULT_DESKTOP_TOKEN_FILE") {
             Some(p) => p.into(),
-            None => std::env::var_os("XDG_CONFIG_HOME")
-                .map(PathBuf::from)
-                .unwrap_or_else(|| home(".config"))
-                .join("vault/desktop-token"),
+            None => local::config_dir().join("desktop-token"),
         };
         Paths { socket, token }
     }
@@ -56,18 +36,8 @@ impl Paths {
 
     /// Store a token, readable only by this user.
     pub fn save_token(&self, t: &ClientToken) -> Result<(), String> {
-        let err = |e: std::io::Error| format!("{}: {e}", self.token.display());
-        if let Some(d) = self.token.parent() {
-            std::fs::create_dir_all(d).map_err(err)?;
-        }
-        std::fs::OpenOptions::new()
-            .create(true)
-            .truncate(true)
-            .write(true)
-            .mode(0o600)
-            .open(&self.token)
-            .and_then(|mut f| f.write_all(&t[..]))
-            .map_err(err)
+        local::write_private(&self.token, &t[..])
+            .map_err(|e| format!("{}: {e}", self.token.display()))
     }
 
     /// Delete a token the daemon no longer knows.
@@ -106,7 +76,7 @@ impl<Op: Send + 'static> Backend<Op> {
         let (jobs, job_rx) = channel::<Job<Op>>();
         let (result_tx, results) = channel();
         std::thread::spawn(move || {
-            let mut stream: Option<UnixStream> = None;
+            let mut stream: Option<local::Stream> = None;
             for job in job_rx {
                 let r = call(&socket, &mut stream, job.token, job.request);
                 if r.is_err() {
@@ -146,8 +116,8 @@ impl<Op: Send + 'static> Backend<Op> {
 }
 
 fn call(
-    socket: &PathBuf,
-    stream: &mut Option<UnixStream>,
+    socket: &std::path::Path,
+    stream: &mut Option<local::Stream>,
     token: Option<ClientToken>,
     request: Request,
 ) -> Result<Response, Failure> {
@@ -158,7 +128,7 @@ fn call(
         ))
     };
     if stream.is_none() {
-        *stream = Some(UnixStream::connect(socket).map_err(unreachable)?);
+        *stream = Some(local::connect(socket).map_err(unreachable)?);
     }
     let s = stream.as_mut().expect("connected above");
     write_frame(s, &Envelope { token, request }).map_err(unreachable)?;

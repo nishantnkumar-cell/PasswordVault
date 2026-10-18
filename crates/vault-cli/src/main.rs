@@ -3,8 +3,6 @@
 #![forbid(unsafe_code)]
 
 use std::io::{self, BufRead, IsTerminal, Write};
-use std::os::unix::fs::OpenOptionsExt;
-use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::process::exit;
 
@@ -13,11 +11,11 @@ use vault_core::origin::MatchMode;
 use vault_core::totp::TotpConfig;
 use vault_ipc::{
     ClientScope, ClientToken, Envelope, GenerateOptions, ImportFormat, ItemSummary, Request,
-    Response, Secret, SlotInfo, UnlockMethod, hex, parse_id, read_frame, write_frame,
+    Response, Secret, SlotInfo, UnlockMethod, hex, local, parse_id, read_frame, write_frame,
 };
 use zeroize::Zeroizing;
 
-const HELP: &str = "vault: command-line client for vaultd
+const HELP: &str = r"vault: command-line client for vaultd
 
 USAGE: vault <COMMAND> [ARGS]
 
@@ -51,39 +49,25 @@ KEYSLOTS
   revoke --keep SLOT[,SLOT..]  rotate the vault key, keeping only these slots
 
 ENVIRONMENT
-  VAULT_SOCKET                 socket path [default: $XDG_RUNTIME_DIR/vault/vaultd.sock]
-  VAULT_TOKEN_FILE             pairing token [default: $XDG_CONFIG_HOME/vault/token]";
+  VAULT_SOCKET                 socket or pipe [default: $XDG_RUNTIME_DIR/vault/vaultd.sock,
+                               on Windows \\.\pipe\vaultd-<your SID>]
+  VAULT_TOKEN_FILE             pairing token [default: $XDG_CONFIG_HOME/vault/token,
+                               on Windows %APPDATA%\vault\token]";
 
 fn die(msg: impl std::fmt::Display) -> ! {
     eprintln!("vault: {msg}");
     exit(1)
 }
 
-fn home(rel: &str) -> PathBuf {
-    PathBuf::from(std::env::var_os("HOME").unwrap_or_else(|| die("HOME is not set"))).join(rel)
-}
-
 fn socket_path() -> PathBuf {
-    if let Some(p) = std::env::var_os("VAULT_SOCKET") {
-        return p.into();
-    }
-    match std::env::var_os("XDG_RUNTIME_DIR") {
-        Some(d) => PathBuf::from(d).join("vault/vaultd.sock"),
-        None => std::env::var_os("XDG_STATE_HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| home(".local/state"))
-            .join("vault/vaultd.sock"),
-    }
+    local::endpoint().unwrap_or_else(|e| die(e))
 }
 
 fn token_path() -> PathBuf {
     if let Some(p) = std::env::var_os("VAULT_TOKEN_FILE") {
         return p.into();
     }
-    std::env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| home(".config"))
-        .join("vault/token")
+    local::config_dir().join("token")
 }
 
 fn load_token() -> Option<ClientToken> {
@@ -94,28 +78,18 @@ fn load_token() -> Option<ClientToken> {
 
 fn save_token(t: &ClientToken) {
     let p = token_path();
-    if let Some(d) = p.parent() {
-        std::fs::create_dir_all(d).unwrap_or_else(|e| die(format!("{}: {e}", d.display())));
-    }
-    let mut f = std::fs::OpenOptions::new()
-        .create(true)
-        .truncate(true)
-        .write(true)
-        .mode(0o600)
-        .open(&p)
-        .unwrap_or_else(|e| die(format!("{}: {e}", p.display())));
-    f.write_all(&t[..]).unwrap_or_else(|e| die(e));
+    local::write_private(&p, &t[..]).unwrap_or_else(|e| die(format!("{}: {e}", p.display())));
 }
 
 struct Client {
-    stream: UnixStream,
+    stream: local::Stream,
     token: Option<ClientToken>,
 }
 
 impl Client {
     fn connect() -> Client {
         let p = socket_path();
-        let stream = UnixStream::connect(&p).unwrap_or_else(|e| {
+        let stream = local::connect(&p).unwrap_or_else(|e| {
             die(format!(
                 "cannot reach vaultd at {}: {e}. Is it running?",
                 p.display()

@@ -2,10 +2,8 @@
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
-use nix::fcntl::{Flock, FlockArg};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use vault_ipc::ClientScope;
@@ -14,7 +12,7 @@ use vault_ipc::ClientScope;
 pub struct Store {
     vault: PathBuf,
     state_dir: PathBuf,
-    _lock: Flock<File>,
+    _lock: File,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -27,17 +25,18 @@ impl Store {
     /// Open the store, taking an exclusive lock so only one daemon writes.
     pub fn open(vault: PathBuf, state_dir: PathBuf) -> io::Result<Store> {
         fs::create_dir_all(&state_dir)?;
-        fs::set_permissions(&state_dir, fs::Permissions::from_mode(0o700))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&state_dir, fs::Permissions::from_mode(0o700))?;
+        }
         if let Some(dir) = vault.parent() {
             fs::create_dir_all(dir)?;
         }
-        let lock_file = OpenOptions::new()
-            .create(true)
+        let lock = private()
             .truncate(false)
-            .write(true)
-            .mode(0o600)
             .open(state_dir.join("vaultd.lock"))?;
-        let lock = Flock::lock(lock_file, FlockArg::LockExclusiveNonblock)
+        lock.try_lock()
             .map_err(|_| io::Error::other("another vaultd holds the lock"))?;
         Ok(Store {
             vault,
@@ -116,15 +115,26 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
     let dir = path.parent().unwrap_or(Path::new("."));
     let tmp = path.with_extension("tmp");
     {
-        let mut f = OpenOptions::new()
-            .create(true)
-            .truncate(true)
-            .write(true)
-            .mode(0o600)
-            .open(&tmp)?;
+        let mut f = private().truncate(true).open(&tmp)?;
         f.write_all(bytes)?;
         f.sync_all()?;
     }
     fs::rename(&tmp, path)?;
-    File::open(dir)?.sync_all()
+    // Windows cannot open a directory as a file; its rename is already durable
+    // once the file was flushed.
+    #[cfg(unix)]
+    File::open(dir)?.sync_all()?;
+    #[cfg(not(unix))]
+    let _ = dir;
+    Ok(())
+}
+
+/// Create-or-open for writing, readable only by this user (0600 on Unix; on
+/// Windows the profile directory's ACL already does this).
+fn private() -> OpenOptions {
+    let mut o = OpenOptions::new();
+    o.create(true).write(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut o, 0o600);
+    o
 }
