@@ -145,6 +145,16 @@ type your master password, and touch the key when Windows asks.
 A security key slot works on every system: a slot added on Linux unlocks the
 same vault file on Windows, and the other way round.
 
+**Keys that have a PIN: use a PIN slot on Windows.** If your key has a PIN
+set, Windows insists on checking it whenever the vault reads the key's
+secret, even for a touch-only slot. A key that has checked its PIN gives a
+different secret than a touch alone, so a touch-only slot can't work on
+Windows with such a key: adding one stops with "Windows checked the key's
+PIN for a touch-only slot", and a touch-only slot made on Linux won't unlock
+on Windows. Add the slot with `--uv` (in the app, tick *Also ask for the
+key's PIN every time*) and it works the same on every system. Keys without
+a PIN are not affected.
+
 **Older Windows 10.** If Windows' security key service is too old, vaultd
 talks to the key directly over USB, which Windows only allows to
 administrators. Update Windows, or unlock with your password or recovery

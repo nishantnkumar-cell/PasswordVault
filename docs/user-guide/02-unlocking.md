@@ -163,6 +163,9 @@ slots but not revoke.
   too old for it, vaultd falls back to direct USB access, which needs
   vaultd to run as administrator. A security key slot works on every
   system: one added on Linux unlocks on Windows and the other way round.
+  One exception: if the key has a PIN, Windows always checks it, which
+  changes the key's secret, so on Windows only `--uv` slots work with such
+  a key. Use `--uv` for keys with a PIN if you use Windows.
 - **macOS:** the daemon is not ported yet.
 - **Linux:** when `vaultd` runs as the separate `vault` system user, install
   `contrib/udev/70-vault-fido.rules` so it can reach security keys.

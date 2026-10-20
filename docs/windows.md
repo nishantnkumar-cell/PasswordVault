@@ -99,7 +99,13 @@ that path.
 The secret is the same either way: the vault stores a PRF input, and both
 paths turn it into the hmac-secret salt with the WebAuthn PRF construction
 (format.md 4.2). Windows applies it itself, vault-hw does on Linux. A slot
-made on one system unlocks on the other. To check a key, and that both paths
+made on one system unlocks on the other, with one exception: when the key
+has a PIN, Windows verifies it on every request even when asked not to
+(tested 2026-10-20 on Windows 11). The key then returns its with-UV secret,
+so a touch-only slot (`require_uv = false`) cannot be read on Windows with
+such a key. vault-hw checks the UV flag in the authenticator data and
+refuses a mismatch with a clear error instead of failing as a wrong
+password. Use `--uv` slots for keys with a PIN. To check a key, and that both paths
 agree, run in an administrator terminal:
 
     cargo run -p vault-hw --example fido2-check -- --compare

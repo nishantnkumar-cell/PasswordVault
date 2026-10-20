@@ -31,7 +31,9 @@ to work yet.
   security keys through Windows' own WebAuthn service, so it no longer has
   to run as administrator. Windows shows its own window for the touch and,
   if the slot needs it, the key's PIN. A security key slot made on Linux
-  unlocks on Windows and the other way round.
+  unlocks on Windows and the other way round. If your key has a PIN, use a
+  slot that asks for it (`--uv`): Windows always checks the PIN of such a
+  key, so touch-only slots can't work with it on Windows.
 - **Touch-only slots on keys with a PIN** (all systems). Many security keys
   with a PIN set refuse to register a credential without it, so adding a
   touch-only slot failed with `PIN_REQUIRED`. The `vault` command now asks
