@@ -97,16 +97,21 @@ it; the app follows within two seconds and forgets everything it showed.
 ## Items
 
 The middle column lists your items, with a **Search** box above it.
-**All items**, **Logins**, **One-time codes** and **SSH and PGP keys** in
-the sidebar filter the list. Select an item to see it on the right.
+**All items**, **Logins**, **Secure notes**, **Cards**, **Identities**,
+**One-time codes** and **SSH and PGP keys** in the sidebar filter the list.
+Select an item to see it on the right.
 
-- **Copy username**, **Copy password**, **Copy code** (when the item has a
-  one-time code). **Show** reveals the password in place; **Hide** covers
-  it again.
+- Each value has its own copy button, such as **Copy username**, **Copy
+  password**, **Copy number** or **Copy code** (when the item has a
+  one-time code). **Show** reveals secret values in place; **Hide** covers
+  them again.
+- A **secure note's** text stays hidden until you press **Show**; **Copy
+  note** copies it without showing it.
 - **Edit** opens the form. **Delete** asks **Yes, delete** to confirm;
   there is no undo.
 
-**New item** opens an empty form:
+**New item** asks which kind to make (**Login**, **Secure note**,
+**Card** or **Identity**) and opens an empty form for it. A login's form:
 
 1. **Title** (required), **Username**.
 2. **Password**: type it, or press **Generate** to make one with the
@@ -120,9 +125,20 @@ the sidebar filter the list. Select an item to see it on the right.
    site's QR code. An invalid secret is refused with a message.
 5. **Notes**, then **Save**.
 
+A **card** has **Name on card**, **Card number**, **Expires** (`MM/YY`),
+**Security code** and **PIN**. A number that fails the card checksum shows
+a warning but can still be saved. An **identity** has a title such as Mr
+or Dr, first, middle and last name, company, email, phone, three address
+lines, city, state or region, postcode and country. A **secure note** has
+only a title and notes.
+
+Every kind has **Custom fields**: **Add field** adds a row with a **Name**,
+a **Value** and a **Hidden** tick box that treats the value like a
+password. **Remove** deletes a row. See [Item types](03-items.md#item-types).
+
 ### Clipboard
 
-A copied username, password or code is cleared from the clipboard after
+A copied value (username, password, code, card number and so on) is cleared from the clipboard after
 30 seconds, when the vault locks and when the app closes, unless you have
 copied something else since. On Windows it is also kept out of the
 clipboard history (Win+V) and cloud clipboard sync.

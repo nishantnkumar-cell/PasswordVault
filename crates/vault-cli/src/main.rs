@@ -31,7 +31,7 @@ UNLOCKING                      METHOD is one of --password (default), --fido2, -
   lock                         lock it and wipe keys from memory
 
 ITEMS                          ID may be any unique prefix of an item ID
-  ls [KIND]                     list items, or only logins, notes, cards or identities
+  ls [KIND]                    list items, or only logins, notes, cards or identities
   show ID [--reveal]           show an item (secrets hidden unless --reveal)
   add [KIND] [--generate]      add an item interactively; KIND is login (default),
                                note, card or identity

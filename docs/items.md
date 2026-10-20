@@ -1,4 +1,4 @@
-# Item payload, schema 2
+# Item payload, schema 3
 
 Each vault item's data (format.md section 5, `ItemData`) is `0x03 || postcard(ItemData)`. The leading byte is the item schema version, independent of the file format version. Readers reject an unknown schema byte and non-canonical encodings.
 

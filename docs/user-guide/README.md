@@ -37,7 +37,8 @@ random program on your computer cannot just ask for your passwords.
 1. [Getting started](01-getting-started.md): install, create a vault, save the recovery code, pair the CLI.
    On Windows, use the installer: [Installing and running on Windows](windows-install.md).
 2. [Unlocking and unlock methods](02-unlocking.md): password, security key, TPM, recovery code; adding, removing and revoking them.
-3. [Items, one-time codes, the generator and import](03-items.md)
+3. [Items, one-time codes, the generator and import](03-items.md): logins,
+   secure notes, cards and identities.
 4. [Browser autofill](04-browser-autofill.md)
 5. [Desktop app](05-desktop-app.md), with a tour of the window and the
    Ctrl K command palette in
@@ -54,6 +55,8 @@ random program on your computer cannot just ask for your passwords.
 |---|---|---|---|
 | `vaultd`, `vault` command, desktop app | Yes | Yes | Not yet |
 | Browser autofill | Chrome, Chromium, Edge, Firefox 128+ | Chrome, Edge, Firefox 128+ | Not yet |
+| Secure notes, cards, identities | Yes | Yes | Not yet |
+| Card and address autofill | Yes (card fill needs a desktop session) | Yes | Not yet |
 | Unlock: password, recovery code | Yes | Yes | Not yet |
 | Installer | Not yet (build, then the systemd unit) | Yes, no administrator rights needed | Not yet |
 | Unlock: password + FIDO2 security key | Yes | Yes (Windows 11, or Windows 10 with current updates) | Not yet |
