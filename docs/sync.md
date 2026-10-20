@@ -10,7 +10,7 @@ On the first device, with the vault unlocked:
 vault sync on ~/OneDrive/vault.svault
 ```
 
-or in the desktop app: **Sync**, enter the file path, **Turn on**. The daemon writes the vault there and keeps it merged from then on.
+or in the desktop app: **Sync** under *Tools* in the sidebar, enter the file path, **Turn on**. The daemon writes the vault there and keeps it merged from then on.
 
 On each other device, before creating a vault there (with vaultd running and the folder synced):
 
@@ -21,7 +21,7 @@ vault pair --password                   # pair this client by unlocking it
 
 or in the desktop app, on the "No vault yet" screen: **Join**, then pair with the master password. Every device unlocks with the same slots (the password, the recovery code, any security key enrolled on any device). A TPM slot only works on the machine whose TPM sealed it.
 
-`vault sync` shows the state, `vault sync now` merges at once, `vault sync off` stops (the file in the folder stays). `vault status` and the app's status bar say when the last merge was and whether something is wrong.
+`vault sync` shows the state, `vault sync now` merges at once, `vault sync off` stops (the file in the folder stays). `vault status` and the status box at the top of the app's sidebar say when the last merge was and whether something is wrong.
 
 ## How it works
 

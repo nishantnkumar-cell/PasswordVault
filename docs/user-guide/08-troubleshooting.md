@@ -34,6 +34,9 @@ after `vault revoke`, replace your backups too.
 
 ## Move the vault to another computer
 
+If you use [sync](10-sync.md), install Secret Vault on the new computer
+and **join** the synced vault instead; there is nothing to copy. Otherwise:
+
 1. Install Secret Vault on the new computer ([chapter 1](01-getting-started.md)).
 2. Copy the vault file to the path in the table above (Linux and Windows
    use the same format, so it can go either way).

@@ -14,6 +14,39 @@ to work yet.
 
 ## Unreleased
 
+### Sync one vault across your devices
+
+- **Sync through a folder you already have.** Point Secret Vault at a file
+  in a folder that OneDrive, Google Drive, Dropbox, Syncthing or a network
+  share keeps in sync (`vault sync on PATH`, or **Sync** in the desktop
+  app's sidebar). Each device merges its changes with that file while it is
+  unlocked and before every save.
+- **Join from a new device** without copying files: on a device with no
+  vault, `vault sync on PATH` (or **Join** on the app's first screen), then
+  unlock with your master password.
+- **Edits on two devices are merged, not overwritten.** If both devices
+  change the same item, the newer edit wins and the other is kept as a
+  *(conflict)* copy. Deleted items stay deleted. Unlock methods added on any
+  device work on all of them, except a TPM, which belongs to one computer.
+- **Cloud conflict files** such as `vault (1).svault` are merged too and
+  listed as safe to delete.
+- **Revoking an unlock method** re-keys the vault on every device at its
+  next unlock.
+- The cloud service sees only the encrypted file; it gets no account
+  details or keys from Secret Vault.
+
+Platform notes: Linux and Windows work the same, and a vault synced between
+them is the same file. On Windows, mark the file *Always keep on this
+device* in OneDrive or Google Drive. macOS: not yet, because `vaultd` does
+not run there yet.
+
+Known gaps: merging happens only on an unlocked device. Every save uploads
+the whole file. Conflicts are decided by each device's clock. A device that
+is never unlocked again keeps the old key after a revoke. A vault saved by
+this version can't be opened by older builds of Secret Vault.
+
+How to use it: [Sync between devices](user-guide/10-sync.md).
+
 ### Secure notes, cards and identities
 
 - **Four kinds of item.** Besides logins, the vault now keeps **secure
