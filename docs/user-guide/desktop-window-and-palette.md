@@ -14,8 +14,9 @@ vault. The app never reads the vault file itself. If the app says it can't
 reach vaultd, start the service first:
 
 - **Linux:** `systemctl --user start vaultd`
-- **Windows:** start `vaultd.exe` (or sign out and back in if it starts at
-  login).
+- **Windows:** if you used the installer, vaultd starts by itself when you
+  sign in; otherwise start `vaultw.exe` (see
+  [installing on Windows](windows-install.md)).
 - **macOS:** not supported yet. The app and the daemon run on Linux and
   Windows today.
 
@@ -30,7 +31,7 @@ unlock in the **Unlock with** list, fill in what it asks for, and press
 | Method | What you need | Linux | Windows |
 | --- | --- | --- | --- |
 | Password | Your master password | Yes | Yes |
-| Security key | Your master password, then a touch on the key (and its PIN if it has one) | Yes | Only when `vaultd.exe` runs as administrator |
+| Security key | Your master password, then a touch on the key (and its PIN if it has one) | Yes | Yes (Windows shows its own window for the touch and PIN) |
 | This device (TPM) | Your master password and, if you set one, the TPM PIN | Yes | Not yet |
 | Recovery code | The code from your printed recovery sheet | Yes | Yes |
 
@@ -116,7 +117,7 @@ clipboard after 30 seconds, when the vault locks and when the app closes.
   can't mark them, so a clipboard manager may keep a copy even after the app
   clears the clipboard 30 seconds later. Turn off history in your clipboard
   manager, or exclude the app, if you use one.
-- **Unlock methods.** TPM unlock works on Linux only for now, and security
-  keys on Windows need vaultd running as administrator (see the table under
-  *Unlocking*).
+- **Unlock methods.** TPM unlock works on Linux only for now. Security keys
+  work on both; on Windows, Windows itself asks for the touch and the PIN in
+  its own window (see the table under *Unlocking*).
 - **macOS** is not supported yet.

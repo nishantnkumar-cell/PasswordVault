@@ -46,7 +46,8 @@ after `vault revoke`, replace your backups too.
 
 **"cannot reach vaultd ... Is it running?"**
 Start the daemon: `vaultd`, `systemctl --user start vaultd`, or
-`vaultd.exe` on Windows. If it runs as the Linux system user, set
+`vaultw.exe` on Windows (or sign out and back in, if it starts at sign-in).
+On Windows, `%LOCALAPPDATA%\vault\state\vaultd.log` says why it stopped. If it runs as the Linux system user, set
 `VAULT_SOCKET=/run/vault/$USER/vaultd.sock`.
 
 **"no vault; run `vault init`"**
@@ -75,7 +76,10 @@ After 3 wrong unlock attempts each failure doubles a wait, up to 5 minutes.
 Wait it out; restarting `vaultd` also clears it.
 
 **Security key not found or not responding**
-- Windows: run `vaultd.exe` as administrator.
+- Windows: the touch and PIN happen in Windows' own security key window,
+  which may open behind other windows; check the taskbar. On a Windows 10
+  build too old for Windows' security key service, vaultd needs to run as
+  administrator, or update Windows.
 - Linux: check that your user can open `/dev/hidraw*`; for the system-user
   setup, install `contrib/udev/70-vault-fido.rules`.
 - Run `cargo run -p vault-hw --example fido2-check` to test the key on its

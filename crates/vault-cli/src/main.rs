@@ -191,7 +191,12 @@ fn method(args: &[String]) -> UnlockMethod {
         }
     } else if args.iter().any(|a| a == "--fido2") {
         let password = secret("Password: ");
-        let pin = optional(secret("Security key PIN (Enter if the slot has none): "));
+        // Windows asks for the PIN in its own window.
+        let pin = if cfg!(windows) {
+            None
+        } else {
+            optional(secret("Security key PIN (Enter if the slot has none): "))
+        };
         eprintln!("Touch your security key...");
         UnlockMethod::Fido2 { password, pin }
     } else if args.iter().any(|a| a == "--tpm") {
@@ -560,7 +565,8 @@ fn main() {
                 "fido2" => {
                     let password = secret("Master password: ");
                     let require_uv = rest.iter().any(|a| a == "--uv");
-                    let pin = if require_uv {
+                    // Windows asks for the PIN in its own window.
+                    let pin = if require_uv && cfg!(not(windows)) {
                         Some(secret("Security key PIN: "))
                     } else {
                         None

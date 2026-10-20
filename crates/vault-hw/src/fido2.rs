@@ -9,7 +9,7 @@ use ctap_hid_fido2::fidokey::{GetAssertionArgsBuilder, MakeCredentialArgsBuilder
 use ctap_hid_fido2::{Cfg, FidoKeyHidFactory};
 use vault_core::HwKey;
 
-use super::{Fido2, HwResult};
+use super::{Fido2, HwResult, prf_salt};
 
 pub struct HidFido2;
 
@@ -53,14 +53,14 @@ impl Fido2 for HidFido2 {
         &self,
         rp_id: &str,
         cred: &[u8],
-        salt: &[u8; 32],
+        prf_input: &[u8; 32],
         pin: Option<&str>,
         require_uv: bool,
     ) -> HwResult<HwKey> {
         let dev =
             FidoKeyHidFactory::create(&Cfg::init()).map_err(|e| format!("no security key: {e}"))?;
         let ch = challenge();
-        let ext = [Gext::HmacSecret(Some(*salt))];
+        let ext = [Gext::HmacSecret(Some(prf_salt(prf_input)))];
         let mut b = GetAssertionArgsBuilder::new(rp_id, &ch)
             .credential_id(cred)
             .extensions(&ext);
