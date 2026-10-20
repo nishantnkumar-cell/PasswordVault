@@ -14,6 +14,42 @@ to work yet.
 
 ## Unreleased
 
+### vault-gpg: git, pass and mail with OpenPGP keys in the vault
+
+- **New program, `vault-gpg`.** Programs that run `gpg` can run
+  `vault-gpg` instead and use the OpenPGP keys in your vault. Signing and
+  decrypting still happen inside `vaultd`, with the usual approval window;
+  the secret key never leaves it.
+- **Sign git commits and tags with an OpenPGP key**
+  (`git config --global gpg.program vault-gpg`). GitHub and GitLab show
+  them as *Verified* once you add your public key there, and
+  `git log --show-signature` checks them locally.
+- **A `pass` password store** encrypted to a vault key: `pass init`,
+  `insert`, `show`, `generate`, `grep` and re-encrypting all work.
+- **NeoMutt and Mutt** can sign, encrypt, decrypt and check signatures, with
+  a ready-made command file in `contrib/neomutt/vault-gpg.rc`.
+- **Other people's public keys** can be imported with
+  `vault-gpg --import`, then used to encrypt to them and check their
+  signatures.
+- **Text signatures.** `vaultd` can now make text-mode signatures (gpg's
+  `--textmode`), which mail needs so a signature still checks after line
+  endings change in transit.
+
+Platform notes: Linux: git, pass and NeoMutt, tested with git 2.43, pass
+1.7.4 and GnuPG 2.4. Windows: the installer includes `vault-gpg.exe`, and
+git signing should work the same way, but it has only run in CI so far, not on a real
+machine; `pass` and NeoMutt are Unix programs. macOS: not yet, because
+`vaultd` does not run there yet.
+
+Known gaps: Evolution, KMail and Thunderbird with GnuPG keys still cannot
+use vault keys (they need GnuPG's agent services, not the `gpg` command).
+Clear-signed messages and password-only encryption are not supported. A
+message that is both signed and encrypted decrypts, but its inner
+signature is not checked. Checking signatures by your own vault keys needs
+the vault unlocked.
+
+How to use it: [Programs that call gpg](user-guide/09-gpg-programs.md).
+
 ### App icon: a keyhole on a red tile
 
 - **Secret Vault has its own icon.** A white keyhole on a signal-red tile

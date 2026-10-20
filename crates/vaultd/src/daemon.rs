@@ -942,9 +942,14 @@ impl Daemon {
                 let key = pgp::import(&key, passphrase.as_deref().map(|s| s.as_str()), confirm)?;
                 self.new_key_item(title, key)
             }
-            Request::PgpSign { id, data, armor } => {
+            Request::PgpSign {
+                id,
+                data,
+                armor,
+                text,
+            } => {
                 let (title, tsk, confirm) = self.pgp_key(&id)?;
-                let sig = pgp::sign(&tsk, &data, armor)?;
+                let sig = pgp::sign(&tsk, &data, armor, text)?;
                 self.needs_approval(confirm, &title, "sign data with OpenPGP");
                 Ok(Response::Bytes(sig))
             }

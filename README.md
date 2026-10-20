@@ -11,6 +11,7 @@ Status: v1 feature-complete on Linux, not yet audited. Do not trust it with real
 | `vault-ipc` | Wire protocol between the daemon and clients. |
 | `vaultd` | The daemon: storage, unlock, FIDO2 and TPM factors, socket server. |
 | `vault-cli` | The `vault` command. |
+| `vault-gpg` | A gpg-compatible front end, so git, pass and mail programs can use OpenPGP keys held in the vault. |
 | `vault-native-host` | Native messaging host for the browser extension. |
 | `extension/` | Browser autofill extension (Manifest V3): logins, cards and addresses. |
 
@@ -23,7 +24,7 @@ For the technical reference, start with [`docs/vaultd.md`](docs/vaultd.md), then
 - [`docs/format.md`](docs/format.md): vault file format, version 1.
 - [`docs/items.md`](docs/items.md): item types, TOTP and autofill origin policy.
 - [`docs/ssh.md`](docs/ssh.md): SSH keys in the vault, the ssh-agent and git commit signing.
-- [`docs/pgp.md`](docs/pgp.md): OpenPGP keys in the vault, classic and post-quantum.
+- [`docs/pgp.md`](docs/pgp.md): OpenPGP keys in the vault, classic and post-quantum, and the gpg-compatible front end.
 - [`docs/architecture-review.md`](docs/architecture-review.md): the review that produced brief Revision 2.
 
 ## Documentation for changes

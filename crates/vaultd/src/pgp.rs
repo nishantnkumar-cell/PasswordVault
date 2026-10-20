@@ -180,10 +180,16 @@ fn signer(k: &SignedSecretKey) -> &dyn SigningKey {
         .unwrap_or(&k.primary_key)
 }
 
-/// A detached signature over `data`.
-pub fn sign(tsk: &[u8], data: &[u8], armor: bool) -> R<Vec<u8>> {
+/// A detached signature over `data`. `text`: a text signature, which
+/// verifies whatever the line endings (LF or CRLF).
+pub fn sign(tsk: &[u8], data: &[u8], armor: bool, text: bool) -> R<Vec<u8>> {
     let k = secret(tsk)?;
-    let sig = DetachedSignature::sign_binary_data(
+    let make = if text {
+        DetachedSignature::sign_text_data
+    } else {
+        DetachedSignature::sign_binary_data
+    };
+    let sig = make(
         OsRng,
         &Box::new(signer(&k)),
         &Password::empty(),
@@ -336,7 +342,7 @@ mod tests {
             assert_eq!(&**decrypt(&bob, &ct).unwrap(), b"hello bob");
             assert!(decrypt(&alice, &ct).is_err());
 
-            let sig = sign(&alice, b"release", armor).unwrap();
+            let sig = sign(&alice, b"release", armor, false).unwrap();
             assert!(
                 verify(&[cert_b.clone(), cert_a.clone()], b"release", &sig)
                     .unwrap()
@@ -344,6 +350,12 @@ mod tests {
             );
             assert!(verify(std::slice::from_ref(&cert_a), b"tampered", &sig).is_err());
             assert!(verify(std::slice::from_ref(&cert_b), b"release", &sig).is_err());
+
+            // Text signatures ignore line endings; binary ones do not.
+            let text = sign(&alice, b"a\nb\n", armor, true).unwrap();
+            assert!(verify(std::slice::from_ref(&cert_a), b"a\r\nb\r\n", &text).is_ok());
+            let binary = sign(&alice, b"a\nb\n", armor, false).unwrap();
+            assert!(verify(std::slice::from_ref(&cert_a), b"a\r\nb\r\n", &binary).is_err());
         }
     }
 

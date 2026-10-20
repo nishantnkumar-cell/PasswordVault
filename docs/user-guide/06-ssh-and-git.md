@@ -125,6 +125,9 @@ off for those keys, or run the daemon in your session.
 
 ## Sign git commits
 
+This signs with an SSH key. To sign with an OpenPGP key instead (GitHub's
+"GPG key"), see [chapter 9](09-gpg-programs.md#2-sign-git-commits).
+
 1. Tell git to sign with SSH and which key to use:
 
    ```sh

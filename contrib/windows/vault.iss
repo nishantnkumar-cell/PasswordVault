@@ -61,6 +61,7 @@ Source: "{#BinDir}\vault.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#BinDir}\vault-gui.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#BinDir}\vault-prompt.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#BinDir}\vault-native-host.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#BinDir}\vault-gpg.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\LICENSE.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]

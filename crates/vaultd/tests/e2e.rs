@@ -1007,6 +1007,7 @@ fn pgp_keys_sign_encrypt_and_ask_first() {
             id: pq,
             data: b"v1.0".to_vec(),
             armor: true,
+            text: false,
         })
         .contains("declined")
     );
@@ -1015,6 +1016,7 @@ fn pgp_keys_sign_encrypt_and_ask_first() {
         id: pq,
         data: b"v1.0".to_vec(),
         armor: true,
+        text: false,
     }) else {
         panic!()
     };
