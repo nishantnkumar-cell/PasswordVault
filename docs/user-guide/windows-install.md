@@ -17,6 +17,7 @@ The examples use a Windows account called "Alex Example".
 | `vault.exe` | The `vault` command for PowerShell. |
 | `vault-prompt.exe` | The small window vaultd opens to ask you to approve a new app or browser. |
 | `vault-native-host.exe` | Connects the browser extension to vaultd. |
+| `vault-gpg.exe` | Lets git sign commits with the OpenPGP keys in your vault ([chapter 9](09-gpg-programs.md)). |
 
 Your vault itself lives in `%LOCALAPPDATA%\vault\vault.svault`, separate
 from the programs, so updating or removing the app never touches it.

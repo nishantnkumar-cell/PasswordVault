@@ -30,7 +30,8 @@ build tools, then in PowerShell:
     cargo build --release
 
 The programs are in `target\release\`: `vaultd.exe`, `vaultw.exe`,
-`vault.exe`, `vault-gui.exe`, `vault-prompt.exe`, `vault-native-host.exe`.
+`vault.exe`, `vault-gui.exe`, `vault-prompt.exe`, `vault-native-host.exe`,
+`vault-gpg.exe`.
 
 ## Run
 
