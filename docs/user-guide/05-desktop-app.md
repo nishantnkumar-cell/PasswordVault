@@ -28,11 +28,13 @@ This chapter covers setting up the app and each task step by step.
   `contrib/desktop/dev.passwordvault.app.desktop` to
   `~/.local/share/applications/` and make sure `vault-gui` is on your
   `PATH`.
-- **Windows:** run `target\release\vault-gui.exe`. Pin it to Start or the
+- **Windows:** the installer adds **Secret Vault** to the Start menu (see
+  [Installing and running on Windows](windows-install.md)). From a source
+  build, run `target\release\vault-gui.exe` and pin it to Start or the
   taskbar from its right-click menu.
 
 If the app says it cannot reach `vaultd`, start the daemon
-(`systemctl --user start vaultd` on Linux, `vaultd.exe` on Windows) and
+(`systemctl --user start vaultd` on Linux; on Windows run `vaultw.exe`, or sign out and back in) and
 press **Try again**.
 
 ## First run
@@ -62,8 +64,9 @@ The app keeps its own pairing, separate from the CLI's and the browser's.
 
 In the **Unlock with** list pick Password, Security key, This device (TPM)
 or Recovery code, fill in what it asks and press **Unlock** (or Enter). For a security key, touch it when it
-blinks. On Windows, TPM is listed but cannot work yet, and the security key
-works only when `vaultd` runs as administrator.
+blinks. On Windows, TPM is listed but cannot work yet, and for a security
+key Windows opens its own window for the touch and PIN (leave the PIN field
+empty).
 
 Lock with the **Lock** button or **Ctrl+L**. The vault also locks when idle,
 when the screen locks or the computer sleeps, or when another program locks

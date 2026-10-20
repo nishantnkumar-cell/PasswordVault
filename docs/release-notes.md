@@ -14,6 +14,44 @@ to work yet.
 
 ## Unreleased
 
+### Windows: installer, background start and security keys without admin
+
+- **Installer.** `SecretVault-Setup-<version>.exe` installs the daemon, the
+  desktop app, the `vault` command and the browser host. By default it
+  installs for you only, into `%LOCALAPPDATA%\Programs\Secret Vault`, and
+  needs no administrator rights. Choose *Install for all users* on its first
+  page to install into Program Files instead: Windows asks for an
+  administrator once, during setup, and never again.
+- **Starts at sign-in, with no window.** The installer adds a sign-in entry
+  that runs the new `vaultw.exe`, which starts vaultd in the background
+  without a console window. vaultd always runs as you, never as
+  administrator, even after an all-users install. Its messages go to
+  `%LOCALAPPDATA%\vault\state\vaultd.log`.
+- **Security keys without administrator rights.** vaultd now talks to
+  security keys through Windows' own WebAuthn service, so it no longer has
+  to run as administrator. Windows shows its own window for the touch and,
+  if the slot needs it, the key's PIN. A security key slot made on Linux
+  unlocks on Windows and the other way round. If your key has a PIN, use a
+  slot that asks for it (`--uv`): Windows always checks the PIN of such a
+  key, so touch-only slots can't work with it on Windows.
+- **Touch-only slots on keys with a PIN** (all systems). Many security keys
+  with a PIN set refuse to register a credential without it, so adding a
+  touch-only slot failed with `PIN_REQUIRED`. The `vault` command now asks
+  for the PIN (Enter if the key has none) and uses it only to register; you
+  still unlock that slot with a touch.
+- **No console windows.** The desktop app and the approval window no longer
+  open a console window behind them.
+- **Uninstall** from *Settings > Apps*. It stops vaultd and removes the
+  programs, the sign-in entry and the PATH entry, but keeps your vault file.
+
+Platform notes: Windows only; Linux keeps using the systemd unit and macOS is
+not supported yet. Security keys without administrator rights need Windows 11
+or an up-to-date Windows 10 (WebAuthn API version 4); on older builds vaultd
+falls back to direct USB access, which still needs administrator rights. The
+installer is not code-signed yet, so SmartScreen warns before running it.
+
+How to use it: [installing and running on Windows](user-guide/windows-install.md).
+
 ### Desktop app: new layout and command palette
 
 - **Three-column window.** A sidebar on the left holds the vault status,
@@ -35,8 +73,7 @@ to work yet.
   (1180 × 740).
 
 Platform notes: Linux and Windows. Ctrl K and Ctrl L become Cmd K and Cmd L
-on macOS once the app supports it. TPM unlock is Linux only, and security
-keys on Windows need vaultd running as administrator.
+on macOS once the app supports it. TPM unlock is Linux only.
 
 How to use it: [the desktop window and command palette](user-guide/desktop-window-and-palette.md).
 

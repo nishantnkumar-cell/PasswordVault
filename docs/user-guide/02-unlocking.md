@@ -7,7 +7,7 @@ and any one of them opens the vault.
 | Slot | What you need to unlock | Good for | Linux | Windows | macOS |
 |---|---|---|---|---|---|
 | `password` | The master password | Everyday use | Yes | Yes | Not yet |
-| `fido2` | Password **and** a FIDO2 security key (touch, optionally its PIN) | Protection if your password leaks | Yes | Daemon must run as administrator | Not yet |
+| `fido2` | Password **and** a FIDO2 security key (touch, optionally its PIN) | Protection if your password leaks | Yes | Yes | Not yet |
 | `tpm` | Password **and** this computer's TPM chip (optionally a TPM PIN) | Making a stolen copy of the vault file useless on another machine | Yes | Not yet | Not applicable |
 | `recovery` | The recovery code alone | When you forget the password or lose the key | Yes | Yes | Not yet |
 
@@ -40,9 +40,10 @@ something you *know*. A key that supports the `hmac-secret` extension is
 required; most current FIDO2 keys (YubiKey 5, SoloKey, Nitrokey 3, Google
 Titan v2 and similar) do.
 
-1. Plug in the key. On Windows, make sure `vaultd.exe` runs as
-   administrator. On Linux, your user needs access to `/dev/hidraw*`
-   (desktop distributions usually give it to the logged-in user).
+1. Plug in the key. On Linux, your user needs access to `/dev/hidraw*`
+   (desktop distributions usually give it to the logged-in user). On
+   Windows nothing is needed: vaultd uses Windows' own security key
+   service, without administrator rights.
 2. Run:
 
    ```sh
@@ -50,9 +51,15 @@ Titan v2 and similar) do.
    ```
 
    Add `--uv` if you want the key's PIN to be required too.
-3. Enter your master password (and the key's PIN with `--uv`).
+3. Enter your master password and the key's PIN. With `--uv` the PIN is
+   required; without it, press Enter if the key has no PIN. Many keys with
+   a PIN set want it to register any new credential, even one you will
+   later unlock with a touch alone. On Windows
+   the command doesn't ask for the PIN: Windows asks for it in its own
+   security key window.
 4. Touch the key when it blinks, **twice**: once to create the credential
-   and once to confirm it.
+   and once to confirm it. On Windows, its security key window tells you
+   when.
 5. The command test-unlocks the new slot before it reports success.
 
 From now on, `vault unlock --fido2` asks for the password, then the key.
@@ -61,8 +68,11 @@ required every time, remove the password slot afterwards (see below).
 
 To check a key before enrolling it, run
 `cargo run -p vault-hw --example fido2-check` from the source folder. It
-works on Linux, Windows (as administrator) and macOS, and prints PASS if
-the key gives the same secret every time.
+works on Linux, Windows and macOS, and prints PASS if the key gives the
+same secret every time. On Windows, add `-- --compare` and run it in an
+administrator terminal to also check that Windows' security key service and
+direct USB access give the same secret (they must, so a slot works on every
+system).
 
 ## Add the TPM (Linux)
 
@@ -147,9 +157,15 @@ slots but not revoke.
 
 ## Platform differences
 
-- **Windows:** no TPM or Windows Hello slot yet. Security keys work only
-  when `vaultd.exe` runs as administrator; using Windows' own WebAuthn
-  service instead is planned.
+- **Windows:** no TPM or Windows Hello slot yet. Security keys go through
+  Windows' own WebAuthn service, which needs no administrator rights and
+  asks for the touch and the PIN in its own window. On Windows 10 builds
+  too old for it, vaultd falls back to direct USB access, which needs
+  vaultd to run as administrator. A security key slot works on every
+  system: one added on Linux unlocks on Windows and the other way round.
+  One exception: if the key has a PIN, Windows always checks it, which
+  changes the key's secret, so on Windows only `--uv` slots work with such
+  a key. Use `--uv` for keys with a PIN if you use Windows.
 - **macOS:** the daemon is not ported yet.
 - **Linux:** when `vaultd` runs as the separate `vault` system user, install
   `contrib/udev/70-vault-fido.rules` so it can reach security keys.

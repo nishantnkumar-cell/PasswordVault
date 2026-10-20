@@ -76,6 +76,16 @@ Now go to [Create your vault](#create-your-vault).
 
 ## Windows
 
+### The easy way: the installer
+
+Download and run `SecretVault-Setup-<version>.exe`. "Install for me only"
+needs no administrator rights, and vaultd then starts by itself, with no
+window, every time you sign in. Follow
+[Installing and running on Windows](windows-install.md), then come back to
+[Create your vault](#create-your-vault).
+
+The rest of this section builds the programs from source instead.
+
 ### 1. Install the build tools
 
 1. Install [Git for Windows](https://git-scm.com/download/win).
@@ -92,30 +102,31 @@ cd PasswordVault
 cargo build --release
 ```
 
-The programs are in `target\release\`: `vaultd.exe`, `vault.exe`,
-`vault-gui.exe`, `vault-prompt.exe` and `vault-native-host.exe`. Add that
+The programs are in `target\release\`: `vaultd.exe`, `vaultw.exe`,
+`vault.exe`, `vault-gui.exe`, `vault-prompt.exe` and
+`vault-native-host.exe`. Add that
 folder to your `PATH`, or run them with their full path.
 
 ### 3. Start the daemon
 
-Run `target\release\vaultd.exe`. It stays open in its own console window;
-closing that window stops the daemon and the vault's keys go with it.
+Run `target\release\vaultw.exe`. It starts `vaultd.exe` in the background,
+with no window, and writes its messages to
+`%LOCALAPPDATA%\vault\state\vaultd.log`. (Running `vaultd.exe` directly
+keeps it in a console window instead; closing that window stops it.)
 
-To start it minimized every time you sign in, run this once in PowerShell
-from the `PasswordVault` folder:
+To start it every time you sign in, run this once in PowerShell from the
+`PasswordVault` folder. It is the same entry the installer adds:
 
 ```powershell
-$exe = (Resolve-Path target\release\vaultd.exe).Path
-$lnk = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\vaultd.lnk"
-$s = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk)
-$s.TargetPath = $exe; $s.WindowStyle = 7; $s.Save()
+$exe = (Resolve-Path target\release\vaultw.exe).Path
+Set-ItemProperty HKCU:\Software\Microsoft\Windows\CurrentVersion\Run "Secret Vault daemon" "`"$exe`""
 ```
 
-> **Security keys on Windows.** Windows lets only administrator programs
-> talk to FIDO2 security keys directly. If you want to unlock with a
-> security key, start `vaultd.exe` with "Run as administrator". Otherwise
-> use the password or the recovery code. TPM and Windows Hello unlock are
-> not available on Windows yet.
+> **Security keys on Windows.** vaultd uses Windows' own security key
+> service, so it does not need administrator rights; Windows shows its own
+> window for the touch and the PIN. This needs Windows 11 or Windows 10 with
+> current updates. TPM and Windows Hello unlock are not available on Windows
+> yet.
 
 ## macOS
 

@@ -9,6 +9,8 @@ pub mod fido2;
 pub mod soft;
 #[cfg(all(feature = "tpm", target_os = "linux"))]
 pub mod tpm;
+#[cfg(all(feature = "fido2", windows))]
+pub mod webauthn;
 
 pub type HwResult<T> = Result<T, String>;
 
@@ -16,13 +18,15 @@ pub type HwResult<T> = Result<T, String>;
 pub trait Fido2: Send {
     /// Create a non-discoverable credential with hmac-secret. Returns its ID.
     fn enroll(&self, rp_id: &str, pin: Option<&str>, require_uv: bool) -> HwResult<Vec<u8>>;
-    /// hmac-secret output for `salt`. UV is performed iff `require_uv`, which
-    /// selects the authenticator's CredRandomWithUV or WithoutUV.
+    /// hmac-secret output for the salt `prf_salt(prf_input)`, the WebAuthn PRF
+    /// construction (Windows' WebAuthn API applies it itself). UV is performed
+    /// iff `require_uv`, which selects the authenticator's CredRandomWithUV or
+    /// WithoutUV.
     fn hmac_secret(
         &self,
         rp_id: &str,
         credential_id: &[u8],
-        salt: &[u8; 32],
+        prf_input: &[u8; 32],
         pin: Option<&str>,
         require_uv: bool,
     ) -> HwResult<HwKey>;
@@ -47,7 +51,7 @@ impl Hardware {
     pub fn system() -> Hardware {
         Hardware {
             #[cfg(feature = "fido2")]
-            fido2: Some(Box::new(fido2::HidFido2)),
+            fido2: Some(system_fido2()),
             #[cfg(not(feature = "fido2"))]
             fido2: None,
             #[cfg(all(feature = "tpm", target_os = "linux"))]
@@ -56,6 +60,19 @@ impl Hardware {
             tpm: None,
         }
     }
+}
+
+/// The security key backend for this system. On Windows that is the WebAuthn
+/// API (webauthn.dll), which needs no administrator rights, when it is new
+/// enough for hmac-secret; otherwise, or with `VAULT_FIDO2=hid`, direct USB
+/// HID, which Windows allows only to administrators.
+#[cfg(feature = "fido2")]
+pub fn system_fido2() -> Box<dyn Fido2> {
+    #[cfg(windows)]
+    if std::env::var_os("VAULT_FIDO2").is_none_or(|v| v != "hid") && webauthn::available() {
+        return Box::new(webauthn::WinFido2);
+    }
+    Box::new(fido2::HidFido2)
 }
 
 /// The hmac-secret salt for a slot: the WebAuthn PRF construction (format.md 4.2).
