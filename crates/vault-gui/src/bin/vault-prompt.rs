@@ -1,8 +1,10 @@
-//! `vault-prompt`: the approval window `vaultd` opens to pair a client or to
-//! fill a card. Exit status 0 means Allow, 1 Deny (or no answer in time), 2
-//! the window could not open.
+//! `vault-prompt`: the approval window `vaultd` opens to pair a client, fill
+//! a card or use a key. Exit status 0 means Allow, 1 Deny (or no answer in
+//! time), 2 the window could not open.
 
 #![forbid(unsafe_code)]
+// A window only: no console behind it when vaultd runs in the background.
+#![windows_subsystem = "windows"]
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -29,10 +31,12 @@ fn main() {
     });
     let answer = Rc::new(Cell::new(None));
     let a = answer.clone();
+    let title = request.title();
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title(request.title())
+            .with_title(title)
             .with_app_id("dev.passwordvault.prompt")
+            .with_icon(vault_gui::window_icon())
             .with_inner_size([460.0, 300.0])
             .with_resizable(false)
             .with_always_on_top(),

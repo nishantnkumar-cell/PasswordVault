@@ -1,5 +1,5 @@
 use vault_core::generator::{Charset, generate_passphrase, generate_password};
-use vault_core::item::{ItemData, ItemKind, UrlEntry};
+use vault_core::item::{ItemData, ItemKind, KeyData, UrlEntry};
 use vault_core::origin::{MatchMode, Origin, may_fill};
 use vault_core::totp::{TotpAlgorithm, TotpConfig};
 use vault_core::*;
@@ -203,4 +203,36 @@ fn items_round_trip_through_a_vault() {
     let back = ItemData::from_bytes(&v2.get_item(&id).unwrap()).unwrap();
     assert!(back == item);
     assert!(ItemData::from_bytes(&[9, 9]).is_err());
+}
+
+#[test]
+fn items_are_written_as_schema_3() {
+    // Reading schemas 1 and 2 is covered by the unit tests in `item.rs`.
+    let mut item = ItemData::default();
+    item.title = "Now".into();
+    let v3 = item.to_bytes();
+    assert_eq!(v3[0], 3);
+    assert!(ItemData::from_bytes(&v3).unwrap() == item);
+    // Older tags on schema 3 bytes are rejected, and so is an unknown tag.
+    for tag in [1, 2, 4] {
+        let mut wrong = v3.to_vec();
+        wrong[0] = tag;
+        assert!(ItemData::from_bytes(&wrong).is_err(), "tag {tag}");
+    }
+}
+
+#[test]
+fn key_items_round_trip() {
+    let mut item = ItemData::default();
+    item.title = "laptop".into();
+    item.key = Some(KeyData::Ssh {
+        openssh: "-----BEGIN OPENSSH PRIVATE KEY-----\n...".into(),
+        confirm: true,
+    });
+    let back = ItemData::from_bytes(&item.to_bytes()).unwrap();
+    assert!(back == item);
+    let mut k = back.key.clone().unwrap();
+    assert!(k.confirm());
+    k.set_confirm(false);
+    assert!(!k.confirm());
 }

@@ -1,5 +1,6 @@
-//! The approval window `vaultd` opens, to pair a client or to release a card
-//! into a web page: who is asking, what they would get, Deny or Allow. Deny
+//! The approval window `vaultd` opens: a program asking to pair, to fill a
+//! card into a web page, or to use a key held in the vault (an SSH login, a
+//! git signature). Who is asking, what they would get, Deny or Allow. Deny
 //! has the focus, Escape denies, and the window denies by itself after a
 //! minute.
 
@@ -13,6 +14,7 @@ pub const TIMEOUT: Duration = Duration::from_secs(60);
 /// What the daemon passed on the command line.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Request {
+    /// The client's name; empty for a key use, which names no client.
     pub client: String,
     pub ask: Ask,
     pub program: Option<String>,
@@ -25,17 +27,23 @@ pub enum Ask {
     Pair { autofill: bool },
     /// Fill the described card into a page on `origin`.
     FillCard { card: String, origin: String },
+    /// Use the key titled `key`, for `purpose`.
+    Use { key: String, purpose: String },
 }
 
 impl Request {
-    /// Parse `--client NAME --scope full|autofill [--program PATH]`, or
-    /// `--client NAME --fill-card DESCRIPTION --origin ORIGIN [--program PATH]`.
+    /// Parse `--client NAME --scope full|autofill [--program PATH]`,
+    /// `--client NAME --fill-card DESCRIPTION --origin ORIGIN [--program PATH]`
+    /// or `--use --key TITLE --purpose TEXT [--program PATH]`.
     pub fn from_args(args: &[String]) -> Result<Request, String> {
         let mut client = None;
         let mut scope = None;
         let mut card = None;
         let mut origin = None;
         let mut program = None;
+        let mut key = None;
+        let mut purpose = None;
+        let mut use_key = false;
         let mut it = args.iter();
         while let Some(a) = it.next() {
             let mut val = || it.next().cloned().ok_or(format!("{a} needs a value"));
@@ -45,8 +53,27 @@ impl Request {
                 "--fill-card" => card = Some(val()?),
                 "--origin" => origin = Some(val()?),
                 "--program" => program = Some(val()?),
+                "--use" => use_key = true,
+                "--key" => key = Some(val()?),
+                "--purpose" => purpose = Some(val()?),
                 _ => return Err(format!("unknown argument {a}")),
             }
+        }
+        if use_key {
+            if client.is_some() || scope.is_some() || card.is_some() || origin.is_some() {
+                return Err("--use takes only --key, --purpose and --program".into());
+            }
+            return Ok(Request {
+                client: String::new(),
+                ask: Ask::Use {
+                    key: key.ok_or("--key is required")?,
+                    purpose: purpose.ok_or("--purpose is required")?,
+                },
+                program,
+            });
+        }
+        if key.is_some() || purpose.is_some() {
+            return Err("--key and --purpose need --use".into());
         }
         let ask = match (scope.as_deref(), card, origin) {
             (Some("autofill"), None, None) => Ask::Pair { autofill: true },
@@ -69,6 +96,7 @@ impl Request {
         match self.ask {
             Ask::Pair { .. } => "Secret Vault: approve pairing",
             Ask::FillCard { .. } => "Secret Vault: fill a card?",
+            Ask::Use { .. } => "Secret Vault: approve key use",
         }
     }
 }
@@ -126,10 +154,16 @@ impl Prompt {
                         r.client
                     ));
                 }
+                Ask::Use { key, purpose } => {
+                    ui.heading(format!("Use the key \u{201c}{key}\u{201d}?"));
+                    ui.add_space(8.0);
+                    ui.label(format!("To {purpose}."));
+                }
             }
+            let program = &r.program;
             ui.add_space(8.0);
             ui.label("Program asking:");
-            ui.label(RichText::new(r.program.as_deref().unwrap_or("unknown")).monospace());
+            ui.label(RichText::new(program.as_deref().unwrap_or("unknown")).monospace());
             ui.add_space(8.0);
             ui.label(match r.ask {
                 Ask::Pair { .. } => {
@@ -138,6 +172,7 @@ impl Prompt {
                 Ask::FillCard { .. } => {
                     "If you didn't just ask to fill a card on this site, choose Deny."
                 }
+                Ask::Use { .. } => "If you didn't just start this, choose Deny.",
             });
             ui.add_space(12.0);
             ui.horizontal(|ui| {
@@ -190,6 +225,19 @@ mod tests {
                 origin: "https://shop.example".into()
             }
         );
+        assert_eq!(
+            Request::from_args(&args(
+                "--use --key laptop --purpose sign --program /usr/bin/ssh"
+            )),
+            Ok(Request {
+                client: String::new(),
+                ask: Ask::Use {
+                    key: "laptop".into(),
+                    purpose: "sign".into(),
+                },
+                program: Some("/usr/bin/ssh".into()),
+            })
+        );
         assert!(Request::from_args(&args("--client x --fill-card Travel")).is_err());
         assert!(
             Request::from_args(&args(
@@ -197,6 +245,9 @@ mod tests {
             ))
             .is_err()
         );
+        assert!(Request::from_args(&args("--use --key laptop")).is_err());
+        assert!(Request::from_args(&args("--use --key k --purpose p --scope full")).is_err());
+        assert!(Request::from_args(&args("--client x --scope full --key k")).is_err());
         assert!(Request::from_args(&args("--client x --scope root")).is_err());
         assert!(Request::from_args(&args("--scope full")).is_err());
         assert!(Request::from_args(&args("--client x --scope full --evil")).is_err());

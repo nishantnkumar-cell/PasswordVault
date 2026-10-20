@@ -34,7 +34,11 @@ fn start_daemon(dir: &Path, idle: Duration) -> (PathBuf, server::Shared) {
     let sock = endpoint(dir);
     let l = server::bind(&sock, false).unwrap();
     let d2 = d.clone();
-    std::thread::spawn(move || server::serve(l, d2, server::current_user()));
+    std::thread::spawn(move || {
+        server::serve(l, server::current_user(), move |c, pid| {
+            let _ = server::connection(c, &d2, pid);
+        })
+    });
     let d3 = d.clone();
     std::thread::spawn(move || server::idle_locker(d3));
     (sock, d)
@@ -78,7 +82,7 @@ fn window(sock: PathBuf, token: PathBuf, clip: FakeClip) -> Harness<'static, App
         || {},
     );
     Harness::builder()
-        .with_size([920.0, 1000.0])
+        .with_size([1180.0, 1000.0])
         .build_ui_state(|ui, app: &mut App| app.show(ui), app)
 }
 
@@ -299,7 +303,7 @@ fn import_totp_edit_delete_and_slots() {
     assert!(h.query_by_label_contains("Imported 1 items").is_some());
 
     // Add a TOTP seed (RFC 6238's test key) by editing the item.
-    h.get_by_role_and_label(Role::Button, "Items").click();
+    h.get_by_role_and_label(Role::Button, "All items").click();
     h.step();
     h.get_by_label_contains("Shop").click();
     h.step();
@@ -430,6 +434,99 @@ fn cards_identities_and_notes() {
     h.step();
     assert!(h.query_by_label_contains("Home\nAda").is_none());
     assert!(h.query_by_label_contains("Travel\nVisa").is_some());
+}
+
+#[test]
+fn command_palette_finds_copies_and_locks() {
+    use eframe::egui::{Key, Modifiers};
+    let dir = tempdir();
+    let clip = FakeClip::default();
+    let mut h = created(&dir, Duration::from_secs(300), clip.clone());
+    click(&mut h, "New item");
+    click(&mut h, "Login");
+    type_into(&mut h, Role::TextInput, "Title", "Example");
+    type_into(&mut h, Role::TextInput, "Username", "alex");
+    click(&mut h, "Generate");
+    settle(&mut h);
+    click(&mut h, "Save");
+    settle(&mut h);
+    click(&mut h, "Copy password");
+    let password = clip.0.lock().unwrap().clone().expect("copied");
+    *clip.0.lock().unwrap() = None;
+
+    // Ctrl K, type, Enter: the best match's password is copied.
+    h.key_press_modifiers(Modifiers::COMMAND, Key::K);
+    h.step();
+    h.step();
+    type_into(&mut h, Role::TextInput, "Find an item or action", "exa");
+    h.step();
+    assert!(
+        h.query_by_role_and_label(Role::Button, "Copy username for Example")
+            .is_some()
+    );
+    h.key_press(Key::Enter);
+    h.step();
+    settle(&mut h);
+    assert_eq!(clip.0.lock().unwrap().as_deref(), Some(password.as_str()));
+    assert!(
+        h.query_by_label("Find an item or action").is_none(),
+        "closed"
+    );
+
+    // Arrow keys pick another row; Escape closes without running anything.
+    h.key_press_modifiers(Modifiers::COMMAND, Key::K);
+    h.step();
+    h.step();
+    type_into(&mut h, Role::TextInput, "Find an item or action", "exa");
+    h.step();
+    h.key_press(Key::ArrowDown);
+    h.key_press(Key::ArrowDown);
+    h.step();
+    h.key_press(Key::Enter);
+    h.step();
+    settle(&mut h);
+    assert_eq!(clip.0.lock().unwrap().as_deref(), Some("alex"));
+    h.key_press_modifiers(Modifiers::COMMAND, Key::K);
+    h.step();
+    h.key_press(Key::Escape);
+    h.step();
+    assert!(h.query_by_label("Find an item or action").is_none());
+
+    // Vault actions run from the palette too.
+    h.key_press_modifiers(Modifiers::COMMAND, Key::K);
+    h.step();
+    h.step();
+    type_into(&mut h, Role::TextInput, "Find an item or action", "lock");
+    h.step();
+    click(&mut h, "Lock now");
+    wait_for(&mut h, Screen::Locked);
+}
+
+#[test]
+fn sidebar_filters_the_list() {
+    let dir = tempdir();
+    let mut h = created(&dir, Duration::from_secs(300), FakeClip::default());
+    for (title, totp) in [
+        ("Plain", None),
+        ("Coded", Some("GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ")),
+    ] {
+        click(&mut h, "New item");
+        click(&mut h, "Login");
+        type_into(&mut h, Role::TextInput, "Title", title);
+        if let Some(seed) = totp {
+            type_into(&mut h, Role::PasswordInput, "One-time codes", seed);
+        }
+        click(&mut h, "Save");
+        settle(&mut h);
+    }
+    let row = |h: &Harness<'_, App>, label: &str| {
+        h.query_by_role_and_label(Role::Button, label).is_some()
+    };
+    assert!(row(&h, "Plain") && row(&h, "Coded 2FA"));
+    click(&mut h, "One-time codes");
+    assert!(!row(&h, "Plain") && row(&h, "Coded 2FA"));
+    click(&mut h, "All items");
+    assert!(row(&h, "Plain"));
 }
 
 #[test]

@@ -9,7 +9,7 @@ use ctap_hid_fido2::fidokey::{GetAssertionArgsBuilder, MakeCredentialArgsBuilder
 use ctap_hid_fido2::{Cfg, FidoKeyHidFactory};
 use vault_core::HwKey;
 
-use super::{Fido2, HwResult};
+use super::{Fido2, HwResult, prf_salt};
 
 pub struct HidFido2;
 
@@ -31,14 +31,22 @@ impl Fido2 for HidFido2 {
         let ch = challenge();
         let ext = [Mext::HmacSecret(Some(true))];
         let mut b = MakeCredentialArgsBuilder::new(rp_id, &ch).extensions(&ext);
+        // A key with a PIN set may require it to register even a touch-only
+        // credential (CTAP 2.1 without makeCredUvNotRqd). The PIN then only
+        // gates registration; the slot's secret is still the without-UV one.
         b = match (require_uv, pin) {
-            (true, Some(p)) => b.pin(p),
+            (_, Some(p)) => b.pin(p),
             (true, None) => return Err("this slot requires the security key PIN".into()),
-            (false, _) => b.without_pin_and_uv(),
+            (false, None) => b.without_pin_and_uv(),
         };
-        let att = dev
-            .make_credential_with_args(&b.build())
-            .map_err(|e| format!("registration failed: {e}"))?;
+        let att = dev.make_credential_with_args(&b.build()).map_err(|e| {
+            let e = e.to_string();
+            if e.contains("PIN_REQUIRED") {
+                "this security key needs its PIN to register a credential; give the PIN".into()
+            } else {
+                format!("registration failed: {e}")
+            }
+        })?;
         if !att
             .extensions
             .iter()
@@ -53,14 +61,14 @@ impl Fido2 for HidFido2 {
         &self,
         rp_id: &str,
         cred: &[u8],
-        salt: &[u8; 32],
+        prf_input: &[u8; 32],
         pin: Option<&str>,
         require_uv: bool,
     ) -> HwResult<HwKey> {
         let dev =
             FidoKeyHidFactory::create(&Cfg::init()).map_err(|e| format!("no security key: {e}"))?;
         let ch = challenge();
-        let ext = [Gext::HmacSecret(Some(*salt))];
+        let ext = [Gext::HmacSecret(Some(prf_salt(prf_input)))];
         let mut b = GetAssertionArgsBuilder::new(rp_id, &ch)
             .credential_id(cred)
             .extensions(&ext);
