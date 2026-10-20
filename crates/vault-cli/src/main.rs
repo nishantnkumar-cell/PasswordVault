@@ -565,11 +565,14 @@ fn main() {
                 "fido2" => {
                     let password = secret("Master password: ");
                     let require_uv = rest.iter().any(|a| a == "--uv");
-                    // Windows asks for the PIN in its own window.
-                    let pin = if require_uv && cfg!(not(windows)) {
+                    // Windows asks for the PIN in its own window. Elsewhere a
+                    // key with a PIN set may want it even for a touch-only slot.
+                    let pin = if cfg!(windows) {
+                        None
+                    } else if require_uv {
                         Some(secret("Security key PIN: "))
                     } else {
-                        None
+                        optional(secret("Security key PIN (Enter if the key has none): "))
                     };
                     eprintln!(
                         "Touch your security key (twice: once to create, once to confirm)..."

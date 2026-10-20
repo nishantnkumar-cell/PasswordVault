@@ -51,7 +51,10 @@ Titan v2 and similar) do.
    ```
 
    Add `--uv` if you want the key's PIN to be required too.
-3. Enter your master password (and the key's PIN with `--uv`). On Windows
+3. Enter your master password and the key's PIN. With `--uv` the PIN is
+   required; without it, press Enter if the key has no PIN. Many keys with
+   a PIN set want it to register any new credential, even one you will
+   later unlock with a touch alone. On Windows
    the command doesn't ask for the PIN: Windows asks for it in its own
    security key window.
 4. Touch the key when it blinks, **twice**: once to create the credential

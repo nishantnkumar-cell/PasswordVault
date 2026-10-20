@@ -32,6 +32,11 @@ to work yet.
   to run as administrator. Windows shows its own window for the touch and,
   if the slot needs it, the key's PIN. A security key slot made on Linux
   unlocks on Windows and the other way round.
+- **Touch-only slots on keys with a PIN** (all systems). Many security keys
+  with a PIN set refuse to register a credential without it, so adding a
+  touch-only slot failed with `PIN_REQUIRED`. The `vault` command now asks
+  for the PIN (Enter if the key has none) and uses it only to register; you
+  still unlock that slot with a touch.
 - **No console windows.** The desktop app and the approval window no longer
   open a console window behind them.
 - **Uninstall** from *Settings > Apps*. It stops vaultd and removes the

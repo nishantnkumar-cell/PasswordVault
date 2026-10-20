@@ -31,14 +31,22 @@ impl Fido2 for HidFido2 {
         let ch = challenge();
         let ext = [Mext::HmacSecret(Some(true))];
         let mut b = MakeCredentialArgsBuilder::new(rp_id, &ch).extensions(&ext);
+        // A key with a PIN set may require it to register even a touch-only
+        // credential (CTAP 2.1 without makeCredUvNotRqd). The PIN then only
+        // gates registration; the slot's secret is still the without-UV one.
         b = match (require_uv, pin) {
-            (true, Some(p)) => b.pin(p),
+            (_, Some(p)) => b.pin(p),
             (true, None) => return Err("this slot requires the security key PIN".into()),
-            (false, _) => b.without_pin_and_uv(),
+            (false, None) => b.without_pin_and_uv(),
         };
-        let att = dev
-            .make_credential_with_args(&b.build())
-            .map_err(|e| format!("registration failed: {e}"))?;
+        let att = dev.make_credential_with_args(&b.build()).map_err(|e| {
+            let e = e.to_string();
+            if e.contains("PIN_REQUIRED") {
+                "this security key needs its PIN to register a credential; give the PIN".into()
+            } else {
+                format!("registration failed: {e}")
+            }
+        })?;
         if !att
             .extensions
             .iter()

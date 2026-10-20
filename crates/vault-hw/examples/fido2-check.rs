@@ -18,6 +18,8 @@ use vault_hw::Fido2;
 
 const RP: &str = "vault-check.local";
 
+/// `pin` is given to registration in both modes (a key with a PIN set may
+/// require it there); hmac-secret uses it only with `uv`.
 fn check(dev: &dyn Fido2, pin: Option<&str>, uv: bool) -> Result<(), String> {
     let mode = if uv { "with PIN" } else { "touch only" };
     println!("[{mode}] creating a credential: touch the key...");
@@ -53,12 +55,9 @@ fn main() {
     let pin = rpassword::prompt_password("Security key PIN (Enter to skip the PIN test): ")
         .unwrap_or_default();
     let dev = vault_hw::system_fido2();
-    let touch = check(dev.as_ref(), None, false);
-    let with_pin = if pin.is_empty() {
-        None
-    } else {
-        Some(check(dev.as_ref(), Some(&pin), true))
-    };
+    let pin = (!pin.is_empty()).then_some(pin);
+    let touch = check(dev.as_ref(), pin.as_deref(), false);
+    let with_pin = pin.as_deref().map(|p| check(dev.as_ref(), Some(p), true));
     match (&touch, &with_pin) {
         (Ok(_), None) => {
             println!("\nPASS (touch only). Run again with a PIN to test the PIN mode too.")
