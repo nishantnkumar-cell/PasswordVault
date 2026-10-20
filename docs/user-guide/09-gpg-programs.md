@@ -42,8 +42,10 @@ vault pgp new me 'Alex Example <alex@example.com>'
 cargo install --path crates/vault-gpg
 ```
 
-**Windows:** `cargo build --release` also builds `target\release\vault-gpg.exe`.
-Keep it in the same folder as `vault.exe`, on your `PATH`.
+**Windows:** the installer ([installing on Windows](windows-install.md))
+puts `vault-gpg.exe` next to `vault.exe`, already on your `PATH`. If you
+build from source instead, `cargo build --release` makes
+`target\release\vault-gpg.exe`; keep it in the same folder as `vault.exe`.
 
 `vault-gpg` uses the same pairing as the `vault` command (the token in
 `~/.config/vault/token`, or `%APPDATA%\vault\token` on Windows), so there is

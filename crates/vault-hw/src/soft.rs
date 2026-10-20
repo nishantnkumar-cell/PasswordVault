@@ -29,7 +29,7 @@ impl Fido2 for SoftFido2 {
         &self,
         rp_id: &str,
         cred: &[u8],
-        salt: &[u8; 32],
+        prf_input: &[u8; 32],
         pin: Option<&str>,
         require_uv: bool,
     ) -> HwResult<HwKey> {
@@ -41,7 +41,7 @@ impl Fido2 for SoftFido2 {
             .chain_update(rp_id)
             .chain_update(cred)
             .chain_update([require_uv as u8])
-            .chain_update(salt)
+            .chain_update(prf_input)
             .finalize();
         Ok(HwKey::new(d.into()))
     }

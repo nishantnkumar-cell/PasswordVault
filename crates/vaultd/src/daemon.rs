@@ -18,7 +18,7 @@ use vault_ipc::{
 use zeroize::Zeroizing;
 
 use crate::approve::{Approver, PairPrompt};
-use crate::hw::{Hardware, prf_salt};
+use crate::hw::Hardware;
 use crate::store::Store;
 use crate::{pgp, ssh};
 
@@ -491,7 +491,7 @@ impl Daemon {
                 let hw = dev.hmac_secret(
                     rp_id,
                     credential_id,
-                    &prf_salt(prf_input),
+                    prf_input,
                     pin.as_deref().map(|s| s.as_str()),
                     *require_uv,
                 )?;
@@ -631,13 +631,7 @@ impl Daemon {
                 let credential_id = dev.enroll(RP_ID, pin, require_uv)?;
                 let mut prf_input = [0u8; 32];
                 rng.fill(&mut prf_input).map_err(e)?;
-                let hw = dev.hmac_secret(
-                    RP_ID,
-                    &credential_id,
-                    &prf_salt(&prf_input),
-                    pin,
-                    require_uv,
-                )?;
+                let hw = dev.hmac_secret(RP_ID, &credential_id, &prf_input, pin, require_uv)?;
                 let factor = Factor::PasswordFido2 {
                     credential_id,
                     rp_id: RP_ID.into(),

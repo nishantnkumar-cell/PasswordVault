@@ -2,6 +2,8 @@
 //! 0 means Allow, 1 Deny (or no answer in time), 2 the window could not open.
 
 #![forbid(unsafe_code)]
+// A window only: no console behind it when vaultd runs in the background.
+#![windows_subsystem = "windows"]
 
 use std::cell::Cell;
 use std::rc::Rc;

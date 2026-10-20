@@ -1,6 +1,8 @@
 //! `vault-gui`: desktop app for `vaultd`.
 
 #![forbid(unsafe_code)]
+// No console window behind the app in release builds (debug builds keep it for logs).
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use eframe::egui;
 use vault_gui::{App, Paths, SystemClip};
