@@ -419,6 +419,10 @@ fn cards_identities_and_notes() {
         .find(|i| i.title == "Wifi")
         .unwrap();
     assert_eq!((note.kind, note.subtitle.as_str()), (ItemKind::Note, ""));
+    // Its text is hidden until shown.
+    assert!(h.query_by_label("door code").is_none());
+    click(&mut h, "Show");
+    assert!(h.query_by_label("door code").is_some());
 
     // The type filter.
     h.get_by_role_and_label(Role::Button, "Cards").click();
