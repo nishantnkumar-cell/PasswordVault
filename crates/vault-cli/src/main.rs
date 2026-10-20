@@ -10,8 +10,9 @@ use vault_core::item::{ItemData, UrlEntry};
 use vault_core::origin::MatchMode;
 use vault_core::totp::TotpConfig;
 use vault_ipc::{
-    ClientScope, ClientToken, Envelope, GenerateOptions, ImportFormat, ItemSummary, Request,
-    Response, Secret, SlotInfo, UnlockMethod, hex, local, parse_id, read_frame, write_frame,
+    ClientScope, ClientToken, Envelope, GenerateOptions, ImportFormat, ItemSummary, KeyKind,
+    Request, Response, Secret, SlotInfo, UnlockMethod, hex, local, parse_id, read_frame,
+    write_frame,
 };
 use zeroize::Zeroizing;
 
@@ -39,6 +40,15 @@ ITEMS                          ID may be any unique prefix of an item ID
   find ORIGIN                  items that may be filled on ORIGIN, e.g. https://example.com
   gen [--length N] [--no-symbols] [--no-ambiguous]
   import bitwarden|csv FILE    import an unencrypted export (delete the file afterwards)
+
+SSH KEYS                       keys stay in vaultd; ssh and git use them through its agent
+  ssh new TITLE [--ecdsa] [--no-confirm]  generate a key (Ed25519 unless --ecdsa)
+  ssh import TITLE FILE [--no-confirm]    store an OpenSSH private key (asks its passphrase)
+  ssh ls                       list SSH keys
+  ssh pub ID                   print the public key, for authorized_keys or GitHub
+  ssh confirm ID on|off        ask before each use (on by default)
+  ssh export ID [METHOD]       print the private key after proving a factor again
+  ssh agent                    print the line that points SSH_AUTH_SOCK at vaultd
 
 KEYSLOTS
   slots                        list keyslots
@@ -398,8 +408,9 @@ fn main() {
         "ls" => {
             for i in items(&mut Client::connect()) {
                 let totp = if i.has_totp { "  [totp]" } else { "" };
+                let key = if i.key.is_some() { "  [key]" } else { "" };
                 println!(
-                    "{}  {:<28} {:<24} {}{totp}",
+                    "{}  {:<28} {:<24} {}{totp}{key}",
                     short(&i.id),
                     i.title,
                     i.username,
@@ -610,6 +621,142 @@ fn main() {
             }
             println!("Copies of the old file can still be opened with the old factors.");
         }
+        "ssh" => ssh(rest),
         _ => die(format!("unknown command {cmd}; see `vault help`")),
     }
+}
+
+/// `vault ssh ...`.
+fn ssh(args: &[String]) {
+    let sub = args.first().map(String::as_str).unwrap_or("ls");
+    let rest = args.get(1..).unwrap_or_default();
+    let confirm = !rest.iter().any(|a| a == "--no-confirm");
+    let key_id = |c: &mut Client, s: &str| {
+        resolve(
+            items(c)
+                .into_iter()
+                .filter(|i| i.key.is_some())
+                .map(|i| (i.id, ())),
+            s,
+        )
+        .0
+    };
+    match sub {
+        "new" => {
+            let title = positional(rest, 0, "TITLE");
+            let kind = if rest.iter().any(|a| a == "--ecdsa") {
+                KeyKind::SshEcdsaP256
+            } else {
+                KeyKind::SshEd25519
+            };
+            let mut c = Client::connect();
+            let Response::ItemSaved { id } = c.call(Request::GenerateKey {
+                title,
+                kind,
+                confirm,
+            }) else {
+                die("unexpected response")
+            };
+            print_public(&mut c, id);
+        }
+        "import" => {
+            let title = positional(rest, 0, "TITLE");
+            let file = positional(rest, 1, "FILE");
+            let private = Zeroizing::new(
+                std::fs::read_to_string(&file).unwrap_or_else(|e| die(format!("{file}: {e}"))),
+            );
+            let passphrase = if private.contains("BEGIN OPENSSH PRIVATE KEY") && encrypted(&private)
+            {
+                Some(secret("Key passphrase: "))
+            } else {
+                None
+            };
+            let mut c = Client::connect();
+            let Response::ItemSaved { id } = c.call(Request::ImportSshKey {
+                title,
+                private,
+                passphrase,
+                confirm,
+            }) else {
+                die("unexpected response")
+            };
+            print_public(&mut c, id);
+            eprintln!("Stored. You can delete {file} once ssh works through the vault.");
+        }
+        "ls" => {
+            for i in items(&mut Client::connect()) {
+                if let Some(k) = &i.key {
+                    println!("{}  {:<28} {k}", short(&i.id), i.title);
+                }
+            }
+        }
+        "pub" => {
+            let mut c = Client::connect();
+            let id = key_id(&mut c, &positional(rest, 0, "ID"));
+            print_public(&mut c, id);
+        }
+        "confirm" => {
+            let mut c = Client::connect();
+            let id = key_id(&mut c, &positional(rest, 0, "ID"));
+            let on = match positional(rest, 1, "on|off").as_str() {
+                "on" => true,
+                "off" => false,
+                _ => die("say on or off"),
+            };
+            c.call(Request::SetKeyConfirm { id, confirm: on });
+            println!(
+                "{}",
+                if on {
+                    "Each use will ask first."
+                } else {
+                    "Any program running as you can now use this key while the vault is unlocked."
+                }
+            );
+        }
+        "export" => {
+            let mut c = Client::connect();
+            let id = key_id(&mut c, &positional(rest, 0, "ID"));
+            eprintln!("Prove an unlock factor again to export a private key.");
+            let Response::ExportedKey(k) = c.call(Request::ExportKey {
+                id,
+                method: method(rest),
+            }) else {
+                die("unexpected response")
+            };
+            print!("{}", k.as_str());
+        }
+        "agent" => {
+            let p = local::ssh_agent_endpoint().unwrap_or_else(|e| die(e));
+            #[cfg(unix)]
+            println!("export SSH_AUTH_SOCK={}", p.display());
+            #[cfg(windows)]
+            println!("$env:SSH_AUTH_SOCK = '{}'", p.display());
+        }
+        _ => die(format!("unknown ssh command {sub}; see `vault help`")),
+    }
+}
+
+fn print_public(c: &mut Client, id: [u8; 16]) {
+    let Response::PublicKey(line) = c.call(Request::PublicKey { id }) else {
+        die("unexpected response")
+    };
+    println!("{line}");
+}
+
+/// Whether an OpenSSH private key file is passphrase-protected: its cipher
+/// name, the first field after the magic, is not "none".
+fn encrypted(pem: &str) -> bool {
+    let body: String = pem
+        .lines()
+        .filter(|l| !l.starts_with("-----"))
+        .collect::<Vec<_>>()
+        .concat();
+    let Ok(raw) = data_encoding::BASE64.decode(body.trim().as_bytes()) else {
+        return false;
+    };
+    let rest = raw.strip_prefix(b"openssh-key-v1\0").unwrap_or_default();
+    let n = rest.get(..4).map_or(0, |b| {
+        u32::from_be_bytes(b.try_into().unwrap_or_default()) as usize
+    });
+    rest.get(4..4 + n).is_some_and(|c| c != b"none")
 }

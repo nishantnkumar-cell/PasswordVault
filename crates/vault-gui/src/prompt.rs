@@ -1,6 +1,6 @@
-//! The pairing approval window `vaultd` opens: who is asking, what they
-//! would get, Deny or Allow. Deny has the focus, Escape denies, and the
-//! window denies by itself after a minute.
+//! The approval window `vaultd` opens: a program asking to pair, or to use
+//! a key held in the vault (an SSH login, a git signature). Deny has the
+//! focus, Escape denies, and the window denies by itself after a minute.
 
 use std::time::{Duration, Instant};
 
@@ -11,18 +11,30 @@ pub const TIMEOUT: Duration = Duration::from_secs(60);
 
 /// What the daemon passed on the command line.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Request {
-    pub client: String,
-    pub autofill: bool,
-    pub program: Option<String>,
+pub enum Request {
+    /// `--client NAME --scope full|autofill [--program PATH]`.
+    Pair {
+        client: String,
+        autofill: bool,
+        program: Option<String>,
+    },
+    /// `--use --key TITLE --purpose TEXT [--program PATH]`.
+    Use {
+        key: String,
+        purpose: String,
+        program: Option<String>,
+    },
 }
 
 impl Request {
-    /// Parse `--client NAME --scope full|autofill [--program PATH]`.
+    /// Parse the arguments of either form.
     pub fn from_args(args: &[String]) -> Result<Request, String> {
         let mut client = None;
         let mut scope = None;
         let mut program = None;
+        let mut key = None;
+        let mut purpose = None;
+        let mut use_key = false;
         let mut it = args.iter();
         while let Some(a) = it.next() {
             let mut val = || it.next().cloned().ok_or(format!("{a} needs a value"));
@@ -30,19 +42,43 @@ impl Request {
                 "--client" => client = Some(val()?),
                 "--scope" => scope = Some(val()?),
                 "--program" => program = Some(val()?),
+                "--use" => use_key = true,
+                "--key" => key = Some(val()?),
+                "--purpose" => purpose = Some(val()?),
                 _ => return Err(format!("unknown argument {a}")),
             }
+        }
+        if use_key {
+            if client.is_some() || scope.is_some() {
+                return Err("--use does not take --client or --scope".into());
+            }
+            return Ok(Request::Use {
+                key: key.ok_or("--key is required")?,
+                purpose: purpose.ok_or("--purpose is required")?,
+                program,
+            });
+        }
+        if key.is_some() || purpose.is_some() {
+            return Err("--key and --purpose need --use".into());
         }
         let autofill = match scope.as_deref() {
             Some("autofill") => true,
             Some("full") => false,
             _ => return Err("--scope must be full or autofill".into()),
         };
-        Ok(Request {
+        Ok(Request::Pair {
             client: client.ok_or("--client is required")?,
             autofill,
             program,
         })
+    }
+
+    /// Window title.
+    pub fn title(&self) -> &'static str {
+        match self {
+            Request::Pair { .. } => "Secret Vault: approve pairing",
+            Request::Use { .. } => "Secret Vault: approve key use",
+        }
     }
 }
 
@@ -74,22 +110,43 @@ impl Prompt {
         let r = &self.request;
         egui::CentralPanel::default().show(ui, |ui| {
             ui.add_space(4.0);
-            ui.heading(format!(
-                "Allow \u{201c}{}\u{201d} to use your vault?",
-                r.client
-            ));
-            ui.add_space(8.0);
-            ui.label(if r.autofill {
-                "It will be able to fill your logins on websites that match them, \
-                 and nothing else."
-            } else {
-                "It will be able to read, change and delete every item in your vault."
-            });
+            let program = match r {
+                Request::Pair {
+                    client,
+                    autofill,
+                    program,
+                } => {
+                    ui.heading(format!("Allow \u{201c}{client}\u{201d} to use your vault?"));
+                    ui.add_space(8.0);
+                    ui.label(if *autofill {
+                        "It will be able to fill your logins on websites that match them, \
+                         and nothing else."
+                    } else {
+                        "It will be able to read, change and delete every item in your vault."
+                    });
+                    program
+                }
+                Request::Use {
+                    key,
+                    purpose,
+                    program,
+                } => {
+                    ui.heading(format!("Use the key \u{201c}{key}\u{201d}?"));
+                    ui.add_space(8.0);
+                    ui.label(format!("To {purpose}."));
+                    program
+                }
+            };
             ui.add_space(8.0);
             ui.label("Program asking:");
-            ui.label(RichText::new(r.program.as_deref().unwrap_or("unknown")).monospace());
+            ui.label(RichText::new(program.as_deref().unwrap_or("unknown")).monospace());
             ui.add_space(8.0);
-            ui.label("If you didn't just connect something to your vault, choose Deny.");
+            ui.label(match r {
+                Request::Pair { .. } => {
+                    "If you didn't just connect something to your vault, choose Deny."
+                }
+                Request::Use { .. } => "If you didn't just start this, choose Deny.",
+            });
             ui.add_space(12.0);
             ui.horizontal(|ui| {
                 let deny = ui.button("Deny");
@@ -124,12 +181,25 @@ mod tests {
             Request::from_args(&args(
                 "--client browser --scope autofill --program /usr/bin/x"
             )),
-            Ok(Request {
+            Ok(Request::Pair {
                 client: "browser".into(),
                 autofill: true,
                 program: Some("/usr/bin/x".into()),
             })
         );
+        assert_eq!(
+            Request::from_args(&args(
+                "--use --key laptop --purpose sign --program /usr/bin/ssh"
+            )),
+            Ok(Request::Use {
+                key: "laptop".into(),
+                purpose: "sign".into(),
+                program: Some("/usr/bin/ssh".into()),
+            })
+        );
+        assert!(Request::from_args(&args("--use --key laptop")).is_err());
+        assert!(Request::from_args(&args("--use --key k --purpose p --scope full")).is_err());
+        assert!(Request::from_args(&args("--client x --scope full --key k")).is_err());
         assert!(Request::from_args(&args("--client x --scope root")).is_err());
         assert!(Request::from_args(&args("--scope full")).is_err());
         assert!(Request::from_args(&args("--client x --scope full --evil")).is_err());

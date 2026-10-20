@@ -49,7 +49,7 @@ fn pair_by_prompt(
 }
 
 /// Serve one client. `pid` is the peer process, for the pairing prompt.
-fn connection(mut s: impl Read + Write, daemon: &Shared, pid: Option<u32>) -> io::Result<()> {
+pub fn connection(mut s: impl Read + Write, daemon: &Shared, pid: Option<u32>) -> io::Result<()> {
     loop {
         let env: Envelope = match read_frame(&mut s) {
             Ok(e) => e,
@@ -131,11 +131,18 @@ mod unix {
         Ok(l)
     }
 
-    /// Accept connections forever.
-    pub fn serve(listener: UnixListener, daemon: Shared, owner: Owner) {
+    /// A connection from the owner, with the peer's PID.
+    pub type Conn = UnixStream;
+
+    /// Accept connections forever, handing each one from the owner to `f`
+    /// on its own thread.
+    pub fn serve<F>(listener: UnixListener, owner: Owner, f: F)
+    where
+        F: Fn(Conn, Option<u32>) + Send + Sync + Clone + 'static,
+    {
         for conn in listener.incoming() {
             let Ok(mut conn) = conn else { continue };
-            let d = daemon.clone();
+            let f = f.clone();
             std::thread::spawn(move || {
                 let Ok(cred) = getsockopt(&conn, PeerCredentials) else {
                     return;
@@ -146,7 +153,7 @@ mod unix {
                 }
                 let _ = conn.set_read_timeout(Some(Duration::from_secs(600)));
                 let pid = cred.pid().try_into().ok();
-                let _ = connection(conn, &d, pid);
+                f(conn, pid);
             });
         }
     }
@@ -277,8 +284,15 @@ mod windows {
         Ok(l)
     }
 
-    /// Accept connections forever.
-    pub fn serve(mut listener: Listener, daemon: Shared, owner: Owner) {
+    /// A connection from the owner, with the peer's PID.
+    pub type Conn = File;
+
+    /// Accept connections forever, handing each one from the owner to `f`
+    /// on its own thread.
+    pub fn serve<F>(mut listener: Listener, owner: Owner, f: F)
+    where
+        F: Fn(Conn, Option<u32>) + Send + Sync + Clone + 'static,
+    {
         loop {
             let h = match listener.first.take() {
                 Some(h) => h,
@@ -298,7 +312,7 @@ mod windows {
                 continue;
             }
             let mut conn = File::from(h);
-            let d = daemon.clone();
+            let f = f.clone();
             let owner = owner.clone();
             std::thread::spawn(move || {
                 let pid = win::pipe_client_pid(&conn).ok();
@@ -307,7 +321,7 @@ mod windows {
                     let _ = refuse(&mut conn);
                     return;
                 }
-                let _ = connection(conn, &d, pid);
+                f(conn, pid);
             });
         }
     }

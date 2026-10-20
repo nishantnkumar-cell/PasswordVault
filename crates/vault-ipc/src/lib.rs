@@ -83,6 +83,15 @@ pub enum ImportFormat {
     BrowserCsv,
 }
 
+/// Keys `GenerateKey` can make.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum KeyKind {
+    /// SSH Ed25519.
+    SshEd25519,
+    /// SSH ECDSA on NIST P-256.
+    SshEcdsaP256,
+}
+
 /// Requests a client can make.
 #[derive(Serialize, Deserialize)]
 pub enum Request {
@@ -151,6 +160,27 @@ pub enum Request {
     Generate { options: GenerateOptions },
     /// Import items from an export file's contents.
     Import { format: ImportFormat, data: Secret },
+    /// Generate a key inside the daemon and store it as a new item.
+    GenerateKey {
+        title: String,
+        kind: KeyKind,
+        confirm: bool,
+    },
+    /// Store an SSH private key (OpenSSH format) as a new item.
+    /// `passphrase` decrypts it if it is encrypted.
+    ImportSshKey {
+        title: String,
+        private: Secret,
+        passphrase: Option<Secret>,
+        confirm: bool,
+    },
+    /// The public half of an item's key, in its usual text form.
+    PublicKey { id: ItemId },
+    /// Whether each use of an item's key needs the user's approval.
+    SetKeyConfirm { id: ItemId, confirm: bool },
+    /// The private key in its usual text form, only after proving an unlock
+    /// factor again.
+    ExportKey { id: ItemId, method: UnlockMethod },
 }
 
 /// Public slot information.
@@ -177,6 +207,8 @@ pub struct ItemSummary {
     pub urls: Vec<String>,
     /// Whether a TOTP seed is stored.
     pub has_totp: bool,
+    /// The item's key, if any: algorithm and fingerprint.
+    pub key: Option<String>,
 }
 
 /// Daemon state.
@@ -231,6 +263,10 @@ pub enum Response {
     Generated(Secret),
     /// Number of items imported.
     Imported(usize),
+    /// A public key.
+    PublicKey(String),
+    /// An exported private key.
+    ExportedKey(Secret),
 }
 
 /// Write one frame: u32 little-endian length, then postcard bytes.

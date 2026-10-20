@@ -123,6 +123,7 @@ pub fn bitwarden_json(data: &str, now: u64) -> Result<(Vec<ItemData>, usize), Im
             notes: it.notes.unwrap_or_default(),
             created: now,
             modified: now,
+            key: None,
         });
     }
     Ok((items, skipped))
@@ -174,6 +175,7 @@ pub fn browser_csv(data: &str, now: u64) -> Result<Vec<ItemData>, ImportError> {
             notes: get(note),
             created: now,
             modified: now,
+            key: None,
         });
     }
     Ok(items)

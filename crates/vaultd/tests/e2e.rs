@@ -81,7 +81,11 @@ fn start_daemon(
     let sock = endpoint(dir);
     let l = server::bind(&sock, false).unwrap();
     let d2 = d.clone();
-    std::thread::spawn(move || server::serve(l, d2, owner));
+    std::thread::spawn(move || {
+        server::serve(l, owner, move |c, pid| {
+            let _ = server::connection(c, &d2, pid);
+        })
+    });
     let d3 = d.clone();
     std::thread::spawn(move || server::idle_locker(d3));
     (sock, d)
@@ -542,4 +546,210 @@ fn pairs_through_the_daemons_own_prompt() {
             .contains("just declined")
     );
     assert_eq!(seen.lock().unwrap().len(), 3);
+}
+
+/// Serve the ssh-agent protocol for `d` on a second endpoint.
+fn start_agent(dir: &Path, d: &server::Shared) -> std::path::PathBuf {
+    #[cfg(unix)]
+    let path = dir.join("run/agent.sock");
+    #[cfg(windows)]
+    let path = endpoint(dir);
+    let l = server::bind(&path, false).unwrap();
+    let d = d.clone();
+    std::thread::spawn(move || {
+        server::serve(l, server::current_user(), move |c, pid| {
+            let _ = vaultd::ssh::connection(c, &d, pid);
+        })
+    });
+    path
+}
+
+/// One raw agent request and its reply.
+fn agent_call(path: &Path, body: &[u8]) -> Vec<u8> {
+    use std::io::{Read, Write};
+    let mut s = vault_ipc::local::connect(path).unwrap();
+    s.write_all(&(body.len() as u32).to_be_bytes()).unwrap();
+    s.write_all(body).unwrap();
+    let mut len = [0u8; 4];
+    s.read_exact(&mut len).unwrap();
+    let mut out = vec![0u8; u32::from_be_bytes(len) as usize];
+    s.read_exact(&mut out).unwrap();
+    out
+}
+
+fn ssh_string(out: &mut Vec<u8>, b: &[u8]) {
+    out.extend_from_slice(&(b.len() as u32).to_be_bytes());
+    out.extend_from_slice(b);
+}
+
+/// Public key blobs and comments from an identities answer.
+fn agent_list(path: &Path) -> Vec<(Vec<u8>, String)> {
+    let r = agent_call(path, &[11]);
+    assert_eq!(r[0], 12);
+    let mut p = &r[5..];
+    let mut take = || {
+        let n = u32::from_be_bytes(p[..4].try_into().unwrap()) as usize;
+        let v = p[4..4 + n].to_vec();
+        p = &p[4 + n..];
+        v
+    };
+    let n = u32::from_be_bytes(r[1..5].try_into().unwrap());
+    (0..n)
+        .map(|_| {
+            let blob = take();
+            (blob, String::from_utf8(take()).unwrap())
+        })
+        .collect()
+}
+
+fn agent_sign(path: &Path, blob: &[u8], data: &[u8]) -> Option<Vec<u8>> {
+    let mut req = vec![13];
+    ssh_string(&mut req, blob);
+    ssh_string(&mut req, data);
+    req.extend_from_slice(&0u32.to_be_bytes());
+    let r = agent_call(path, &req);
+    match r[0] {
+        14 => Some(r[5..].to_vec()),
+        5 => None,
+        other => panic!("unexpected agent reply {other}"),
+    }
+}
+
+/// Approves pairing never, and key use as the flag says.
+struct UseApprover(
+    std::sync::atomic::AtomicBool,
+    Mutex<Vec<vaultd::approve::UsePrompt>>,
+);
+
+impl vaultd::approve::Approver for UseApprover {
+    fn approve(&self, _: &PairPrompt) -> Result<bool, String> {
+        Ok(false)
+    }
+    fn confirm_use(&self, p: &vaultd::approve::UsePrompt) -> Result<bool, String> {
+        self.1.lock().unwrap().push(p.clone());
+        Ok(self.0.load(std::sync::atomic::Ordering::SeqCst))
+    }
+}
+
+#[test]
+fn ssh_keys_and_agent() {
+    use vault_ipc::KeyKind;
+    let dir = tempfile::tempdir().unwrap();
+    let (sock, d) = start_daemon(dir.path(), server::current_user(), Duration::from_secs(600));
+    let approver = Arc::new(UseApprover(
+        std::sync::atomic::AtomicBool::new(false),
+        Mutex::new(Vec::new()),
+    ));
+    d.lock().unwrap().set_approver(approver.clone());
+    let agent = start_agent(dir.path(), &d);
+    let mut c = C::new(&sock);
+    let Response::Initialized { token, .. } = c.ok(Request::Init {
+        password: s(PW),
+        client_name: "cli".into(),
+    }) else {
+        panic!()
+    };
+    c.token = Some(token);
+    assert!(agent_list(&agent).is_empty());
+
+    let Response::ItemSaved { id } = c.ok(Request::GenerateKey {
+        title: "laptop".into(),
+        kind: KeyKind::SshEd25519,
+        confirm: false,
+    }) else {
+        panic!()
+    };
+    let Response::PublicKey(line) = c.ok(Request::PublicKey { id }) else {
+        panic!()
+    };
+    assert!(line.starts_with("ssh-ed25519 "));
+    let Response::Items(items) = c.ok(Request::ListItems) else {
+        panic!()
+    };
+    assert!(items[0].key.as_deref().unwrap().contains("SHA256:"));
+
+    // Clients never see the private key, and editing keeps it.
+    let Response::Item { item, .. } = c.ok(Request::GetItem { id }) else {
+        panic!()
+    };
+    assert!(item.key.is_none());
+    let mut edited = item.clone();
+    edited.notes = "my laptop key".into();
+    c.ok(Request::PutItem {
+        id: Some(id),
+        item: edited,
+    });
+    let Response::PublicKey(again) = c.ok(Request::PublicKey { id }) else {
+        panic!()
+    };
+    assert_eq!(again, line);
+
+    // The agent lists and signs with it.
+    let ids = agent_list(&agent);
+    assert_eq!(ids.len(), 1);
+    assert_eq!(ids[0].1, "laptop");
+    let blob = ids[0].0.clone();
+    let sig = agent_sign(&agent, &blob, b"data to sign").unwrap();
+    {
+        use signature::Verifier;
+        let pk = ssh_key::PublicKey::from_openssh(&line).unwrap();
+        let sig = ssh_key::Signature::try_from(sig.as_slice()).unwrap();
+        Verifier::verify(&pk, b"data to sign", &sig).unwrap();
+    }
+    assert!(agent_sign(&agent, b"unknown key", b"x").is_none());
+
+    // With confirm on, the user is asked; declining fails the signature.
+    c.ok(Request::SetKeyConfirm { id, confirm: true });
+    let mut git = b"SSHSIG".to_vec();
+    ssh_string(&mut git, b"git");
+    assert!(agent_sign(&agent, &blob, &git).is_none());
+    approver.0.store(true, std::sync::atomic::Ordering::SeqCst);
+    assert!(agent_sign(&agent, &blob, &git).is_some());
+    let asked = approver.1.lock().unwrap().clone();
+    assert_eq!(asked.len(), 2);
+    assert_eq!(asked[1].key, "laptop");
+    assert_eq!(asked[1].purpose, "sign a git commit or tag");
+
+    // Export needs the password again.
+    assert!(
+        c.err(Request::ExportKey {
+            id,
+            method: UnlockMethod::Password {
+                password: s("wrong password")
+            },
+        })
+        .contains("wrong")
+    );
+    let Response::ExportedKey(private) = c.ok(Request::ExportKey { id, method: pw() }) else {
+        panic!()
+    };
+    assert!(private.starts_with("-----BEGIN OPENSSH PRIVATE KEY-----"));
+
+    // Import the exported key under another title: same public key.
+    let Response::ItemSaved { id: id2 } = c.ok(Request::ImportSshKey {
+        title: "copy".into(),
+        private: private.clone(),
+        passphrase: None,
+        confirm: false,
+    }) else {
+        panic!()
+    };
+    let Response::PublicKey(copy) = c.ok(Request::PublicKey { id: id2 }) else {
+        panic!()
+    };
+    assert_eq!(copy.split(' ').nth(1), line.split(' ').nth(1));
+    assert!(
+        c.err(Request::ImportSshKey {
+            title: "bad".into(),
+            private: s("not a key"),
+            passphrase: None,
+            confirm: false,
+        })
+        .contains("not an OpenSSH private key")
+    );
+
+    // Locked: nothing listed, nothing signed.
+    c.ok(Request::Lock);
+    assert!(agent_list(&agent).is_empty());
+    assert!(agent_sign(&agent, &blob, b"x").is_none());
 }

@@ -20,6 +20,7 @@ Start with [`docs/vaultd.md`](docs/vaultd.md) to build and run it, then [`docs/b
 - [`docs/threat-model.md`](docs/threat-model.md): v1 threat model.
 - [`docs/format.md`](docs/format.md): vault file format, version 1.
 - [`docs/items.md`](docs/items.md): item data, TOTP and autofill origin policy.
+- [`docs/ssh.md`](docs/ssh.md): SSH keys in the vault, the ssh-agent and git commit signing.
 - [`docs/architecture-review.md`](docs/architecture-review.md): the review that produced brief Revision 2.
 
 ## Licence
