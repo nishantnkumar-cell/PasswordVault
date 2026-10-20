@@ -5,13 +5,15 @@
 use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::PathBuf;
 use std::process::exit;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use vault_core::item::{Card, CustomField, FieldKind, Identity, ItemData, ItemKind, UrlEntry};
 use vault_core::origin::MatchMode;
 use vault_core::totp::TotpConfig;
 use vault_ipc::{
     ClientScope, ClientToken, Envelope, GenerateOptions, ImportFormat, ItemSummary, Request,
-    Response, Secret, SlotInfo, UnlockMethod, hex, local, parse_id, read_frame, write_frame,
+    Response, Secret, SlotInfo, SyncInfo, UnlockMethod, hex, local, parse_id, read_frame,
+    write_frame,
 };
 use zeroize::Zeroizing;
 
@@ -50,11 +52,62 @@ KEYSLOTS
   rm-slot SLOT                 remove a slot (no key rotation)
   revoke --keep SLOT[,SLOT..]  rotate the vault key, keeping only these slots
 
+SYNC                           through a folder that OneDrive, Google Drive or Dropbox syncs
+  sync                         show sync state
+  sync on FILE                 keep the vault merged with FILE, e.g. ~/OneDrive/vault.svault;
+                               on a device with no vault yet, this joins the vault in FILE
+  sync off                     stop syncing (the copy in the folder stays)
+  sync now                     merge now instead of at the next check
+
 ENVIRONMENT
   VAULT_SOCKET                 socket or pipe [default: $XDG_RUNTIME_DIR/vault/vaultd.sock,
                                on Windows \\.\pipe\vaultd-<your SID>]
   VAULT_TOKEN_FILE             pairing token [default: $XDG_CONFIG_HOME/vault/token,
                                on Windows %APPDATA%\vault\token]";
+
+fn print_sync(s: &SyncInfo) {
+    println!("sync:      {}", s.path);
+    match s.last_sync {
+        Some(t) => {
+            let ago = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_or(0, |d| d.as_secs())
+                .saturating_sub(t);
+            println!("synced:    {ago} s ago");
+        }
+        None => println!("synced:    not yet (unlock to sync)"),
+    }
+    if let Some(e) = &s.error {
+        println!("sync problem: {e}");
+    }
+    if s.conflicts > 0 {
+        println!(
+            "conflicts: {} item(s) were edited on two devices at once; the other edit is kept as \"... (conflict)\"",
+            s.conflicts
+        );
+    }
+    if !s.other_copies.is_empty() {
+        println!(
+            "merged copies you can delete: {}",
+            s.other_copies.join(", ")
+        );
+    }
+}
+
+/// An absolute path, with a leading `~` meaning the home folder.
+fn sync_file(arg: &str) -> PathBuf {
+    let home = || {
+        std::env::var_os("HOME")
+            .or_else(|| std::env::var_os("USERPROFILE"))
+            .map(PathBuf::from)
+            .unwrap_or_else(|| die("cannot tell where your home folder is"))
+    };
+    let p = match arg.strip_prefix("~/").or_else(|| arg.strip_prefix("~\\")) {
+        Some(rest) => home().join(rest),
+        None => PathBuf::from(arg),
+    };
+    std::path::absolute(&p).unwrap_or(p)
+}
 
 fn die(msg: impl std::fmt::Display) -> ! {
     eprintln!("vault: {msg}");
@@ -511,10 +564,41 @@ fn main() {
                 "paired:    {}",
                 if load_token().is_some() { "yes" } else { "no" }
             );
+            if let Some(sync) = &s.sync {
+                print_sync(sync);
+            }
             if s.rollback_detected {
                 println!(
                     "WARNING: the vault file is older than one vaultd saw before. Someone may have restored an old copy. Writes are refused."
                 );
+            }
+        }
+        "sync" => {
+            let mut c = Client::connect();
+            let req = match rest.first().map(String::as_str) {
+                None => Request::Status,
+                Some("on") => {
+                    let file = rest
+                        .get(1)
+                        .unwrap_or_else(|| die("usage: vault sync on FILE"));
+                    Request::SetSync {
+                        path: Some(sync_file(file).display().to_string()),
+                    }
+                }
+                Some("off") => Request::SetSync { path: None },
+                Some("now") => Request::SyncNow,
+                Some(other) => die(format!("unknown sync command {other}; see `vault help`")),
+            };
+            let was_new = rest.first().is_some_and(|a| a == "on") && load_token().is_none();
+            let Response::Status(s) = c.call(req) else {
+                die("unexpected response")
+            };
+            match &s.sync {
+                Some(sync) => print_sync(sync),
+                None => println!("sync:      off"),
+            }
+            if was_new && s.initialized {
+                println!("Joined. Pair this client with `vault pair --password`.");
             }
         }
         "unlock" => {

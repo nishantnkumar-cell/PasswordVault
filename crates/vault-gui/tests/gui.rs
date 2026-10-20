@@ -490,3 +490,36 @@ fn tempdir() -> PathBuf {
     }
     d
 }
+
+#[test]
+fn turns_on_sync_and_a_second_device_joins() {
+    let dir = tempdir();
+    let shared = tempdir();
+    let synced = shared.join("vault.svault");
+    let path = synced.display().to_string();
+    let mut h = created(&dir, Duration::from_secs(300), FakeClip::default());
+    click(&mut h, "Sync");
+    settle(&mut h);
+    type_into(&mut h, Role::TextInput, "File in the synced folder", &path);
+    click(&mut h, "Turn on");
+    settle(&mut h);
+    assert!(h.query_by_label("Synced.").is_some());
+    assert!(h.query_by_label(&path).is_some());
+    assert!(synced.exists());
+
+    // Another device with no vault joins it, then pairs with the password.
+    let other = tempdir();
+    let mut g = window(
+        start(&other, Duration::from_secs(300)),
+        other.join("token"),
+        FakeClip::default(),
+    );
+    wait_for(&mut g, Screen::Create);
+    type_into(&mut g, Role::TextInput, "File in the synced folder", &path);
+    click(&mut g, "Join");
+    wait_for(&mut g, Screen::Pair);
+    type_into(&mut g, Role::PasswordInput, "Master password", &password());
+    click(&mut g, "Pair");
+    wait_for(&mut g, Screen::Unlocked);
+    assert!(other.join("data/vault.svault").exists());
+}

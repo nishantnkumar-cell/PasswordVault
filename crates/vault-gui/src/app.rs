@@ -4,7 +4,7 @@
 //! and drops it (and clears a password it put on the clipboard) when the
 //! vault locks.
 
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use eframe::egui::{self, Key, RichText, TextEdit, Ui};
 use vault_core::item::{Card, CustomField, FieldKind, Identity, ItemData, ItemKind, UrlEntry};
@@ -88,6 +88,7 @@ enum Op {
     ListSlots,
     AddSlot,
     RemoveSlot(SlotId),
+    Sync,
 }
 
 /// Which screen is showing.
@@ -109,6 +110,7 @@ pub enum View {
     Generator,
     Import,
     Slots,
+    Sync,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -367,6 +369,8 @@ pub struct App {
     new_recovery: Option<Secret>,
     confirm_remove: Option<SlotId>,
 
+    sync_path: String,
+
     copied: Option<(Secret, Instant)>,
 }
 
@@ -414,6 +418,7 @@ impl App {
             slot_form: SlotForm::default(),
             new_recovery: None,
             confirm_remove: None,
+            sync_path: String::new(),
             copied: None,
         }
     }
@@ -522,6 +527,11 @@ impl App {
         }
         if next == Screen::Unlocked && self.screen != Screen::Unlocked {
             self.view = View::Items;
+            self.send(Op::ListItems, Request::ListItems);
+        } else if next == Screen::Unlocked
+            && self.status.as_ref().map(|(o, _)| o.generation) != Some(s.generation)
+        {
+            // Written since the last look, perhaps by a sync from another device.
             self.send(Op::ListItems, Request::ListItems);
         }
         self.screen = next;
@@ -648,6 +658,14 @@ impl App {
                 self.confirm_remove = None;
                 self.notice = Some("Unlock method removed.".into());
                 self.send(Op::ListSlots, Request::ListSlots);
+            }
+            (Op::Sync, Response::Status(s)) => {
+                self.notice = Some(match &s.sync {
+                    Some(sync) if sync.error.is_none() => "Synced.".into(),
+                    Some(_) => "Sync is on, but there is a problem (see below).".into(),
+                    None => "Sync is off.".into(),
+                });
+                self.on_status(s);
             }
             _ => self.error = Some("Unexpected answer from vaultd.".into()),
         }
@@ -783,6 +801,100 @@ impl App {
                 );
             }
         }
+        ui.add_space(16.0);
+        ui.separator();
+        ui.label(
+            "Already use the vault on another device and sync it through OneDrive, \
+             Google Drive or Dropbox? Join it instead:",
+        );
+        if self.sync_form(ui, "Join") {
+            let path = self.sync_path.trim().to_owned();
+            self.act("Joining…", Op::Sync, Request::SetSync { path: Some(path) });
+        }
+    }
+
+    /// The synced file's path and a button. Returns whether it was pressed
+    /// with a path filled in.
+    fn sync_form(&mut self, ui: &mut Ui, button: &str) -> bool {
+        egui::Grid::new("sync-path").num_columns(2).show(ui, |ui| {
+            text_field(ui, "File in the synced folder", &mut self.sync_path);
+            ui.end_row();
+        });
+        ui.label(
+            RichText::new(if cfg!(windows) {
+                r"For example C:\Users\you\OneDrive\vault.svault"
+            } else {
+                "For example /home/you/Dropbox/vault.svault"
+            })
+            .weak(),
+        );
+        let ok = self.busy.is_none() && !self.sync_path.trim().is_empty();
+        ui.add_enabled(ok, egui::Button::new(button)).clicked() && ok
+    }
+
+    fn sync_page(&mut self, ui: &mut Ui) {
+        ui.heading("Sync");
+        ui.add_space(8.0);
+        ui.label(
+            "Keep this vault in step with your other devices through a folder that \
+             OneDrive, Google Drive or Dropbox syncs. The file there is encrypted like \
+             this one, and changes from each device are merged.",
+        );
+        ui.add_space(8.0);
+        let sync = self.status.as_ref().and_then(|(s, _)| s.sync.clone());
+        let ok = self.busy.is_none();
+        match sync {
+            Some(sync) => {
+                egui::Grid::new("sync").num_columns(2).show(ui, |ui| {
+                    ui.label("File");
+                    ui.label(RichText::new(&sync.path).monospace());
+                    ui.end_row();
+                    ui.label("Last synced");
+                    ui.label(match sync.last_sync {
+                        Some(t) => {
+                            let ago = SystemTime::now()
+                                .duration_since(UNIX_EPOCH)
+                                .map_or(0, |d| d.as_secs())
+                                .saturating_sub(t);
+                            format!("{ago} s ago")
+                        }
+                        None => "not yet".into(),
+                    });
+                    ui.end_row();
+                });
+                if let Some(e) = &sync.error {
+                    ui.colored_label(ui.visuals().error_fg_color, format!("Problem: {e}"));
+                }
+                if sync.conflicts > 0 {
+                    ui.label(format!(
+                        "{} item(s) were changed on two devices at once. Both versions are \
+                         kept; the older one has \"(conflict)\" after its title.",
+                        sync.conflicts
+                    ));
+                }
+                if !sync.other_copies.is_empty() {
+                    ui.label(format!(
+                        "These copies next to the synced file were merged in and can be \
+                         deleted: {}",
+                        sync.other_copies.join(", ")
+                    ));
+                }
+                ui.horizontal(|ui| {
+                    if ui.add_enabled(ok, egui::Button::new("Sync now")).clicked() {
+                        self.act("Syncing…", Op::Sync, Request::SyncNow);
+                    }
+                    if ui.add_enabled(ok, egui::Button::new("Turn off")).clicked() {
+                        self.act("Turning off…", Op::Sync, Request::SetSync { path: None });
+                    }
+                });
+            }
+            None => {
+                if self.sync_form(ui, "Turn on") {
+                    let path = self.sync_path.trim().to_owned();
+                    self.act("Syncing…", Op::Sync, Request::SetSync { path: Some(path) });
+                }
+            }
+        }
     }
 
     fn show_recovery(&mut self, ui: &mut Ui) {
@@ -885,6 +997,7 @@ impl App {
                     (View::Generator, "Generator"),
                     (View::Import, "Import"),
                     (View::Slots, "Unlock methods"),
+                    (View::Sync, "Sync"),
                 ] {
                     if ui.selectable_label(self.view == v, name).clicked() && self.view != v {
                         self.view = v;
@@ -908,6 +1021,15 @@ impl App {
                 if let Some(left) = s.idle_lock_in {
                     let left = left.saturating_sub(at.elapsed().as_secs());
                     line += &format!(". Locks after {}:{:02} idle", left / 60, left % 60);
+                }
+                if let Some(sync) = &s.sync {
+                    line += if sync.error.is_some() {
+                        ". Sync has a problem (see Sync)"
+                    } else if sync.last_sync.is_some() {
+                        ". Synced"
+                    } else {
+                        ". Sync is on"
+                    };
                 }
                 if s.rollback_detected {
                     line +=
@@ -949,6 +1071,12 @@ impl App {
                 egui::CentralPanel::default().show(ui, |ui| {
                     self.messages(ui);
                     egui::ScrollArea::vertical().show(ui, |ui| self.slots_page(ui));
+                });
+            }
+            View::Sync => {
+                egui::CentralPanel::default().show(ui, |ui| {
+                    self.messages(ui);
+                    egui::ScrollArea::vertical().show(ui, |ui| self.sync_page(ui));
                 });
             }
         }

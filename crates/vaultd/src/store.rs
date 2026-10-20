@@ -21,6 +21,9 @@ struct Generations(Vec<([u8; 16], u64)>);
 #[derive(Serialize, Deserialize, Default)]
 struct Clients(Vec<(String, ClientScope, [u8; 32])>);
 
+#[derive(Serialize, Deserialize, Default)]
+struct SyncPath(Option<String>);
+
 impl Store {
     /// Open the store, taking an exclusive lock so only one daemon writes.
     pub fn open(vault: PathBuf, state_dir: PathBuf) -> io::Result<Store> {
@@ -95,6 +98,36 @@ impl Store {
             .into_iter()
             .find(|(_, _, t)| *t == h)
             .map(|(n, s, _)| (n, s))
+    }
+
+    /// This installation's device ID for merge clocks, made on first use.
+    pub fn device_id(&self) -> io::Result<u64> {
+        let path = self.state_dir.join("device");
+        if let Ok(b) = fs::read(&path)
+            && let Ok(b) = <[u8; 8]>::try_from(b.as_slice())
+        {
+            return Ok(u64::from_le_bytes(b));
+        }
+        let mut b = [0u8; 8];
+        vault_core::SecureRandom::fill(&mut vault_core::OsRandom, &mut b)
+            .map_err(io::Error::other)?;
+        write_atomic(&path, &b)?;
+        Ok(u64::from_le_bytes(b))
+    }
+
+    /// The synced copy's path, if sync is on.
+    pub fn sync_path(&self) -> Option<PathBuf> {
+        self.load::<SyncPath>("sync").0.map(PathBuf::from)
+    }
+
+    pub fn set_sync_path(&self, path: Option<&Path>) -> io::Result<()> {
+        let p = path.map(|p| p.to_string_lossy().into_owned());
+        self.save("sync", &SyncPath(p))
+    }
+
+    /// The local vault file.
+    pub fn vault_path(&self) -> &Path {
+        &self.vault
     }
 
     pub fn forget_clients(&self) -> io::Result<()> {

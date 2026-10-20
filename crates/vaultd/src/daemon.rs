@@ -1,11 +1,13 @@
 //! Request handling: authorization, unlock with rate limiting, the vault
 //! operations, rollback refusal and idle lock.
 
+use std::collections::BTreeSet;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use vault_core::generator::{Charset, generate_password};
-use vault_core::item::{ItemData, ItemKind};
+use vault_core::item::{ItemData, ItemKind, ItemMerge};
 use vault_core::origin::may_fill;
 use vault_core::{
     Factor, HwKey, ItemId, KdfCost, KeyslotMeta, OsRandom, ParsedVault, PcrPolicy, SecureRandom,
@@ -13,13 +15,14 @@ use vault_core::{
 };
 use vault_ipc::{
     ClientScope, ClientToken, Envelope, ImportFormat, ItemSummary, Request, Response, Secret,
-    SlotInfo, StatusInfo, UnlockMethod,
+    SlotInfo, StatusInfo, SyncInfo, UnlockMethod,
 };
 use zeroize::Zeroizing;
 
 use crate::approve::{Approver, PairPrompt};
 use crate::hw::{Hardware, prf_salt};
 use crate::store::Store;
+use crate::sync::Folder;
 
 /// Relying party ID for FIDO2 credentials created by this daemon.
 pub const RP_ID: &str = "vault.local";
@@ -42,7 +45,37 @@ pub struct Daemon {
     approver: Option<Arc<dyn Approver>>,
     prompting: bool,
     next_prompt: Option<Instant>,
+    device: u64,
+    sync: Option<SyncState>,
 }
+
+/// Folder sync and what to report about it.
+struct SyncState {
+    folder: Folder,
+    last_sync: Option<u64>,
+    error: Option<String>,
+    /// The synced copy changed but could not be merged, so it must not be
+    /// overwritten yet.
+    blocked: bool,
+    conflicts: u64,
+    other_copies: BTreeSet<String>,
+}
+
+impl SyncState {
+    fn new(path: PathBuf) -> SyncState {
+        SyncState {
+            folder: Folder::new(path),
+            last_sync: None,
+            error: None,
+            blocked: false,
+            conflicts: 0,
+            other_copies: BTreeSet::new(),
+        }
+    }
+}
+
+/// Why a synced copy could not be merged when it was re-keyed elsewhere.
+const REKEYED: &str = "the synced copy was re-keyed on another device (a factor was revoked there); lock and unlock to merge it";
 
 /// Wait after a declined or unanswered prompt before showing another.
 const PROMPT_COOLDOWN: Duration = Duration::from_secs(10);
@@ -95,7 +128,16 @@ fn token(rng: &mut OsRandom) -> R<ClientToken> {
 
 impl Daemon {
     pub fn new(store: Store, hw: Hardware, cost: KdfCost, idle: Duration) -> Daemon {
-        Daemon {
+        let device = store.device_id().unwrap_or_else(|err| {
+            eprintln!(
+                "vaultd: warning: could not keep a device ID ({err}); using one for this run"
+            );
+            let mut b = [0u8; 8];
+            let _ = OsRandom.fill(&mut b);
+            u64::from_le_bytes(b)
+        });
+        let sync = store.sync_path().map(SyncState::new);
+        let mut d = Daemon {
             store,
             hw,
             cost,
@@ -108,14 +150,147 @@ impl Daemon {
             approver: None,
             prompting: false,
             next_prompt: None,
-        }
+            device,
+            sync,
+        };
+        d.join_from_sync();
+        d
     }
 
-    /// Lock if idle for longer than the timeout. Called periodically.
+    /// Lock if idle for longer than the timeout, and merge the synced copy
+    /// if it changed. Called periodically.
     pub fn tick(&mut self) {
         if self.vault.is_some() && self.last_activity.elapsed() >= self.idle {
             self.lock();
         }
+        if self.vault.is_some()
+            && let Some(all) = self.sync.as_mut().and_then(|s| s.folder.due())
+        {
+            self.sync_now(None, all);
+        }
+    }
+
+    /// On a device with no vault yet, take the synced copy as the vault.
+    fn join_from_sync(&mut self) {
+        if self.store.exists() {
+            return;
+        }
+        let Some(s) = &mut self.sync else { return };
+        let Ok(bytes) = std::fs::read(s.folder.path()) else {
+            return;
+        };
+        let res = ParsedVault::parse(&bytes)
+            .map_err(e)
+            .and_then(|_| self.store.write(&bytes).map_err(|e| e.to_string()));
+        s.error = res
+            .err()
+            .map(|m| format!("could not copy the synced vault: {m}"));
+    }
+
+    /// Merge changed synced copies into the unlocked vault, then write both
+    /// files if either is behind. `method`, from an unlock just now, opens a
+    /// copy whose vault key was rotated on another device. `all` reads
+    /// every copy even if it looks unchanged. Problems are reported in the
+    /// status, not returned: syncing never blocks using the vault.
+    fn sync_now(&mut self, method: Option<&UnlockMethod>, all: bool) {
+        let Ok(write) = self.pull(method, all) else {
+            return;
+        };
+        if write {
+            let _ = self.save();
+        }
+    }
+
+    /// The merge half of [`Self::sync_now`]. Returns whether anything
+    /// should be written.
+    fn pull(&mut self, method: Option<&UnlockMethod>, all: bool) -> Result<bool, ()> {
+        if self.sync.is_none() || self.vault.is_none() {
+            return Err(());
+        }
+        let (Some(mut st), Some(mut v)) = (self.sync.take(), self.vault.take()) else {
+            unreachable!("checked above")
+        };
+        let res = self.pull_into(&mut st, &mut v, method, all);
+        if let Err(m) = &res {
+            st.error = Some(m.clone());
+        }
+        self.sync = Some(st);
+        self.vault = Some(v);
+        res.map_err(|_| ())
+    }
+
+    fn pull_into(
+        &self,
+        st: &mut SyncState,
+        v: &mut Vault,
+        method: Option<&UnlockMethod>,
+        all: bool,
+    ) -> R<bool> {
+        let mut write = !st.folder.exists();
+        st.blocked = false;
+        st.error = None;
+        for c in st.folder.changed(all) {
+            let main = st.folder.is_main(&c.path);
+            let parsed = match ParsedVault::parse(&c.bytes) {
+                Ok(p) => p,
+                // Possibly still being downloaded: look again next time.
+                Err(_) if main => {
+                    st.blocked = true;
+                    return Err("the synced copy is incomplete or damaged; trying again".into());
+                }
+                Err(_) => continue,
+            };
+            if parsed.vault_id() != v.vault_id() {
+                if main {
+                    st.blocked = true;
+                    return Err("the synced copy is a different vault".into());
+                }
+                st.folder.mark(c.path, c.stamp);
+                continue;
+            }
+            let theirs = match parsed.open_with(v) {
+                Ok(t) => t,
+                Err(vault_core::Error::DifferentKey) => {
+                    let opened = method.map(|m| self.open_parsed(&parsed, m).map_err(|(m, _)| m));
+                    match opened {
+                        Some(Ok(t)) => t,
+                        Some(Err(m)) if main => {
+                            st.blocked = true;
+                            return Err(format!("{REKEYED} ({m})"));
+                        }
+                        None if main => {
+                            st.blocked = true;
+                            return Err(REKEYED.into());
+                        }
+                        _ => continue,
+                    }
+                }
+                Err(err) if main => {
+                    st.blocked = true;
+                    return Err(format!("could not open the synced copy: {err}"));
+                }
+                Err(_) => continue,
+            };
+            let r = v.merge(&mut OsRandom, &theirs, &ItemMerge).map_err(e)?;
+            st.conflicts += r.conflicts as u64;
+            write |= r.changed() || (main && r.other_behind);
+            if !main {
+                st.other_copies.insert(
+                    c.path
+                        .file_name()
+                        .map_or_else(String::new, |n| n.to_string_lossy().into_owned()),
+                );
+            }
+            if r.rekeyed {
+                eprintln!(
+                    "vaultd: took the vault key rotated on another device; {} slot(s) of this copy were dropped",
+                    r.slots_dropped.len()
+                );
+            }
+            st.folder.mark(c.path, c.stamp);
+        }
+        st.last_sync = Some(now());
+        Ok(write)
     }
 
     /// Drop the vault and its keys.
@@ -228,6 +403,7 @@ impl Daemon {
     fn dispatch(&mut self, env: Envelope) -> R<Response> {
         let scope = match &env.request {
             Request::Status | Request::Init { .. } | Request::Pair { .. } => None,
+            Request::SetSync { .. } if !self.store.exists() => None,
             _ => {
                 let t = env
                     .token
@@ -271,7 +447,8 @@ impl Daemon {
                 scope,
                 method: Some(method),
             } => {
-                self.vault = Some(self.prove(&method)?);
+                let v = self.prove(&method)?;
+                self.opened(v, &method);
                 let t = token(&mut OsRandom)?;
                 self.store
                     .add_client(&client_name, scope, &t)
@@ -282,9 +459,11 @@ impl Daemon {
                 Err("pairing without a factor goes through the server's approval prompt".into())
             }
             Request::Unlock { method } => {
-                self.vault = Some(self.prove(&method)?);
+                let v = self.prove(&method)?;
+                self.opened(v, &method);
                 Ok(Response::Ok)
             }
+            Request::SetSync { path } => self.set_sync(path),
             Request::Lock => {
                 self.lock();
                 Ok(Response::Ok)
@@ -304,6 +483,41 @@ impl Daemon {
         }
     }
 
+    /// Hold a vault just unlocked with `method`, and catch up with the
+    /// synced copy.
+    fn opened(&mut self, mut v: Vault, method: &UnlockMethod) {
+        v.set_device(self.device);
+        self.vault = Some(v);
+        self.sync_now(Some(method), true);
+    }
+
+    fn set_sync(&mut self, path: Option<String>) -> R<Response> {
+        let path = path.map(PathBuf::from);
+        if let Some(p) = &path {
+            if p.file_name().is_none() {
+                return Err("give the path of a file, such as ~/OneDrive/vault.svault".into());
+            }
+            let dir = p.parent().filter(|d| !d.as_os_str().is_empty());
+            if dir.is_some_and(|d| !d.is_dir()) {
+                return Err(format!("{} is not a folder", dir.unwrap_or(p).display()));
+            }
+            if p == self.store.vault_path() {
+                return Err(
+                    "that is the vault file itself; choose a file in a synced folder".into(),
+                );
+            }
+        }
+        self.store
+            .set_sync_path(path.as_deref())
+            .map_err(|e| e.to_string())?;
+        self.sync = path.map(SyncState::new);
+        self.join_from_sync();
+        if self.vault.is_some() {
+            self.sync_now(None, true);
+        }
+        Ok(Response::Status(self.status()))
+    }
+
     fn status(&self) -> StatusInfo {
         StatusInfo {
             initialized: self.store.exists(),
@@ -314,6 +528,13 @@ impl Daemon {
                 self.idle
                     .saturating_sub(self.last_activity.elapsed())
                     .as_secs()
+            }),
+            sync: self.sync.as_ref().map(|s| SyncInfo {
+                path: s.folder.path().display().to_string(),
+                last_sync: s.last_sync,
+                error: s.error.clone(),
+                conflicts: s.conflicts,
+                other_copies: s.other_copies.iter().cloned().collect(),
             }),
         }
     }
@@ -364,8 +585,14 @@ impl Daemon {
         self.store
             .add_client(client_name, ClientScope::Full, &t)
             .map_err(|e| e.to_string())?;
+        v.set_device(self.device);
         self.vault = Some(v);
         self.rollback = false;
+        if let Some(s) = &mut self.sync
+            && let Err(err) = s.folder.write(&bytes)
+        {
+            s.error = Some(format!("could not write the synced copy: {err}"));
+        }
         Ok(Response::Initialized {
             recovery_code: Zeroizing::new(code.as_str().to_owned()),
             token: t,
@@ -382,6 +609,7 @@ impl Daemon {
                 (t - Instant::now()).as_secs() + 1
             ));
         }
+        self.join_from_sync();
         let parsed = ParsedVault::parse(
             &self
                 .store
@@ -389,13 +617,39 @@ impl Daemon {
                 .map_err(|_| "no vault; run `vault init`")?,
         )
         .map_err(e)?;
+        let last = match self.open_parsed(&parsed, method) {
+            Ok(v) => {
+                self.failures = 0;
+                self.next_attempt = None;
+                self.check_rollback(&v);
+                return Ok(v);
+            }
+            Err((m, false)) => return Err(m),
+            Err((m, true)) => m,
+        };
+        self.failures += 1;
+        if self.failures > FREE_ATTEMPTS {
+            let wait =
+                Duration::from_secs(1 << (self.failures - FREE_ATTEMPTS).min(9)).min(MAX_BACKOFF);
+            self.next_attempt = Some(Instant::now() + wait);
+        }
+        Err(last)
+    }
+
+    /// Unlock with the first slot `method` fits. On failure, also says
+    /// whether it counts as a wrong guess.
+    fn open_parsed(
+        &self,
+        parsed: &ParsedVault,
+        method: &UnlockMethod,
+    ) -> Result<Vault, (String, bool)> {
         let candidates: Vec<KeyslotMeta> = parsed
             .slots()
             .filter(|m| fits(&m.factor, method))
             .cloned()
             .collect();
         if candidates.is_empty() {
-            return Err("no slot of that kind is enrolled".into());
+            return Err(("no slot of that kind is enrolled".into(), false));
         }
         let mut last = String::from("wrong password or factor");
         for meta in &candidates {
@@ -407,23 +661,12 @@ impl Daemon {
                 }
             };
             match parsed.unlock(&meta.id, &cred.as_unlock()) {
-                Ok(v) => {
-                    self.failures = 0;
-                    self.next_attempt = None;
-                    self.check_rollback(&v);
-                    return Ok(v);
-                }
+                Ok(v) => return Ok(v),
                 Err(vault_core::Error::WrongFactor) => {}
-                Err(err) => return Err(e(err)),
+                Err(err) => return Err((e(err), false)),
             }
         }
-        self.failures += 1;
-        if self.failures > FREE_ATTEMPTS {
-            let wait =
-                Duration::from_secs(1 << (self.failures - FREE_ATTEMPTS).min(9)).min(MAX_BACKOFF);
-            self.next_attempt = Some(Instant::now() + wait);
-        }
-        Err(last)
+        Err((last, true))
     }
 
     fn check_rollback(&mut self, v: &Vault) {
@@ -493,12 +736,23 @@ impl Daemon {
         if self.rollback {
             return Err("the vault file is older than one this daemon saw before (possible rollback); writes are refused".into());
         }
+        // Take in what other devices wrote first, so it is not overwritten.
+        let _ = self.pull(None, false);
         let v = self.vault.as_mut().ok_or("vault is locked")?;
         let bytes = v.to_bytes(&mut OsRandom).map_err(e)?;
         self.store.write(&bytes).map_err(|e| e.to_string())?;
         self.store
             .record_generation(&v.vault_id(), v.generation())
-            .map_err(|e| e.to_string())
+            .map_err(|e| e.to_string())?;
+        if let Some(s) = &mut self.sync
+            && !s.blocked
+        {
+            match s.folder.write(&bytes) {
+                Ok(()) => s.last_sync = Some(now()),
+                Err(err) => s.error = Some(format!("could not write the synced copy: {err}")),
+            }
+        }
+        Ok(())
     }
 
     /// After adding a slot: re-read the file and unlock it with the new slot.
@@ -781,10 +1035,19 @@ impl Daemon {
                 self.save()?;
                 Ok(Response::Imported(items.len()))
             }
+            Request::SyncNow => {
+                self.vault()?;
+                if self.sync.is_none() {
+                    return Err("sync is off; turn it on with `vault sync on PATH`".into());
+                }
+                self.sync_now(None, true);
+                Ok(Response::Status(self.status()))
+            }
             Request::Status
             | Request::Init { .. }
             | Request::Pair { .. }
             | Request::Unlock { .. }
+            | Request::SetSync { .. }
             | Request::Lock
             | Request::Generate { .. } => {
                 unreachable!("handled in dispatch")

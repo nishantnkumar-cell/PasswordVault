@@ -9,7 +9,7 @@ Status: v1 feature-complete on Linux, not yet audited. Do not trust it with real
 | `vault-core` | File format, key hierarchy, keyslots, items (logins, secure notes, cards, identities, custom fields), TOTP, generator, origin policy. Pure, no I/O. |
 | `vault-import` | Bitwarden JSON (all four item types) and browser CSV import. |
 | `vault-ipc` | Wire protocol between the daemon and clients. |
-| `vaultd` | The daemon: storage, unlock, FIDO2 and TPM factors, socket server. |
+| `vaultd` | The daemon: storage, unlock, FIDO2 and TPM factors, folder sync, socket server. |
 | `vault-cli` | The `vault` command. |
 | `vault-native-host` | Native messaging host for the browser extension. |
 | `extension/` | Browser autofill extension (Manifest V3): logins, cards and addresses. |
@@ -20,4 +20,5 @@ Start with [`docs/vaultd.md`](docs/vaultd.md) to build and run it, then [`docs/b
 - [`docs/threat-model.md`](docs/threat-model.md): v1 threat model.
 - [`docs/format.md`](docs/format.md): vault file format, version 1.
 - [`docs/items.md`](docs/items.md): item types, TOTP and autofill origin policy.
+- [`docs/sync.md`](docs/sync.md): syncing devices through OneDrive, Google Drive or Dropbox.
 - [`docs/architecture-review.md`](docs/architecture-review.md): the review that produced brief Revision 2.

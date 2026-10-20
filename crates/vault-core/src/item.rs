@@ -355,6 +355,28 @@ impl Drop for ItemDataV1 {
     }
 }
 
+/// How [`crate::Vault::merge`] treats items: of two concurrent edits, the
+/// later `modified` time wins, and the other edit is kept as a copy titled
+/// "... (conflict)".
+pub struct ItemMerge;
+
+impl crate::Resolve for ItemMerge {
+    fn rank(&self, data: &[u8]) -> i64 {
+        ItemData::from_bytes(data)
+            .map_or(i64::MIN, |i| i64::try_from(i.modified).unwrap_or(i64::MAX))
+    }
+
+    fn conflict_copy(&self, data: &[u8]) -> zeroize::Zeroizing<Vec<u8>> {
+        match ItemData::from_bytes(data) {
+            Ok(mut item) => {
+                item.title.push_str(" (conflict)");
+                item.to_bytes()
+            }
+            Err(_) => zeroize::Zeroizing::new(data.to_vec()),
+        }
+    }
+}
+
 impl ItemData {
     /// An empty item of `kind`. (`ItemData` zeroizes on drop, so struct
     /// update syntax is not available; start here and set fields.)
@@ -575,5 +597,18 @@ mod tests {
         let mut note = ItemData::new(ItemKind::Note, "");
         note.notes = "secret".into();
         assert_eq!(note.subtitle(), "");
+    }
+
+    #[test]
+    fn merge_keeps_the_later_edit_and_a_titled_copy() {
+        use crate::Resolve;
+        let mut a = ItemData::new(ItemKind::Note, "Wifi");
+        a.modified = 10;
+        let mut b = ItemData::new(ItemKind::Note, "Wifi");
+        b.modified = 20;
+        assert!(ItemMerge.rank(&b.to_bytes()) > ItemMerge.rank(&a.to_bytes()));
+        let copy = ItemData::from_bytes(&ItemMerge.conflict_copy(&a.to_bytes())).unwrap();
+        assert_eq!(copy.title, "Wifi (conflict)");
+        assert_eq!(copy.modified, 10);
     }
 }

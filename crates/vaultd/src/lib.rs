@@ -9,5 +9,6 @@ pub use vault_hw as hw;
 pub mod logind;
 pub mod server;
 pub mod store;
+pub mod sync;
 #[cfg(windows)]
 pub mod winsession;

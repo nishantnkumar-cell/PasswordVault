@@ -188,7 +188,13 @@ struct Body {
     generation: u64,              // +1 on every write; rollback detection (threat model A5)
     slot_labels: Vec<([u8; 16], String)>, // slot id -> label
     items: Vec<ItemRecord>,
+    clocks: Vec<([u8; 16], Clock)>,       // item id -> version vector (5.1)
+    tombstones: Vec<([u8; 16], Clock)>,   // deleted item id -> vector at deletion
+    removed_slots: Vec<[u8; 16]>,         // every slot ever removed, sorted
+    key_epoch: u64,               // +1 on every revoke (6.4)
 }
+
+struct Clock(Vec<(u64, u64)>);    // (device id, edit count), sorted by device, no zero counts
 
 struct ItemRecord {
     item_id: [u8; 16],
@@ -202,6 +208,8 @@ struct ItemRecord {
 }
 ```
 
+Files written before sync have a body without the last four fields ("body v1"). Readers decode the full body first and, if that fails, the v1 body, treating it as having empty clocks, no tombstones, no removed slots and key epoch 0. Writers always write the full body. Both encodings are canonical postcard and cannot be confused: each leaves trailing bytes or runs short when read as the other. The file's `format_version` stays 1, since the header is unchanged and the slot AAD covers it.
+
 The whole body is re-encrypted with a fresh nonce on every write. Per-item keys exist so that items can later be shared or synced individually without re-encrypting the vault.
 
 ```
@@ -212,6 +220,18 @@ item_data_aad = "vault/item-data/v1" || vault_id || item_id || u64(version) || u
 `wrapped_item_key` is the AEAD of a random 32-byte item key under `vault_key`. `data_ciphertext` is the AEAD of `postcard(ItemData)` under the item key. Both use the commitment rule in 4.4.
 
 `ItemData` (title, URLs, username, password, TOTP, notes, custom fields, timestamps) is specified in `docs/items.md` and is not part of this document's freeze.
+
+### 5.1 Merging copies
+
+Two copies of one vault (same `vault_id`), edited on different devices, merge into one (`Vault::merge`; docs/sync.md has the user-facing rules). Each writer has a random 64-bit device ID kept outside the file.
+
+- **Clocks.** Writing an item increments the writer's counter in its clock. Deleting it moves its clock, incremented once more, to `tombstones`. Re-creating a deleted ID starts from the tombstone's clock. Clock order is the usual version-vector order: equal, before, after or concurrent.
+- **Items.** For an item on both sides, the later clock wins. Concurrent clocks with equal plaintext merge silently. Otherwise the caller ranks the two plaintexts (vaultd: `modified`), with ties broken by the larger SHA-256 of the plaintext; the winner keeps the item ID and the loser is added as a new item with the caller's transformed plaintext (vaultd: " (conflict)" after the title), the loser's clock, and ID `SHA-256("vault/conflict-id/v1" || item_id || postcard(loser clock) || SHA-256(loser plaintext))[0..16]`, so every device makes the same copy. The item's clock becomes the join of both. An item on one side only is taken unless a tombstone's clock is at or after its clock.
+- **Deletes.** Tombstones are unioned (clocks joined). After merging, any item whose clock is at or before its tombstone is removed. An edit concurrent with a delete therefore survives.
+- **Records.** A record taken from the other copy is copied as is, version and ciphertext included; its AAD does not depend on the copy. If the vault keys differ, its item key is unwrapped with the other key and wrapped again under this one.
+- **Slots.** `removed_slots` is unioned and every listed slot is dropped, except that the last daily-use slot is kept. When both copies hold the same vault key, slots only the other copy has are added (they wrap that key). Labels follow their slots.
+- **Different vault keys** (a revoke on one side, 6.4): the copy with the higher `key_epoch` wins, ties going to the larger `HMAC(vault_key, "vault/key-order/v1" || vault_id)`. If the other copy wins, this copy takes its vault key and its exact slot list, re-wrapping every item key; its own slots not in that list are reported as dropped. If this copy wins, it keeps its key and slots and imports the other's items. Opening a copy under a different key needs a credential for one of its slots (`ParsedVault::unlock`); `ParsedVault::open_with` reports `DifferentKey` when the header MAC does not verify under the key already held.
+- **Counters.** `generation` and `key_epoch` become the maximum of the two; the next write increments `generation` as usual.
 
 ## 6. Operations
 
@@ -258,11 +278,12 @@ vault/slot-aad/v1      vault/kek/v1           vault/kek-recovery/v1
 vault/enc/v1           vault/commit/v1        vault/header-mac/v1
 vault/body/v1          vault/body-aad/v1      vault/item-key/v1
 vault/item-data/v1     vault/recovery-check/v1
+vault/conflict-id/v1   vault/key-order/v1
 ```
 
 ## 9. Test vectors
 
-`vault-core` pins a golden file built from a deterministic random source (`golden_file_is_stable`): any change to its length or SHA-256 is a format change. Still to add as standalone hex vectors:
+`vault-core` pins a golden file built from a deterministic random source (`golden_file_is_stable`): any change to its length or SHA-256 is a format change. The same file as written with a v1 body is kept in `src/testdata/body-v1.svault` and must keep opening (`body_v1_files_still_open`). Still to add as standalone hex vectors:
 
 - KEK derivation for each factor type with fixed inputs (FIDO2 and TPM using fixed `hw_key` values).
 - Commit and AEAD for a fixed key, nonce and AAD.
