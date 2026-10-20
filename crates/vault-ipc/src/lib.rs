@@ -22,6 +22,9 @@ pub const MAX_FRAME: usize = 16 << 20;
 /// Secret text that is zeroized when dropped.
 pub type Secret = Zeroizing<String>;
 
+/// Bytes that are zeroized when dropped.
+pub type SecretBytes = Zeroizing<Vec<u8>>;
+
 /// Token a paired client presents with each request.
 pub type ClientToken = Zeroizing<[u8; 32]>;
 
@@ -181,6 +184,45 @@ pub enum Request {
     /// The private key in its usual text form, only after proving an unlock
     /// factor again.
     ExportKey { id: ItemId, method: UnlockMethod },
+    /// Generate an OpenPGP key for `user_id` ("Name <mail@example.com>"):
+    /// classic (v4 Ed25519/Curve25519) or post-quantum (v6 ML-DSA/ML-KEM).
+    GeneratePgpKey {
+        title: String,
+        user_id: String,
+        post_quantum: bool,
+        confirm: bool,
+    },
+    /// Store an OpenPGP secret key (armored or binary) as a new item.
+    ImportPgpKey {
+        title: String,
+        key: SecretBytes,
+        passphrase: Option<Secret>,
+        confirm: bool,
+    },
+    /// Detached signature over `data` with an item's OpenPGP key.
+    PgpSign {
+        id: ItemId,
+        data: Vec<u8>,
+        armor: bool,
+    },
+    /// Decrypt a message with whichever OpenPGP key in the vault it is for.
+    PgpDecrypt { message: Vec<u8> },
+    /// Encrypt to the keys of the listed items and to the given certificates
+    /// (armored or binary), optionally signing with an item's key.
+    PgpEncrypt {
+        to_items: Vec<ItemId>,
+        to_certs: Vec<Vec<u8>>,
+        data: SecretBytes,
+        armor: bool,
+        sign_with: Option<ItemId>,
+    },
+    /// Check a detached signature against the vault's OpenPGP keys and the
+    /// given certificates.
+    PgpVerify {
+        data: Vec<u8>,
+        signature: Vec<u8>,
+        certs: Vec<Vec<u8>>,
+    },
 }
 
 /// Public slot information.
@@ -267,6 +309,12 @@ pub enum Response {
     PublicKey(String),
     /// An exported private key.
     ExportedKey(Secret),
+    /// Output that is not secret: a signature or ciphertext.
+    Bytes(Vec<u8>),
+    /// Decrypted data, and the title of the key that decrypted it.
+    Decrypted { plaintext: SecretBytes, key: String },
+    /// A good signature, by this key (fingerprint and user ID).
+    Verified(String),
 }
 
 /// Write one frame: u32 little-endian length, then postcard bytes.

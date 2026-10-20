@@ -753,3 +753,120 @@ fn ssh_keys_and_agent() {
     assert!(agent_list(&agent).is_empty());
     assert!(agent_sign(&agent, &blob, b"x").is_none());
 }
+
+#[test]
+fn pgp_keys_sign_encrypt_and_ask_first() {
+    let dir = tempfile::tempdir().unwrap();
+    let (sock, d) = start_daemon(dir.path(), server::current_user(), Duration::from_secs(600));
+    let approver = Arc::new(UseApprover(
+        std::sync::atomic::AtomicBool::new(false),
+        Mutex::new(Vec::new()),
+    ));
+    d.lock().unwrap().set_approver(approver.clone());
+    let mut c = C::new(&sock);
+    let Response::Initialized { token, .. } = c.ok(Request::Init {
+        password: s(PW),
+        client_name: "cli".into(),
+    }) else {
+        panic!()
+    };
+    c.token = Some(token);
+    let Response::ItemSaved { id: me } = c.ok(Request::GeneratePgpKey {
+        title: "me".into(),
+        user_id: "Me <me@example.com>".into(),
+        post_quantum: false,
+        confirm: false,
+    }) else {
+        panic!()
+    };
+    let Response::ItemSaved { id: pq } = c.ok(Request::GeneratePgpKey {
+        title: "pq".into(),
+        user_id: "PQ <pq@example.com>".into(),
+        post_quantum: true,
+        confirm: true,
+    }) else {
+        panic!()
+    };
+    let Response::PublicKey(cert) = c.ok(Request::PublicKey { id: me }) else {
+        panic!()
+    };
+    assert!(cert.starts_with("-----BEGIN PGP PUBLIC KEY BLOCK-----"));
+
+    // Encrypt to both, signed by `me` (no approval needed for `me`).
+    let Response::Bytes(ct) = c.ok(Request::PgpEncrypt {
+        to_items: vec![pq],
+        to_certs: vec![cert.clone().into_bytes()],
+        data: Zeroizing::new(b"meet at noon".to_vec()),
+        armor: true,
+        sign_with: Some(me),
+    }) else {
+        panic!()
+    };
+    // Keys that need no approval are tried first: `me` decrypts silently.
+    let Response::Decrypted { plaintext, key } = c.ok(Request::PgpDecrypt {
+        message: ct.clone(),
+    }) else {
+        panic!()
+    };
+    assert_eq!(&*plaintext, b"meet at noon");
+    assert_eq!(key, "me");
+    assert!(approver.1.lock().unwrap().is_empty());
+
+    // Signing with `pq` needs approval: declined, then allowed.
+    assert!(
+        c.err(Request::PgpSign {
+            id: pq,
+            data: b"v1.0".to_vec(),
+            armor: true,
+        })
+        .contains("declined")
+    );
+    approver.0.store(true, std::sync::atomic::Ordering::SeqCst);
+    let Response::Bytes(sig) = c.ok(Request::PgpSign {
+        id: pq,
+        data: b"v1.0".to_vec(),
+        armor: true,
+    }) else {
+        panic!()
+    };
+    let asked = approver.1.lock().unwrap().clone();
+    assert_eq!(asked.last().unwrap().key, "pq");
+    assert_eq!(asked.last().unwrap().purpose, "sign data with OpenPGP");
+    let Response::Verified(who) = c.ok(Request::PgpVerify {
+        data: b"v1.0".to_vec(),
+        signature: sig.clone(),
+        certs: vec![],
+    }) else {
+        panic!()
+    };
+    assert!(who.ends_with("PQ <pq@example.com>"));
+    assert!(
+        c.err(Request::PgpVerify {
+            data: b"v1.1".to_vec(),
+            signature: sig,
+            certs: vec![],
+        })
+        .contains("does not verify")
+    );
+
+    // Export, then import under another title.
+    let Response::ExportedKey(armored) = c.ok(Request::ExportKey {
+        id: me,
+        method: pw(),
+    }) else {
+        panic!()
+    };
+    assert!(armored.starts_with("-----BEGIN PGP PRIVATE KEY BLOCK-----"));
+    let Response::ItemSaved { .. } = c.ok(Request::ImportPgpKey {
+        title: "me again".into(),
+        key: Zeroizing::new(armored.as_bytes().to_vec()),
+        passphrase: None,
+        confirm: false,
+    }) else {
+        panic!()
+    };
+    let Response::Items(items) = c.ok(Request::ListItems) else {
+        panic!()
+    };
+    assert_eq!(items.iter().filter(|i| i.key.is_some()).count(), 3);
+}

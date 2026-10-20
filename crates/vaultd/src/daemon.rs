@@ -19,8 +19,8 @@ use zeroize::Zeroizing;
 
 use crate::approve::{Approver, PairPrompt};
 use crate::hw::{Hardware, prf_salt};
-use crate::ssh;
 use crate::store::Store;
+use crate::{pgp, ssh};
 
 /// Relying party ID for FIDO2 credentials created by this daemon.
 pub const RP_ID: &str = "vault.local";
@@ -43,12 +43,18 @@ pub struct Daemon {
     approver: Option<Arc<dyn Approver>>,
     prompting: bool,
     next_prompt: Option<Instant>,
+    /// Set by a request that used a key marked `confirm`: its title and the
+    /// purpose. The server asks the user before releasing the response.
+    pending_use: Option<(String, String)>,
 }
 
 /// Wait after a declined or unanswered pairing prompt before showing another.
 const PROMPT_COOLDOWN: Duration = Duration::from_secs(10);
 
 type R<T> = Result<T, String>;
+
+/// An OpenPGP key item: title, secret key, confirm flag.
+type PgpKey = (String, Zeroizing<Vec<u8>>, bool);
 
 fn now() -> u64 {
     SystemTime::now()
@@ -109,6 +115,7 @@ impl Daemon {
             approver: None,
             prompting: false,
             next_prompt: None,
+            pending_use: None,
         }
     }
 
@@ -127,6 +134,43 @@ impl Daemon {
     /// Let clients pair by asking the user through `approver`.
     pub fn set_approver(&mut self, approver: Arc<dyn Approver>) {
         self.approver = Some(approver);
+    }
+
+    /// The key use the last response depends on approval for, if any.
+    pub fn take_pending_use(&mut self) -> Option<(String, String)> {
+        self.pending_use.take()
+    }
+
+    /// An item's OpenPGP key: its title, secret key and confirm flag.
+    fn pgp_key(&mut self, id: &ItemId) -> R<PgpKey> {
+        let it = self.item(id)?;
+        match &it.key {
+            Some(KeyData::OpenPgp { tsk, confirm }) => {
+                Ok((it.title.clone(), Zeroizing::new(tsk.clone()), *confirm))
+            }
+            _ => Err(format!("\u{201c}{}\u{201d} has no OpenPGP key", it.title)),
+        }
+    }
+
+    /// All OpenPGP keys in the vault, as `pgp_key` returns them, those that
+    /// need no approval first.
+    fn pgp_keys(&mut self) -> R<Vec<PgpKey>> {
+        let ids: Vec<ItemId> = self.vault()?.item_ids().copied().collect();
+        let mut out = Vec::new();
+        for id in ids {
+            if let Ok(k) = self.pgp_key(&id) {
+                out.push(k);
+            }
+        }
+        out.sort_by_key(|k| k.2);
+        Ok(out)
+    }
+
+    /// Record that the response depends on the user approving this use.
+    fn needs_approval(&mut self, confirm: bool, title: &str, purpose: &str) {
+        if confirm {
+            self.pending_use = Some((title.to_owned(), purpose.to_owned()));
+        }
     }
 
     /// The approval window, for key-use prompts.
@@ -207,7 +251,11 @@ impl Daemon {
         r.unwrap_or_else(Response::Error)
     }
 
+    /// Handle one request. If it used a key that needs approval, the
+    /// response must not be released until [`Self::take_pending_use`] has
+    /// been asked and the user allowed it.
     pub fn handle(&mut self, env: Envelope) -> Response {
+        self.pending_use = None;
         match self.dispatch(env) {
             Ok(r) => r,
             Err(m) => Response::Error(m),
@@ -775,7 +823,9 @@ impl Daemon {
                 Some(KeyData::Ssh { openssh, .. }) => {
                     Ok(Response::PublicKey(ssh::public_line(openssh)?))
                 }
-                Some(KeyData::OpenPgp { .. }) => Err("OpenPGP keys are not supported yet".into()),
+                Some(KeyData::OpenPgp { tsk, .. }) => {
+                    Ok(Response::PublicKey(pgp::public_armored(tsk)?))
+                }
                 None => Err("this item has no key".into()),
             },
             Request::SetKeyConfirm { id, confirm } => {
@@ -799,11 +849,82 @@ impl Daemon {
                     Some(KeyData::Ssh { openssh, .. }) => {
                         Ok(Response::ExportedKey(ssh::private_text(openssh)?))
                     }
-                    Some(KeyData::OpenPgp { .. }) => {
-                        Err("OpenPGP keys are not supported yet".into())
+                    Some(KeyData::OpenPgp { tsk, .. }) => {
+                        Ok(Response::ExportedKey(pgp::secret_armored(tsk)?))
                     }
                     None => Err("this item has no key".into()),
                 }
+            }
+            Request::GeneratePgpKey {
+                title,
+                user_id,
+                post_quantum,
+                confirm,
+            } => {
+                let key = pgp::generate(&user_id, post_quantum, confirm)?;
+                self.new_key_item(title, key)
+            }
+            Request::ImportPgpKey {
+                title,
+                key,
+                passphrase,
+                confirm,
+            } => {
+                let key = pgp::import(&key, passphrase.as_deref().map(|s| s.as_str()), confirm)?;
+                self.new_key_item(title, key)
+            }
+            Request::PgpSign { id, data, armor } => {
+                let (title, tsk, confirm) = self.pgp_key(&id)?;
+                let sig = pgp::sign(&tsk, &data, armor)?;
+                self.needs_approval(confirm, &title, "sign data with OpenPGP");
+                Ok(Response::Bytes(sig))
+            }
+            Request::PgpDecrypt { message } => {
+                for (title, tsk, confirm) in self.pgp_keys()? {
+                    if let Ok(plaintext) = pgp::decrypt(&tsk, &message) {
+                        self.needs_approval(confirm, &title, "decrypt an OpenPGP message");
+                        return Ok(Response::Decrypted {
+                            plaintext,
+                            key: title,
+                        });
+                    }
+                }
+                Err("no OpenPGP key in the vault can decrypt this message".into())
+            }
+            Request::PgpEncrypt {
+                to_items,
+                to_certs,
+                data,
+                armor,
+                sign_with,
+            } => {
+                let mut certs = Vec::new();
+                for id in &to_items {
+                    certs.push(pgp::certificate(&self.pgp_key(id)?.1)?);
+                }
+                for c in &to_certs {
+                    certs.push(pgp::certificate(c)?);
+                }
+                let signer = sign_with.map(|id| self.pgp_key(&id)).transpose()?;
+                let out = pgp::encrypt(&certs, &data, armor, signer.as_ref().map(|s| &s.1[..]))?;
+                if let Some((title, _, confirm)) = &signer {
+                    self.needs_approval(*confirm, title, "sign an encrypted OpenPGP message");
+                }
+                Ok(Response::Bytes(out))
+            }
+            Request::PgpVerify {
+                data,
+                signature,
+                certs,
+            } => {
+                let mut all = Vec::new();
+                for (_, tsk, _) in self.pgp_keys()? {
+                    all.push(pgp::certificate(&tsk)?);
+                }
+                for c in &certs {
+                    all.push(pgp::certificate(c)?);
+                }
+                Ok(Response::Verified(pgp::verify(&all, &data, &signature)?))
             }
             Request::Status
             | Request::Init { .. }
@@ -848,7 +969,9 @@ fn describe_key(k: &KeyData) -> String {
         KeyData::Ssh { openssh, .. } => {
             ssh::describe(openssh).unwrap_or_else(|_| "unreadable SSH key".into())
         }
-        KeyData::OpenPgp { .. } => "OpenPGP key".into(),
+        KeyData::OpenPgp { tsk, .. } => {
+            pgp::describe(tsk).unwrap_or_else(|_| "unreadable OpenPGP key".into())
+        }
     }
 }
 

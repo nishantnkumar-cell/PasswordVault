@@ -48,6 +48,33 @@ fn pair_by_prompt(
     lock().end_prompt(&prompt, answer)
 }
 
+/// Release `resp` only if the user allows this key use. Asks without
+/// holding the daemon lock while the window is open.
+fn confirm_use(
+    daemon: &Shared,
+    key: String,
+    purpose: String,
+    pid: Option<u32>,
+    resp: Response,
+) -> Response {
+    let approver = daemon.lock().unwrap_or_else(|p| p.into_inner()).approver();
+    let Some(approver) = approver else {
+        return Response::Error(
+            "this key asks before each use, but vaultd cannot show the approval window".into(),
+        );
+    };
+    let prompt = approve::UsePrompt {
+        key: approve::clean_name(&key),
+        purpose,
+        program: pid.and_then(approve::program_of),
+    };
+    match approver.confirm_use(&prompt) {
+        Ok(true) => resp,
+        Ok(false) => Response::Error("declined in the approval window".into()),
+        Err(m) => Response::Error(format!("could not show the approval window: {m}")),
+    }
+}
+
 /// Serve one client. `pid` is the peer process, for the pairing prompt.
 pub fn connection(mut s: impl Read + Write, daemon: &Shared, pid: Option<u32>) -> io::Result<()> {
     loop {
@@ -65,13 +92,20 @@ pub fn connection(mut s: impl Read + Write, daemon: &Shared, pid: Option<u32>) -
                 scope,
                 method: None,
             } => pair_by_prompt(daemon, &client_name, scope, pid),
-            request => daemon
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .handle(Envelope {
-                    token: env.token,
-                    request,
-                }),
+            request => {
+                let (resp, pending) = {
+                    let mut d = daemon.lock().unwrap_or_else(|p| p.into_inner());
+                    let r = d.handle(Envelope {
+                        token: env.token,
+                        request,
+                    });
+                    (r, d.take_pending_use())
+                };
+                match pending {
+                    None => resp,
+                    Some((key, purpose)) => confirm_use(daemon, key, purpose, pid, resp),
+                }
+            }
         };
         write_frame(&mut s, &resp)?;
     }

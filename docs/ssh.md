@@ -7,7 +7,7 @@ SSH keys can live in the vault. `vaultd` serves the standard ssh-agent protocol,
 ```sh
 vault ssh new laptop            # Ed25519; --ecdsa for NIST P-256
 vault ssh import work ~/.ssh/id_ed25519   # or store an existing key (asks its passphrase)
-vault ssh pub ID                # public key for authorized_keys or GitHub
+vault ssh pub laptop            # public key (by title or ID) for authorized_keys or GitHub
 eval "$(vault ssh agent)"       # sets SSH_AUTH_SOCK; put this in your shell profile
 ssh-add -L                      # the vault's keys, while it is unlocked
 ```
