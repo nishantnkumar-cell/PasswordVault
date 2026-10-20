@@ -1,5 +1,5 @@
 use vault_core::generator::{Charset, generate_passphrase, generate_password};
-use vault_core::item::{ItemData, UrlEntry};
+use vault_core::item::{ItemData, KeyData, UrlEntry};
 use vault_core::origin::{MatchMode, Origin, may_fill};
 use vault_core::totp::{TotpAlgorithm, TotpConfig};
 use vault_core::*;
@@ -188,6 +188,7 @@ fn items_round_trip_through_a_vault() {
         notes: "note".into(),
         created: 1,
         modified: 2,
+        key: None,
     };
     let id = v.new_item_id(&mut rng).unwrap();
     v.put_item(&mut rng, &id, &item.to_bytes()).unwrap();
@@ -205,4 +206,41 @@ fn items_round_trip_through_a_vault() {
     let back = ItemData::from_bytes(&v2.get_item(&id).unwrap()).unwrap();
     assert!(back == item);
     assert!(ItemData::from_bytes(&[9, 9]).is_err());
+}
+
+#[test]
+fn schema_1_items_are_still_read() {
+    let mut item = ItemData::default();
+    item.title = "Old".into();
+    item.notes = "written before keys existed".into();
+    item.created = 5;
+    let v2 = item.to_bytes();
+    assert_eq!(v2[0], 2);
+    // Schema 1 is the same encoding without the trailing `key: None` byte.
+    assert_eq!(v2.last(), Some(&0));
+    let mut v1 = vec![1u8];
+    v1.extend_from_slice(&v2[1..v2.len() - 1]);
+    assert!(ItemData::from_bytes(&v1).unwrap() == item);
+    // A schema 1 tag on schema 2 bytes is rejected, and so is an unknown tag.
+    let mut wrong = v2.to_vec();
+    wrong[0] = 1;
+    assert!(ItemData::from_bytes(&wrong).is_err());
+    wrong[0] = 3;
+    assert!(ItemData::from_bytes(&wrong).is_err());
+}
+
+#[test]
+fn key_items_round_trip() {
+    let mut item = ItemData::default();
+    item.title = "laptop".into();
+    item.key = Some(KeyData::Ssh {
+        openssh: "-----BEGIN OPENSSH PRIVATE KEY-----\n...".into(),
+        confirm: true,
+    });
+    let back = ItemData::from_bytes(&item.to_bytes()).unwrap();
+    assert!(back == item);
+    let mut k = back.key.clone().unwrap();
+    assert!(k.confirm());
+    k.set_confirm(false);
+    assert!(!k.confirm());
 }

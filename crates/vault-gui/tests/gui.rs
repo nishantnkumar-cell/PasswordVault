@@ -33,7 +33,11 @@ fn start_daemon(dir: &Path, idle: Duration) -> (PathBuf, server::Shared) {
     let sock = endpoint(dir);
     let l = server::bind(&sock, false).unwrap();
     let d2 = d.clone();
-    std::thread::spawn(move || server::serve(l, d2, server::current_user()));
+    std::thread::spawn(move || {
+        server::serve(l, server::current_user(), move |c, pid| {
+            let _ = server::connection(c, &d2, pid);
+        })
+    });
     let d3 = d.clone();
     std::thread::spawn(move || server::idle_locker(d3));
     (sock, d)

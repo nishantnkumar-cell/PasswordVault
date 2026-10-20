@@ -11,6 +11,7 @@ name = "vault"
 path = "src/main.rs"
 
 [dependencies]
+data-encoding = "2"
 rpassword = "7"
 vault-core = { path = "../vault-core" }
 vault-ipc = { path = "../vault-ipc" }

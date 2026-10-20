@@ -10,8 +10,9 @@ use vault_core::item::{ItemData, UrlEntry};
 use vault_core::origin::MatchMode;
 use vault_core::totp::TotpConfig;
 use vault_ipc::{
-    ClientScope, ClientToken, Envelope, GenerateOptions, ImportFormat, ItemSummary, Request,
-    Response, Secret, SlotInfo, UnlockMethod, hex, local, parse_id, read_frame, write_frame,
+    ClientScope, ClientToken, Envelope, GenerateOptions, ImportFormat, ItemSummary, KeyKind,
+    Request, Response, Secret, SecretBytes, SlotInfo, UnlockMethod, hex, local, parse_id,
+    read_frame, write_frame,
 };
 use zeroize::Zeroizing;
 
@@ -39,6 +40,27 @@ ITEMS                          ID may be any unique prefix of an item ID
   find ORIGIN                  items that may be filled on ORIGIN, e.g. https://example.com
   gen [--length N] [--no-symbols] [--no-ambiguous]
   import bitwarden|csv FILE    import an unencrypted export (delete the file afterwards)
+
+SSH KEYS                       keys stay in vaultd; ssh and git use them through its agent
+  ssh new TITLE [--ecdsa] [--no-confirm]  generate a key (Ed25519 unless --ecdsa)
+  ssh import TITLE FILE [--no-confirm]    store an OpenSSH private key (asks its passphrase)
+  ssh ls                       list SSH keys
+  ssh pub ID                   print the public key (ID may also be the title), for authorized_keys or GitHub
+  ssh confirm ID on|off        ask before each use (on by default)
+  ssh export ID [METHOD]       print the private key after proving a factor again
+  ssh agent                    print the line that points SSH_AUTH_SOCK at vaultd
+
+OPENPGP KEYS                   keys stay in vaultd; FILE defaults to stdin, -o to stdout
+  pgp new TITLE USERID [--pq] [--no-confirm]
+                               generate a key for USERID, like 'Name <mail>'
+                               (--pq: post-quantum v6 key, RFC 9980)
+  pgp import TITLE FILE [--no-confirm]    store a secret key (asks its passphrase)
+  pgp ls | pub ID | confirm ID on|off | export ID [METHOD]
+  pgp encrypt [-r ID].. [-R CERT].. [--sign ID] [--binary] [FILE] [-o OUT]
+                               -r: a key in the vault, -R: a certificate file
+  pgp decrypt [FILE] [-o OUT]  with whichever vault key the message is for
+  pgp sign ID [--binary] [FILE] [-o OUT]  detached signature
+  pgp verify SIG [-R CERT].. [FILE]       against vault keys and CERT files
 
 KEYSLOTS
   slots                        list keyslots
@@ -103,15 +125,20 @@ impl Client {
     }
 
     fn call(&mut self, request: Request) -> Response {
+        match self.try_call(request) {
+            Response::Error(m) => die(m),
+            r => r,
+        }
+    }
+
+    /// Like [`Self::call`], but returns errors.
+    fn try_call(&mut self, request: Request) -> Response {
         let env = Envelope {
             token: self.token.clone(),
             request,
         };
         write_frame(&mut self.stream, &env).unwrap_or_else(|e| die(e));
-        match read_frame(&mut self.stream).unwrap_or_else(|e| die(e)) {
-            Response::Error(m) => die(m),
-            r => r,
-        }
+        read_frame(&mut self.stream).unwrap_or_else(|e| die(e))
     }
 }
 
@@ -398,8 +425,9 @@ fn main() {
         "ls" => {
             for i in items(&mut Client::connect()) {
                 let totp = if i.has_totp { "  [totp]" } else { "" };
+                let key = if i.key.is_some() { "  [key]" } else { "" };
                 println!(
-                    "{}  {:<28} {:<24} {}{totp}",
+                    "{}  {:<28} {:<24} {}{totp}{key}",
                     short(&i.id),
                     i.title,
                     i.username,
@@ -610,6 +638,348 @@ fn main() {
             }
             println!("Copies of the old file can still be opened with the old factors.");
         }
+        "ssh" => ssh(rest),
+        "pgp" => pgp(rest),
         _ => die(format!("unknown command {cmd}; see `vault help`")),
     }
+}
+
+/// `vault ssh ...`.
+fn ssh(args: &[String]) {
+    let sub = args.first().map(String::as_str).unwrap_or("ls");
+    let rest = args.get(1..).unwrap_or_default();
+    let confirm = !rest.iter().any(|a| a == "--no-confirm");
+    let key_id = |c: &mut Client, s: &str| key_item(c, s, |k| !k.starts_with("OpenPGP"));
+    match sub {
+        "new" => {
+            let title = positional(rest, 0, "TITLE");
+            let kind = if rest.iter().any(|a| a == "--ecdsa") {
+                KeyKind::SshEcdsaP256
+            } else {
+                KeyKind::SshEd25519
+            };
+            let mut c = Client::connect();
+            let Response::ItemSaved { id } = c.call(Request::GenerateKey {
+                title,
+                kind,
+                confirm,
+            }) else {
+                die("unexpected response")
+            };
+            print_public(&mut c, id);
+        }
+        "import" => {
+            let title = positional(rest, 0, "TITLE");
+            let file = positional(rest, 1, "FILE");
+            let private = Zeroizing::new(
+                std::fs::read_to_string(&file).unwrap_or_else(|e| die(format!("{file}: {e}"))),
+            );
+            let passphrase = if private.contains("BEGIN OPENSSH PRIVATE KEY") && encrypted(&private)
+            {
+                Some(secret("Key passphrase: "))
+            } else {
+                None
+            };
+            let mut c = Client::connect();
+            let Response::ItemSaved { id } = c.call(Request::ImportSshKey {
+                title,
+                private,
+                passphrase,
+                confirm,
+            }) else {
+                die("unexpected response")
+            };
+            print_public(&mut c, id);
+            eprintln!("Stored. You can delete {file} once ssh works through the vault.");
+        }
+        "ls" => {
+            for i in items(&mut Client::connect()) {
+                if let Some(k) = &i.key {
+                    println!("{}  {:<28} {k}", short(&i.id), i.title);
+                }
+            }
+        }
+        "pub" => {
+            let mut c = Client::connect();
+            let id = key_id(&mut c, &positional(rest, 0, "ID"));
+            print_public(&mut c, id);
+        }
+        "confirm" => {
+            let mut c = Client::connect();
+            let id = key_id(&mut c, &positional(rest, 0, "ID"));
+            let on = match positional(rest, 1, "on|off").as_str() {
+                "on" => true,
+                "off" => false,
+                _ => die("say on or off"),
+            };
+            c.call(Request::SetKeyConfirm { id, confirm: on });
+            println!(
+                "{}",
+                if on {
+                    "Each use will ask first."
+                } else {
+                    "Any program running as you can now use this key while the vault is unlocked."
+                }
+            );
+        }
+        "export" => {
+            let mut c = Client::connect();
+            let id = key_id(&mut c, &positional(rest, 0, "ID"));
+            eprintln!("Prove an unlock factor again to export a private key.");
+            let Response::ExportedKey(k) = c.call(Request::ExportKey {
+                id,
+                method: method(rest),
+            }) else {
+                die("unexpected response")
+            };
+            print!("{}", k.as_str());
+        }
+        "agent" => {
+            let p = local::ssh_agent_endpoint().unwrap_or_else(|e| die(e));
+            #[cfg(unix)]
+            println!("export SSH_AUTH_SOCK={}", p.display());
+            #[cfg(windows)]
+            println!("$env:SSH_AUTH_SOCK = '{}'", p.display());
+        }
+        _ => die(format!("unknown ssh command {sub}; see `vault help`")),
+    }
+}
+
+/// A key item by exact title or ID prefix, among keys whose description
+/// passes `kind`.
+fn key_item(c: &mut Client, s: &str, kind: impl Fn(&str) -> bool) -> [u8; 16] {
+    let keys: Vec<ItemSummary> = items(c)
+        .into_iter()
+        .filter(|i| i.key.as_deref().is_some_and(&kind))
+        .collect();
+    let named: Vec<_> = keys.iter().filter(|i| i.title == s).collect();
+    match named.len() {
+        1 => named[0].id,
+        0 => resolve(keys.iter().map(|i| (i.id, ())), s).0,
+        _ => die(format!("several keys are titled {s}; use the ID")),
+    }
+}
+
+/// Arguments of `vault pgp ...`: flags with values, switches, positionals.
+struct PgpArgs {
+    recipients: Vec<String>,
+    certs: Vec<String>,
+    sign: Option<String>,
+    out: Option<String>,
+    binary: bool,
+    pq: bool,
+    confirm: bool,
+    pos: Vec<String>,
+}
+
+fn pgp_args(args: &[String]) -> PgpArgs {
+    let mut a = PgpArgs {
+        recipients: vec![],
+        certs: vec![],
+        sign: None,
+        out: None,
+        binary: false,
+        pq: false,
+        confirm: true,
+        pos: vec![],
+    };
+    let mut it = args.iter();
+    while let Some(x) = it.next() {
+        let mut val = || {
+            it.next()
+                .cloned()
+                .unwrap_or_else(|| die(format!("{x} needs a value")))
+        };
+        match x.as_str() {
+            "-r" => a.recipients.push(val()),
+            "-R" => a.certs.push(val()),
+            "--sign" => a.sign = Some(val()),
+            "-o" => a.out = Some(val()),
+            "--binary" => a.binary = true,
+            "--pq" => a.pq = true,
+            "--no-confirm" => a.confirm = false,
+            // Unlock methods for `export`.
+            "--password" | "--fido2" | "--tpm" | "--recovery" => {}
+            f if f.starts_with('-') && f.len() > 1 => die(format!("unknown option {f}")),
+            _ => a.pos.push(x.clone()),
+        }
+    }
+    a
+}
+
+/// A file's bytes, or stdin's for `None` or `-`.
+fn read_input(path: Option<&String>) -> Vec<u8> {
+    use std::io::Read;
+    match path.map(String::as_str) {
+        None | Some("-") => {
+            let mut v = Vec::new();
+            io::stdin().read_to_end(&mut v).unwrap_or_else(|e| die(e));
+            v
+        }
+        Some(p) => std::fs::read(p).unwrap_or_else(|e| die(format!("{p}: {e}"))),
+    }
+}
+
+fn write_output(path: Option<&String>, bytes: &[u8]) {
+    match path {
+        None => io::stdout().write_all(bytes).unwrap_or_else(|e| die(e)),
+        Some(p) => local::write_private(std::path::Path::new(p), bytes)
+            .unwrap_or_else(|e| die(format!("{p}: {e}"))),
+    }
+}
+
+/// `vault pgp ...`.
+fn pgp(args: &[String]) {
+    let sub = args.first().map(String::as_str).unwrap_or("ls");
+    let a = pgp_args(args.get(1..).unwrap_or_default());
+    let pos = |n: usize, what: &str| {
+        a.pos
+            .get(n)
+            .cloned()
+            .unwrap_or_else(|| die(format!("missing {what}; see `vault help`")))
+    };
+    let key_id = |c: &mut Client, s: &str| key_item(c, s, |k| k.starts_with("OpenPGP"));
+    let mut c = Client::connect();
+    match sub {
+        "new" => {
+            let Response::ItemSaved { id } = c.call(Request::GeneratePgpKey {
+                title: pos(0, "TITLE"),
+                user_id: pos(1, "user ID"),
+                post_quantum: a.pq,
+                confirm: a.confirm,
+            }) else {
+                die("unexpected response")
+            };
+            print_public(&mut c, id);
+        }
+        "import" => {
+            let title = pos(0, "TITLE");
+            let key: SecretBytes = Zeroizing::new(read_input(Some(&pos(1, "FILE"))));
+            let req = |passphrase| Request::ImportPgpKey {
+                title: title.clone(),
+                key: key.clone(),
+                passphrase,
+                confirm: a.confirm,
+            };
+            let r = match c.try_call(req(None)) {
+                Response::Error(m) if m.contains("give its passphrase") => {
+                    c.call(req(Some(secret("Key passphrase: "))))
+                }
+                Response::Error(m) => die(m),
+                r => r,
+            };
+            let Response::ItemSaved { id } = r else {
+                die("unexpected response")
+            };
+            print_public(&mut c, id);
+        }
+        "ls" => {
+            for i in items(&mut c) {
+                if let Some(k) = i.key.as_deref().filter(|k| k.starts_with("OpenPGP")) {
+                    println!("{}  {:<20} {k}", short(&i.id), i.title);
+                }
+            }
+        }
+        "pub" => {
+            let id = key_id(&mut c, &pos(0, "ID"));
+            print_public(&mut c, id);
+        }
+        "confirm" => {
+            let id = key_id(&mut c, &pos(0, "ID"));
+            let on = match pos(1, "on|off").as_str() {
+                "on" => true,
+                "off" => false,
+                _ => die("say on or off"),
+            };
+            c.call(Request::SetKeyConfirm { id, confirm: on });
+        }
+        "export" => {
+            let id = key_id(&mut c, &pos(0, "ID"));
+            eprintln!("Prove an unlock factor again to export a secret key.");
+            let Response::ExportedKey(k) = c.call(Request::ExportKey {
+                id,
+                method: method(args),
+            }) else {
+                die("unexpected response")
+            };
+            eprintln!("This key has no passphrase: keep the output safe.");
+            print!("{}", k.as_str());
+        }
+        "encrypt" => {
+            let to_items = a.recipients.iter().map(|r| key_id(&mut c, r)).collect();
+            let to_certs = a.certs.iter().map(|p| read_input(Some(p))).collect();
+            let sign_with = a.sign.as_ref().map(|s| key_id(&mut c, s));
+            let data = Zeroizing::new(read_input(a.pos.first()));
+            let Response::Bytes(out) = c.call(Request::PgpEncrypt {
+                to_items,
+                to_certs,
+                data,
+                armor: !a.binary,
+                sign_with,
+            }) else {
+                die("unexpected response")
+            };
+            write_output(a.out.as_ref(), &out);
+        }
+        "decrypt" => {
+            let message = read_input(a.pos.first());
+            let Response::Decrypted { plaintext, key } = c.call(Request::PgpDecrypt { message })
+            else {
+                die("unexpected response")
+            };
+            eprintln!("Decrypted with \u{201c}{key}\u{201d}.");
+            write_output(a.out.as_ref(), &plaintext);
+        }
+        "sign" => {
+            let id = key_id(&mut c, &pos(0, "ID"));
+            let data = read_input(a.pos.get(1));
+            let Response::Bytes(sig) = c.call(Request::PgpSign {
+                id,
+                data,
+                armor: !a.binary,
+            }) else {
+                die("unexpected response")
+            };
+            write_output(a.out.as_ref(), &sig);
+        }
+        "verify" => {
+            let signature = read_input(Some(&pos(0, "SIG")));
+            let data = read_input(a.pos.get(1));
+            let certs = a.certs.iter().map(|p| read_input(Some(p))).collect();
+            let Response::Verified(who) = c.call(Request::PgpVerify {
+                data,
+                signature,
+                certs,
+            }) else {
+                die("unexpected response")
+            };
+            println!("Good signature from {who}");
+        }
+        _ => die(format!("unknown pgp command {sub}; see `vault help`")),
+    }
+}
+
+fn print_public(c: &mut Client, id: [u8; 16]) {
+    let Response::PublicKey(line) = c.call(Request::PublicKey { id }) else {
+        die("unexpected response")
+    };
+    println!("{line}");
+}
+
+/// Whether an OpenSSH private key file is passphrase-protected: its cipher
+/// name, the first field after the magic, is not "none".
+fn encrypted(pem: &str) -> bool {
+    let body: String = pem
+        .lines()
+        .filter(|l| !l.starts_with("-----"))
+        .collect::<Vec<_>>()
+        .concat();
+    let Ok(raw) = data_encoding::BASE64.decode(body.trim().as_bytes()) else {
+        return false;
+    };
+    let rest = raw.strip_prefix(b"openssh-key-v1\0").unwrap_or_default();
+    let n = rest.get(..4).map_or(0, |b| {
+        u32::from_be_bytes(b.try_into().unwrap_or_default()) as usize
+    });
+    rest.get(4..4 + n).is_some_and(|c| c != b"none")
 }

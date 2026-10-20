@@ -1,6 +1,6 @@
-# Item payload, schema 1
+# Item payload, schema 2
 
-Each vault item's data (format.md section 5, `ItemData`) is `0x01 || postcard(ItemData)`. The leading byte is the item schema version, independent of the file format version. Readers reject an unknown schema byte and non-canonical encodings.
+Each vault item's data (format.md section 5, `ItemData`) is `0x02 || postcard(ItemData)`. The leading byte is the item schema version, independent of the file format version. Readers reject an unknown schema byte and non-canonical encodings. Schema 1 (`0x01`, the same struct without `key`) is still read; items are rewritten as schema 2 when next saved.
 
 ```rust
 struct ItemData {
@@ -12,6 +12,12 @@ struct ItemData {
     notes: String,
     created: u64,   // seconds since the Unix epoch
     modified: u64,
+    key: Option<KeyData>,  // schema 2; never sent to clients
+}
+
+enum KeyData {
+    Ssh { openssh: String, confirm: bool },   // OpenSSH private key, no passphrase
+    OpenPgp { tsk: Vec<u8>, confirm: bool },  // transferable secret key, no passphrase
 }
 
 struct UrlEntry {

@@ -1,6 +1,7 @@
-//! Pairing by approval: the daemon asks the user itself, in a window it
-//! starts (`vault-prompt`), naming the program that asked. A client can
-//! request pairing but cannot answer its own request.
+//! Approval by the user: the daemon asks itself, in a window it starts
+//! (`vault-prompt`), naming the program that asked. Used for pairing (a
+//! client can request pairing but cannot answer its own request) and before
+//! each use of a key marked `confirm`.
 
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -19,9 +20,25 @@ pub struct PairPrompt {
     pub program: Option<String>,
 }
 
+/// A key use the user is asked to approve.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UsePrompt {
+    /// The key item's title.
+    pub key: String,
+    /// What the signature is for, read from the request. Not verified.
+    pub purpose: String,
+    /// The connecting process's executable, as the OS reports it.
+    pub program: Option<String>,
+}
+
 /// Something that can ask the user. `Ok(true)` means approved.
 pub trait Approver: Send + Sync {
     fn approve(&self, prompt: &PairPrompt) -> Result<bool, String>;
+
+    /// Ask before using a key. Approvers that cannot ask refuse.
+    fn confirm_use(&self, _prompt: &UsePrompt) -> Result<bool, String> {
+        Err("this approver cannot ask about key use".into())
+    }
 }
 
 /// Any closure can approve (tests, embedders).
@@ -54,22 +71,10 @@ impl Helper {
     }
 }
 
-impl Approver for Helper {
-    fn approve(&self, p: &PairPrompt) -> Result<bool, String> {
-        let scope = match p.scope {
-            ClientScope::Full => "full",
-            ClientScope::Autofill => "autofill",
-        };
-        let mut cmd = Command::new(&self.exe);
-        cmd.arg("--client")
-            .arg(&p.client_name)
-            .arg("--scope")
-            .arg(scope)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null());
-        if let Some(prog) = &p.program {
-            cmd.arg("--program").arg(prog);
-        }
+impl Helper {
+    /// Run the window with `args`: exit 0 approves, 1 declines.
+    fn run(&self, cmd: &mut Command) -> Result<bool, String> {
+        cmd.stdin(Stdio::null()).stdout(Stdio::null());
         let mut child = cmd
             .spawn()
             .map_err(|e| format!("{}: {e}", self.exe.display()))?;
@@ -89,6 +94,37 @@ impl Approver for Helper {
             }
             std::thread::sleep(Duration::from_millis(100));
         }
+    }
+}
+
+impl Approver for Helper {
+    fn confirm_use(&self, p: &UsePrompt) -> Result<bool, String> {
+        let mut cmd = Command::new(&self.exe);
+        cmd.arg("--use")
+            .arg("--key")
+            .arg(&p.key)
+            .arg("--purpose")
+            .arg(&p.purpose);
+        if let Some(prog) = &p.program {
+            cmd.arg("--program").arg(prog);
+        }
+        self.run(&mut cmd)
+    }
+
+    fn approve(&self, p: &PairPrompt) -> Result<bool, String> {
+        let scope = match p.scope {
+            ClientScope::Full => "full",
+            ClientScope::Autofill => "autofill",
+        };
+        let mut cmd = Command::new(&self.exe);
+        cmd.arg("--client")
+            .arg(&p.client_name)
+            .arg("--scope")
+            .arg(scope);
+        if let Some(prog) = &p.program {
+            cmd.arg("--program").arg(prog);
+        }
+        self.run(&mut cmd)
     }
 }
 
@@ -166,5 +202,16 @@ mod tests {
             r#"[ "$*" = "--client x --scope autofill" ] || exit 2"#,
         );
         assert_eq!(echo.approve(&p), Ok(true));
+        let u = UsePrompt {
+            key: "laptop".into(),
+            purpose: "sign a git commit or tag".into(),
+            program: Some("/usr/bin/ssh-keygen".into()),
+        };
+        let echo = script(
+            "echo-use",
+            r#"[ "$*" = "--use --key laptop --purpose sign a git commit or tag --program /usr/bin/ssh-keygen" ] || exit 2"#,
+        );
+        assert_eq!(echo.confirm_use(&u), Ok(true));
+        assert_eq!(script("no-use", "exit 1").confirm_use(&u), Ok(false));
     }
 }

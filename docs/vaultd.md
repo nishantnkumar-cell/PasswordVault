@@ -25,6 +25,7 @@ Build without hardware support with `cargo build -p vaultd --no-default-features
 | Vault file | `$XDG_DATA_HOME/vault/vault.svault` |
 | Daemon state (generation counters, client token hashes, lock) | `$XDG_STATE_HOME/vault/` (0700) |
 | Socket | `$XDG_RUNTIME_DIR/vault/vaultd.sock` (0600, directory 0700) |
+| ssh-agent socket | `$XDG_RUNTIME_DIR/vault/ssh-agent.sock` (0600), see [`ssh.md`](ssh.md) |
 | Client token | `$XDG_CONFIG_HOME/vault/token` (0600) |
 
 ## Protocol

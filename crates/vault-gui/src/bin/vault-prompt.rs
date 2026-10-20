@@ -1,4 +1,4 @@
-//! `vault-prompt`: the pairing approval window `vaultd` opens. Exit status
+//! `vault-prompt`: the approval window `vaultd` opens (pairing, key use). Exit status
 //! 0 means Allow, 1 Deny (or no answer in time), 2 the window could not open.
 
 #![forbid(unsafe_code)]
@@ -28,9 +28,10 @@ fn main() {
     });
     let answer = Rc::new(Cell::new(None));
     let a = answer.clone();
+    let title = request.title();
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("Secret Vault: approve pairing")
+            .with_title(title)
             .with_app_id("dev.passwordvault.prompt")
             .with_inner_size([460.0, 280.0])
             .with_resizable(false)
