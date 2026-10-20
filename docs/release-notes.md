@@ -52,8 +52,9 @@ Known gaps: while quick unlock is available, the vault key stays in
 `vaultd`'s memory (encrypted, with the key to it protected by Windows), so
 malware running as you could still reach it, as it could while the vault
 is unlocked. The quick unlock time counts in wall-clock time, so time
-asleep counts too. CI runners have no TPM or Windows Hello: both were
-checked on a real Windows 11 PC.
+asleep counts too. CI runners have no TPM or Windows Hello. The TPM slot
+was checked on a real Windows 11 PC; Windows Hello was checked as far as
+its prompt opening, not yet with a confirmed face, fingerprint or PIN.
 
 How to use it: [Add the TPM](user-guide/02-unlocking.md#add-the-tpm) and
 [Quick unlock with Windows Hello](user-guide/02-unlocking.md#quick-unlock-with-windows-hello-windows).
