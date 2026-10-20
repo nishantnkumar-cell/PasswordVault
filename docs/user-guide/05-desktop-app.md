@@ -86,9 +86,17 @@ The app keeps its own pairing, separate from the CLI's and the browser's.
 
 In the **Unlock with** list pick Password, Security key, This device (TPM)
 or Recovery code, fill in what it asks and press **Unlock** (or Enter). For a security key, touch it when it
-blinks. On Windows, TPM is listed but cannot work yet, and for a security
-key Windows opens its own window for the touch and PIN (leave the PIN field
-empty).
+blinks. On Windows, for a security key Windows opens its own window for the
+touch and PIN (leave the PIN field empty).
+
+**Windows Hello (Windows).** With quick unlock turned on (see *Unlock
+methods* below), the lock screen shows an **Unlock with Windows Hello**
+button above the list for a while after each unlock with your password.
+Press it and confirm with your face, fingerprint or Windows PIN in the
+Windows Security window. When the time is up, or after a restart, the
+button disappears and the password is needed again.
+[Chapter 2](02-unlocking.md#quick-unlock-with-windows-hello-windows)
+explains the details.
 
 Lock with the **Lock** button or **Ctrl+L**. The vault also locks when idle,
 when the screen locks or the computer sleeps, or when another program locks
@@ -173,11 +181,15 @@ give it a **Name**, and fill in what it asks:
 - **Password:** the new password, twice.
 - **Security key:** your master password; tick **Also ask for the key's PIN
   every time** if you want the PIN required. Touch the key twice.
-- **TPM** (Linux): your master password, an optional **PIN**, and
-  optionally **Stop working if Secure Boot settings change (PCR 7)**.
+- **TPM** (Linux and Windows): your master password, an optional **PIN**,
+  and optionally **Stop working if Secure Boot settings change (PCR 7)**.
 - **Recovery code:** the new code is shown once; write it down.
 
 Each new method is test-unlocked before the app reports success.
+
+On Windows the page also has **Quick unlock with Windows Hello**. Pick how
+long Windows Hello may unlock after each full unlock (Off, or 1 to 24
+hours) and press **Apply**; turning it on asks for Windows Hello once.
 
 ## Good to know
 

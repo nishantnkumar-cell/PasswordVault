@@ -32,7 +32,8 @@ unlock in the **Unlock with** list, fill in what it asks for, and press
 | --- | --- | --- | --- |
 | Password | Your master password | Yes | Yes |
 | Security key | Your master password, then a touch on the key (and its PIN if it has one) | Yes | Yes (Windows shows its own window for the touch and PIN) |
-| This device (TPM) | Your master password and, if you set one, the TPM PIN | Yes | Not yet |
+| This device (TPM) | Your master password and, if you set one, the TPM PIN | Yes | Yes |
+| Unlock with Windows Hello | Your face, fingerprint or Windows PIN; shown only while quick unlock is available | No | Yes |
 | Recovery code | The code from your printed recovery sheet | Yes | Yes |
 
 Only methods you have added under **Unlock methods** will work. The first time you open the app on a vault that already exists,
@@ -124,7 +125,9 @@ clipboard after 30 seconds, when the vault locks and when the app closes.
   can't mark them, so a clipboard manager may keep a copy even after the app
   clears the clipboard 30 seconds later. Turn off history in your clipboard
   manager, or exclude the app, if you use one.
-- **Unlock methods.** TPM unlock works on Linux only for now. Security keys
+- **Unlock methods.** TPM unlock works on Linux and Windows, but a TPM
+  method added on one system does not open on the other. Security keys
   work on both; on Windows, Windows itself asks for the touch and the PIN in
-  its own window (see the table under *Unlocking*).
+  its own window. Quick unlock with Windows Hello is Windows only (see the
+  table under *Unlocking*).
 - **macOS** is not supported yet.

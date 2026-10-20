@@ -50,7 +50,8 @@ Status: **M** = mitigated by the design, **P** = partially mitigated, **A** = ac
 | --- | --- | --- |
 | Brute-force the password from the file | Argon2id (≥ 256 MiB desktop default, bounded 64 MiB to 4 GiB), all daily-use KEKs mix in a hardware factor | M |
 | Has the FIDO2 key but not the password | Password is part of every daily-use KEK; FIDO2 key requires PIN with on-device retry limit | M |
-| Has the whole laptop including TPM | TPM secret needs authValue (PIN) with TPM dictionary-attack lockout, and the password is still required | M |
+| Has the whole laptop including TPM | TPM secret needs authValue (PIN) with TPM dictionary-attack lockout, and the password is still required. Same on Windows, where the secret is wrapped to a TPM-bound RSA key with the PIN as its usage auth | M |
+| Steals the laptop while quick unlock is available (Windows) | The vault key is in `vaultd` memory, wrapped under a key held with `CryptProtectMemory`; opening it needs Windows Hello (face, fingerprint or Windows PIN, with Windows' own retry limits), and quick unlock ends after its time limit (at most 24 h after a full unlock), on restart, after 3 failed checks and on `vault lock --full`. A thief who can sign in as the user, or read RAM of the running machine, gets what they would get from an unlocked vault | P (opt-in, off by default) |
 | Sniffs the discrete TPM bus | Salted, encrypted HMAC sessions for every unseal (verify `tss-esapi`) | M |
 | Finds the recovery code | Recovery code is a full 256-bit secret and unlocks alone, by design. Users are told to store it offline | A |
 | Reads metadata without unlocking | All item metadata and slot labels encrypted; the plaintext header holds only what is needed to try an unlock. Body is padded to hide item count roughly | P (file size and slot count leak) |
@@ -72,6 +73,7 @@ Status: **M** = mitigated by the design, **P** = partially mitigated, **A** = ac
 
 | Threat | Mitigation | Status |
 | --- | --- | --- |
+| Read `vaultd` memory while quick unlock is available (Windows) | The parked vault key and its protected wrap key are in the process, as the vault key is while unlocked. `CryptProtectMemory` keeps it out of crash dumps and the page file, not away from code running in or debugging the process | A (opt-in) |
 | Read `vaultd` memory or attach ptrace | Separate system user (`vaultd@.service`; the per-user unit does not give this), `PR_SET_DUMPABLE=0`, Yama ptrace scope, no core dumps | M with the system unit, P with the user unit |
 | Connect to the socket and request secrets | One-time client pairing, by proving an unlock method or approved in `vaultd`'s own prompt (one at a time, 10 s cooldown after a decline); fresh user presence for non-allowlisted release; rate limit. The prompt names the peer by PID-derived path, not yet by pidfd | P |
 | Impersonate a paired client binary | Pairing key stored in the client's own storage, readable by the same user | A on Linux (no per-app isolation) |
@@ -104,7 +106,7 @@ v1 uses only symmetric primitives with 256-bit keys (XChaCha20-Poly1305, HKDF-SH
 
 - All secret types use `zeroize` / `secrecy` wrappers that do not implement `Debug`, `Clone` or `Serialize` except where explicitly needed. Enforced by wrapper types, not review alone.
 - All daemon memory `mlockall`ed when `RLIMIT_MEMLOCK` allows (the shipped units set it); `RLIMIT_CORE=0`; `PR_SET_DUMPABLE=0`.
-- Keys are zeroized on lock, suspend and screen lock (logind D-Bus signals), idle timeout and SIGTERM.
+- Keys are zeroized on lock, suspend and screen lock (logind D-Bus signals; session and power notifications on Windows), idle timeout and SIGTERM. Exception: with quick unlock on (Windows, opt-in), a lock within its window keeps the vault key parked (format.md 4.6) until the window ends, three Windows Hello checks fail, `vault lock --full`, or the daemon stops.
 
 ## 7. Explicitly out of scope for v1
 

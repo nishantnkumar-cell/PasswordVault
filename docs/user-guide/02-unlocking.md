@@ -8,10 +8,15 @@ and any one of them opens the vault.
 |---|---|---|---|---|---|
 | `password` | The master password | Everyday use | Yes | Yes | Not yet |
 | `fido2` | Password **and** a FIDO2 security key (touch, optionally its PIN) | Protection if your password leaks | Yes | Yes | Not yet |
-| `tpm` | Password **and** this computer's TPM chip (optionally a TPM PIN) | Making a stolen copy of the vault file useless on another machine | Yes | Not yet | Not applicable |
+| `tpm` | Password **and** this computer's TPM chip (optionally a TPM PIN) | Making a stolen copy of the vault file useless on another machine | Yes | Yes | Not applicable |
 | `recovery` | The recovery code alone | When you forget the password or lose the key | Yes | Yes | Not yet |
 
 A new vault starts with one `password` slot and one `recovery` slot.
+
+**Windows Hello** is not a slot. It is [quick unlock](#quick-unlock-with-windows-hello-windows):
+after you unlock with one of the slots above, Windows Hello (face,
+fingerprint or your Windows PIN) can open the vault again when it locks,
+for a time you choose.
 
 ## Lock and unlock
 
@@ -20,7 +25,9 @@ vault unlock                # with the master password
 vault unlock --fido2        # password, then touch your security key
 vault unlock --tpm          # password, plus the TPM PIN if the slot has one
 vault unlock --recovery     # the recovery code
+vault unlock --hello        # Windows Hello, if quick unlock is on (Windows)
 vault lock                  # lock now and wipe the keys from memory
+vault lock --full           # the same, and also forget the quick unlock key
 ```
 
 The vault also locks by itself:
@@ -74,14 +81,18 @@ administrator terminal to also check that Windows' security key service and
 direct USB access give the same secret (they must, so a slot works on every
 system).
 
-## Add the TPM (Linux)
+## Add the TPM
 
-The TPM is a chip in most PCs made since 2016. A TPM slot can only be
-opened on this one computer, so a copy of the vault file is useless
-elsewhere even if someone knows your password.
+The TPM is a chip in most PCs made since 2016 (every PC that runs Windows 11
+has one). A TPM slot can only be opened on this one computer, so a copy of
+the vault file is useless elsewhere even if someone knows your password.
 
-1. Make sure your user can use the TPM (on most distributions, membership
-   of the `tss` group).
+1. Make sure your user can use the TPM.
+   - **Linux:** on most distributions, membership of the `tss` group.
+   - **Windows:** nothing to do. vaultd uses Windows' own TPM service (the
+     Platform Crypto Provider) and needs no administrator rights. If you
+     are not sure the PC has a TPM, press Win+R and run `tpm.msc`: it
+     should say "The TPM is ready for use" and "Specification Version: 2.0".
 2. Run:
 
    ```sh
@@ -89,17 +100,87 @@ elsewhere even if someone knows your password.
    ```
 
    - `--pin` adds a separate TPM PIN. The TPM itself then limits how fast
-     anyone can guess it.
+     anyone can guess it: after a few wrong PINs it locks for a while (the
+     length depends on the TPM and the system, often 10 minutes to 2 hours).
    - `--pcr7` also ties the slot to the computer's Secure Boot state. If
      someone disables Secure Boot or changes its keys, the slot stops
      working. A firmware update can do the same: then unlock with another
      slot, remove this one and add it again.
 3. Enter the master password and choose the PIN.
+4. The command test-unlocks the new slot before it reports success.
 
-Unlock with `vault unlock --tpm`.
+Unlock with `vault unlock --tpm`. In the desktop app, pick **This device
+(TPM)** in the unlock list.
 
-On Windows the TPM slot is not available yet. On a Mac there is no TPM;
-Secure Enclave support is planned.
+To check the TPM before adding a slot, run
+`cargo run -p vault-hw --example tpm-check -- 1234` from the source folder
+(`1234` is a throwaway test PIN; leave it out to be asked). It prints PASS
+when wrapping and unwrapping a test secret works without a PIN, with a PIN
+and bound to PCR 7. Nothing is stored.
+
+**Linux and Windows TPM slots are separate.** On a computer that starts
+both Linux and Windows, a TPM slot added under one system does not open
+under the other, even though the chip is the same: each system uses the TPM
+in its own way. Add one TPM slot from each system if you want both.
+
+On a Mac there is no TPM; Secure Enclave support is planned.
+
+## Quick unlock with Windows Hello (Windows)
+
+Typing a long master password every time the screen locks gets old. Quick
+unlock lets Windows Hello (your face, fingerprint or Windows PIN) open the
+vault again, but only for a while after a full unlock:
+
+- **Full unlock first.** After `vaultd` starts (at sign-in or after a
+  restart), the first unlock always needs one of your slots: password,
+  security key, TPM or recovery code.
+- **Then Windows Hello.** Each time the vault locks (idle timeout, screen
+  lock, sleep, or `vault lock`), Windows Hello can open it again.
+- **Until the time runs out.** Quick unlock lasts the number of hours you
+  choose (1 to 24), counted from the last full unlock. Unlocking with
+  Windows Hello does not extend it. After that, or after a restart, the
+  next unlock needs your password again.
+
+Turn it on (the vault must be unlocked):
+
+```sh
+vault quick-unlock 8        # Windows Hello for 8 hours after each full unlock
+```
+
+Windows asks you to confirm with Windows Hello once, so no other program can
+turn it on without you. Then:
+
+```sh
+vault lock
+vault unlock --hello        # Windows Security asks for your face, fingerprint or PIN
+vault status                # shows how long quick unlock stays available
+vault quick-unlock off      # turn it off again
+```
+
+In the desktop app: **Unlock methods**, then **Quick unlock with Windows
+Hello**, pick a time and press **Apply**. While quick unlock is available,
+the lock screen shows an **Unlock with Windows Hello** button above the
+usual methods.
+
+Good to know:
+
+- Windows Hello must be set up for your Windows account (Settings >
+  Accounts > Sign-in options). A Windows PIN is enough; a camera or
+  fingerprint reader is optional.
+- Three failed or cancelled Windows Hello checks in a row switch quick
+  unlock off until your next full unlock.
+- `vault lock --full` locks and forgets the quick unlock key at once, for
+  example before you hand the computer to someone.
+- Windows Hello only reopens a vault this computer has already unlocked. It
+  cannot pair a new app, export a key or revoke slots; those always ask for
+  a full method.
+- How it works: when the vault locks, vaultd keeps the vault key, encrypted
+  under a random key that Windows protects in memory, instead of wiping it.
+  That is a convenience trade-off: while quick unlock is available,
+  someone who can read vaultd's memory (malware running as you or as an
+  administrator) could get the vault key, just as they could while the
+  vault is unlocked. Leave quick unlock off if that matters more to you
+  than typing the password.
 
 ## Add another password or a new recovery code
 
@@ -157,7 +238,10 @@ slots but not revoke.
 
 ## Platform differences
 
-- **Windows:** no TPM or Windows Hello slot yet. Security keys go through
+- **Windows:** TPM slots use Windows' Platform Crypto Provider and need no
+  administrator rights; they do not open under Linux on the same computer
+  (and the other way round). Quick unlock with Windows Hello is
+  Windows-only. Security keys go through
   Windows' own WebAuthn service, which needs no administrator rights and
   asks for the touch and the PIN in its own window. On Windows 10 builds
   too old for it, vaultd falls back to direct USB access, which needs
@@ -166,6 +250,10 @@ slots but not revoke.
   One exception: if the key has a PIN, Windows always checks it, which
   changes the key's secret, so on Windows only `--uv` slots work with such
   a key. Use `--uv` for keys with a PIN if you use Windows.
-- **macOS:** the daemon is not ported yet.
+- **macOS:** the daemon is not ported yet. When it is, Touch ID is planned
+  to work like Windows Hello quick unlock, and the Secure Enclave like the
+  TPM.
+- **Linux:** no Windows Hello equivalent yet. Face and fingerprint unlock
+  are planned as the same kind of quick unlock.
 - **Linux:** when `vaultd` runs as the separate `vault` system user, install
   `contrib/udev/70-vault-fido.rules` so it can reach security keys.

@@ -113,7 +113,7 @@ The password is normalized to Unicode NFC and encoded as UTF-8. No trimming, no 
 | --- | --- |
 | `PasswordOnly` | 32 zero bytes |
 | `PasswordFido2` | hmac-secret output for `salt1 = SHA-256("WebAuthn PRF" || 0x00 || prf_input)`, with UV performed if and only if `require_uv` |
-| `PasswordTpm` | Random secret sealed in `blob`, unsealed with the PIN (if `has_pin`) and PCR policy (if set), over a salted, encrypted session |
+| `PasswordTpm` | Random secret sealed in `blob`, unsealed with the PIN (if `has_pin`) and PCR policy (if set), over a salted, encrypted session (Linux). A blob starting with `VWTPM1` was made on Windows: `VWTPM1 \|\| u8 oaep_hash (1 = SHA-256) \|\| u16 LE key_len \|\| opaque Platform Crypto Provider key blob \|\| RSA-OAEP ciphertext of the secret`, decrypted by that TPM-bound RSA-2048 key with the PIN as its usage auth (see docs/windows.md) |
 | `Recovery` | Not used, see 4.3 |
 
 The FIDO2 salt construction matches the WebAuthn PRF extension, so a later PRF passkey path yields the same secret for the same credential.
@@ -165,6 +165,17 @@ header_mac = HMAC-SHA256(K_header, bytes[0 .. 14 + header_len])
 ```
 
 The MAC covers the magic, version, length and the full header bytes. It is verified immediately after a slot unwraps. A mismatch is a hard error and the vault key is zeroized: someone with write access to the file has edited the slot list.
+
+### 4.6 Parked key (quick unlock)
+
+Not part of the file. With quick unlock on, `vaultd` keeps a locked vault's key in memory as
+
+```
+wrap_key = 32 random bytes, new on every lock, held only in memory
+parked   = seal(wrap_key, aad = "vault/parked-key/v1" || vault_id, vault_key)
+```
+
+using the same commitment AEAD as everywhere else (section 4.4). Re-opening unseals `vault_key` and then verifies the current file's header MAC and body as in 4.5 and 5, so a file whose key was rotated (a revoke, possibly synced from another device) or that was replaced refuses the parked key. It never adds a keyslot and never satisfies a request that proves a factor (pairing, revoking, key export).
 
 ## 5. Body
 
@@ -277,7 +288,7 @@ Every HKDF `info` and AAD prefix used in v1. New labels must be added here.
 vault/slot-aad/v1      vault/kek/v1           vault/kek-recovery/v1
 vault/enc/v1           vault/commit/v1        vault/header-mac/v1
 vault/body/v1          vault/body-aad/v1      vault/item-key/v1
-vault/item-data/v1     vault/recovery-check/v1
+vault/item-data/v1     vault/recovery-check/v1 vault/parked-key/v1
 vault/conflict-id/v1   vault/key-order/v1
 ```
 

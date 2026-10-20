@@ -36,7 +36,7 @@ random program on your computer cannot just ask for your passwords.
 
 1. [Getting started](01-getting-started.md): install, create a vault, save the recovery code, pair the CLI.
    On Windows, use the installer: [Installing and running on Windows](windows-install.md).
-2. [Unlocking and unlock methods](02-unlocking.md): password, security key, TPM, recovery code; adding, removing and revoking them.
+2. [Unlocking and unlock methods](02-unlocking.md): password, security key, TPM, recovery code, quick unlock with Windows Hello; adding, removing and revoking them.
 3. [Items, one-time codes, the generator and import](03-items.md): logins,
    secure notes, cards and identities.
 4. [Browser autofill](04-browser-autofill.md)
@@ -62,8 +62,9 @@ random program on your computer cannot just ask for your passwords.
 | Unlock: password, recovery code | Yes | Yes | Not yet |
 | Installer | Not yet (build, then the systemd unit) | Yes, no administrator rights needed | Not yet |
 | Unlock: password + FIDO2 security key | Yes | Yes (Windows 11, or Windows 10 with current updates) | Not yet |
-| Unlock: password + TPM | Yes | Not yet | Not applicable |
-| Windows Hello, Touch ID, phone passkey | Not yet | Not yet | Not yet |
+| Unlock: password + TPM | Yes | Yes | Not applicable |
+| Quick unlock with Windows Hello (after a full unlock) | Not applicable | Yes | Not applicable |
+| Face or fingerprint quick unlock, Touch ID, phone passkey | Not yet | Not applicable | Not yet |
 | SSH agent and git signing | Yes | Yes (untested on real hardware) | Not yet |
 | OpenPGP keys | Yes | Yes | Not yet |
 | `vault-gpg` for git and NeoMutt | Yes | git only (untested on real hardware) | Not yet |

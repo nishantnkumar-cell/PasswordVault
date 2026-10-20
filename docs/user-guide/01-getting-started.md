@@ -132,8 +132,8 @@ Set-ItemProperty HKCU:\Software\Microsoft\Windows\CurrentVersion\Run "Secret Vau
 > **Security keys on Windows.** vaultd uses Windows' own security key
 > service, so it does not need administrator rights; Windows shows its own
 > window for the touch and the PIN. This needs Windows 11 or Windows 10 with
-> current updates. TPM and Windows Hello unlock are not available on Windows
-> yet.
+> current updates. TPM slots and quick unlock with Windows Hello work
+> without administrator rights too; see [chapter 2](02-unlocking.md).
 
 ## macOS
 

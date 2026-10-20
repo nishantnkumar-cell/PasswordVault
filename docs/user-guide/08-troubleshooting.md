@@ -99,6 +99,27 @@ If it was added with `--pcr7`, a change to Secure Boot or a firmware update
 makes it unusable. Unlock with another slot, `vault rm-slot` the TPM slot and
 add it again. With a PIN, too many wrong PINs put the TPM into its own
 lockout for a while.
+On Windows, a TPM slot made under Linux on the same computer does not open
+(and the other way round); the error says which system made it. Add a TPM
+slot from each system.
+
+**"no usable TPM 2.0" on Windows**
+Press Win+R, run `tpm.msc` and check that the TPM is ready and its
+specification version is 2.0. If no TPM is found, turn it on in the
+firmware settings (often called fTPM, PTT or Security Device). Then run
+`cargo run -p vault-hw --example tpm-check` from the source folder.
+
+**No "Unlock with Windows Hello" button, or `vault unlock --hello` says quick unlock is not available**
+- Quick unlock must be on: `vault quick-unlock` shows the setting.
+- It only works after a full unlock (password, security key, TPM or
+  recovery code) since `vaultd` started, and only for the hours you chose.
+- Three failed or cancelled Windows Hello checks switch it off until the
+  next full unlock, and so does `vault lock --full`.
+- If Windows says Windows Hello is not set up, add a PIN, face or
+  fingerprint in Settings > Accounts > Sign-in options. `cargo run -p
+  vault-hw --example hello-check` tests it on its own.
+- If the Windows Security window doesn't come to the front, look for it on
+  the taskbar.
 
 **`vault status` warns that the vault file is older than one vaultd saw before**
 `vaultd` remembers how many times the vault has been saved. A file with a
