@@ -24,14 +24,36 @@ This chapter covers setting up the app and each task step by step.
 
 `vaultd` must be running ([chapter 1](01-getting-started.md)).
 
-- **Linux:** run `vault-gui`. To put it in your applications menu, copy
-  `contrib/desktop/dev.passwordvault.app.desktop` to
-  `~/.local/share/applications/` and make sure `vault-gui` is on your
-  `PATH`.
+- **Linux:** run `vault-gui`. To put it in your applications menu with its
+  icon, from the source folder:
+
+  1. Make sure `vault-gui` is on your `PATH`.
+  2. Copy the menu entry:
+     `cp contrib/desktop/dev.passwordvault.app.desktop ~/.local/share/applications/`
+  3. Copy the icons:
+     `mkdir -p ~/.local/share/icons && cp -r contrib/icons/hicolor ~/.local/share/icons/`
+  4. If the menu still shows a blank icon, refresh the cache with
+     `gtk-update-icon-cache -f -t ~/.local/share/icons/hicolor` (the command
+     may be missing on some desktops; then sign out and back in).
+
+  **Secret Vault** then appears in the applications menu with a red keyhole
+  icon. To keep it in the dock or panel, open it and choose *Pin* or *Add to
+  favorites* from its right-click menu.
 - **Windows:** the installer adds **Secret Vault** to the Start menu (see
   [Installing and running on Windows](windows-install.md)). From a source
   build, run `target\release\vault-gui.exe` and pin it to Start or the
-  taskbar from its right-click menu.
+  taskbar from its right-click menu. The icon is built into the program, so
+  there is nothing to copy.
+
+![The Secret Vault icon from 256 down to 16 px, and the macOS version, on light and dark backgrounds](images/app-icon.png)
+
+The icon is a white keyhole on a red tile. Below 48 px it draws a bigger
+keyhole with no ring, so it stays readable in the tray and title bar.
+
+| | Linux | Windows | macOS |
+|---|---|---|---|
+| Window and taskbar icon | Yes. On Wayland the dock reads it from the menu entry, so do steps 2 and 3 above | Yes, built into the program | Not yet (the app does not run on macOS yet; a `.icns` is ready in `contrib/icons/`) |
+| Menu entry icon | After steps 2 and 3 above | Yes, from the installer | Not yet |
 
 If the app says it cannot reach `vaultd`, start the daemon
 (`systemctl --user start vaultd` on Linux; on Windows run `vaultw.exe`, or sign out and back in) and

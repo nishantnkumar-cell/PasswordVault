@@ -20,6 +20,7 @@ fn main() -> eframe::Result {
         viewport: egui::ViewportBuilder::default()
             .with_title("Secret Vault")
             .with_app_id("dev.passwordvault.app")
+            .with_icon(vault_gui::window_icon())
             .with_inner_size([1180.0, 740.0])
             .with_min_inner_size([760.0, 480.0]),
         ..Default::default()

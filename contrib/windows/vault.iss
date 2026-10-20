@@ -47,6 +47,7 @@ ChangesEnvironment=yes
 ; vaultd is stopped in PrepareToInstall instead.
 CloseApplications=no
 UninstallDisplayIcon={app}\vault-gui.exe
+SetupIconFile=..\icons\secret-vault.ico
 UninstallDisplayName=Secret Vault
 
 [Tasks]

@@ -1,0 +1,2 @@
+// Windows resources for the vault-gui binaries (see build.rs).
+1 ICON "../../contrib/icons/secret-vault.ico"

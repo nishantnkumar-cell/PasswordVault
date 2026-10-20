@@ -35,6 +35,7 @@ fn main() {
         viewport: egui::ViewportBuilder::default()
             .with_title(title)
             .with_app_id("dev.passwordvault.prompt")
+            .with_icon(vault_gui::window_icon())
             .with_inner_size([460.0, 280.0])
             .with_resizable(false)
             .with_always_on_top(),
