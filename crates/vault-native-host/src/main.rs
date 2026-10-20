@@ -44,12 +44,37 @@ fn token_path() -> PathBuf {
 enum HostRequest {
     Status,
     Pair,
-    Unlock { password: Zeroizing<String> },
+    Unlock {
+        password: Zeroizing<String>,
+    },
     Lock,
-    Find { origin: String },
-    Fill { id: String, origin: String },
-    Totp { id: String, origin: String },
-    Generate { length: Option<u16> },
+    Find {
+        origin: String,
+    },
+    Fill {
+        id: String,
+        origin: String,
+    },
+    Totp {
+        id: String,
+        origin: String,
+    },
+    Forms {
+        origin: String,
+    },
+    #[serde(rename = "fillIdentity")]
+    FillIdentity {
+        id: String,
+        origin: String,
+    },
+    #[serde(rename = "fillCard")]
+    FillCard {
+        id: String,
+        origin: String,
+    },
+    Generate {
+        length: Option<u16>,
+    },
 }
 
 fn id(s: &str) -> Result<[u8; 16], String> {
@@ -74,6 +99,15 @@ fn handle(req: HostRequest, call: &mut dyn FnMut(Request) -> Response) -> Value 
             Ok(id) => Request::TotpForFill { id, origin },
             Err(e) => return json!({ "ok": false, "error": e }),
         },
+        HostRequest::Forms { origin } => Request::FormItems { origin },
+        HostRequest::FillIdentity { id: i, origin } => match id(&i) {
+            Ok(id) => Request::IdentityForFill { id, origin },
+            Err(e) => return json!({ "ok": false, "error": e }),
+        },
+        HostRequest::FillCard { id: i, origin } => match id(&i) {
+            Ok(id) => Request::CardForFill { id, origin },
+            Err(e) => return json!({ "ok": false, "error": e }),
+        },
         HostRequest::Generate { length } => Request::Generate {
             options: GenerateOptions {
                 length: length.unwrap_or(24),
@@ -91,12 +125,25 @@ fn handle(req: HostRequest, call: &mut dyn FnMut(Request) -> Response) -> Value 
         Response::Items(items) => json!({
             "ok": true,
             "items": items.iter().map(|i| json!({
-                "id": hex(&i.id), "title": i.title, "username": i.username, "hasTotp": i.has_totp,
+                "id": hex(&i.id), "kind": i.kind.name(), "title": i.title,
+                "subtitle": i.subtitle, "hasTotp": i.has_totp,
             })).collect::<Vec<_>>(),
         }),
-        Response::Item { item, .. } => {
-            json!({ "ok": true, "username": item.username, "password": item.password })
-        }
+        Response::Item { item, .. } => match (&item.card, &item.identity) {
+            (Some(c), _) => json!({ "ok": true, "card": {
+                "holder": c.holder, "number": c.number, "expMonth": c.exp_month,
+                "expYear": c.exp_year, "cvv": c.cvv,
+                "brand": c.brand().map(|b| b.name()),
+            }}),
+            (_, Some(i)) => json!({ "ok": true, "identity": {
+                "honorific": i.honorific, "givenName": i.given_name, "middleName": i.middle_name,
+                "familyName": i.family_name, "fullName": i.full_name(), "company": i.company,
+                "email": i.email, "phone": i.phone, "address1": i.address1,
+                "address2": i.address2, "address3": i.address3, "city": i.city,
+                "region": i.region, "postcode": i.postcode, "country": i.country,
+            }}),
+            _ => json!({ "ok": true, "username": item.username, "password": item.password }),
+        },
         Response::Totp { code, remaining } => {
             json!({ "ok": true, "code": code.as_str(), "remaining": remaining })
         }
@@ -188,6 +235,17 @@ fn pair_with(d: &mut Daemon, password: Option<Zeroizing<String>>) -> Result<(), 
 }
 
 fn pair(with_password: bool) -> Result<(), String> {
+    let mut d = Daemon {
+        stream: None,
+        token: None,
+    };
+    match d.call(Request::Status) {
+        Response::Status(s) if !s.initialized => {
+            return Err("no vault exists yet; run `vault init` first".into());
+        }
+        Response::Error(e) => return Err(e),
+        _ => {}
+    }
     let password = if with_password {
         Some(Zeroizing::new(
             rpassword::prompt_password("Vault password: ").map_err(|e| e.to_string())?,
@@ -195,10 +253,6 @@ fn pair(with_password: bool) -> Result<(), String> {
     } else {
         eprintln!("Approve the request in the window vaultd opens...");
         None
-    };
-    let mut d = Daemon {
-        stream: None,
-        token: None,
     };
     pair_with(&mut d, password)?;
     println!("Paired the browser host (autofill only).");
@@ -371,6 +425,54 @@ mod tests {
         assert_eq!(hex(&id), "00112233445566778899aabbccddeeff");
         assert_eq!(origin, "https://example.com");
         assert_eq!(out["username"], "u");
+    }
+
+    #[test]
+    fn cards_and_identities_go_out_as_their_own_fields() {
+        use vault_core::item::{Card, Identity, ItemKind};
+        let req: HostRequest = serde_json::from_value(json!({
+            "type": "fillCard", "id": "00112233445566778899aabbccddeeff", "origin": "https://shop.example",
+        }))
+        .unwrap();
+        let out = handle(req, &mut |r| {
+            assert!(matches!(r, Request::CardForFill { .. }));
+            let mut item = ItemData::new(ItemKind::Card, "Travel");
+            item.card = Some(Card {
+                number: "4111111111111111".into(),
+                exp_month: 7,
+                exp_year: 2031,
+                ..Card::default()
+            });
+            Response::Item { id: [0; 16], item }
+        });
+        assert_eq!(out["card"]["number"], "4111111111111111");
+        assert_eq!(out["card"]["expMonth"], 7);
+        assert_eq!(out["card"]["brand"], "Visa");
+        assert!(out.get("password").is_none());
+
+        let req: HostRequest = serde_json::from_value(json!({
+            "type": "fillIdentity", "id": "00112233445566778899aabbccddeeff", "origin": "https://shop.example",
+        }))
+        .unwrap();
+        let out = handle(req, &mut |r| {
+            assert!(matches!(r, Request::IdentityForFill { .. }));
+            let mut item = ItemData::new(ItemKind::Identity, "Home");
+            item.identity = Some(Identity {
+                given_name: "Ada".into(),
+                family_name: "Lovelace".into(),
+                ..Identity::default()
+            });
+            Response::Item { id: [0; 16], item }
+        });
+        assert_eq!(out["identity"]["fullName"], "Ada Lovelace");
+
+        let req: HostRequest =
+            serde_json::from_value(json!({ "type": "forms", "origin": "https://shop.example" }))
+                .unwrap();
+        handle(req, &mut |r| {
+            assert!(matches!(r, Request::FormItems { .. }));
+            Response::Items(vec![])
+        });
     }
 
     #[test]

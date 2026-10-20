@@ -14,6 +14,43 @@ to work yet.
 
 ## Unreleased
 
+### Secure notes, cards and identities
+
+- **Four kinds of item.** Besides logins, the vault now keeps **secure
+  notes**, **payment cards** and **identities** (name, email, phone and
+  postal address). Any item can also carry **custom fields**, plain or
+  hidden like a password.
+- **Cards** keep the name on the card, number, expiry, security code and
+  PIN. A typo in the number is caught by its checksum, and the card's
+  network (Visa, Mastercard, Amex and others) is recognised from its first
+  digits. Lists show only the network and the last four digits.
+- **Secure notes are hidden** until you press **Show**, in the desktop app
+  and with `vault show --reveal`, because notes often hold secrets.
+- **Fill cards and addresses in the browser.** On a checkout or address
+  form the popup lists **Cards** and **Addresses**. A card is filled only
+  after you press **Allow** in the Secret Vault window, which names the card
+  and the site.
+- **Desktop app:** the sidebar filters by **Logins**, **Secure notes**,
+  **Cards** and **Identities**, and **New item** asks which kind to make.
+- **Command line:** `vault add card` (or `note`, `identity`) and
+  `vault ls cards` (or `logins`, `notes`, `identities`).
+- **Bitwarden import** now brings cards, identities and custom fields too.
+
+Platform notes: the same on Linux and Windows. The card approval window
+needs a desktop session, so a `vaultd` started with `--no-prompt`, or
+running as a separate user, cannot fill cards. macOS: not yet, because
+`vaultd` does not run there yet.
+
+Known gaps: card fields inside a payment provider's own frame (common with
+Stripe-style checkouts) are not filled yet. Addresses are filled only into
+the page's top frame. The extension does not save new cards or addresses
+from forms. Items saved by this version use item schema 3, which older
+builds of Secret Vault cannot read; older items are upgraded when next
+saved.
+
+How to use it: [Item types](user-guide/03-items.md#item-types) and
+[Fill a card or an address](user-guide/04-browser-autofill.md#fill-a-card-or-an-address).
+
 ### vault-gpg: git, pass and mail with OpenPGP keys in the vault
 
 - **New program, `vault-gpg`.** Programs that run `gpg` can run

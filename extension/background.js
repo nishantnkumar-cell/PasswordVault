@@ -1,7 +1,9 @@
 // Background script: the only part of the extension that talks to the vault.
 // It takes the page origin from the browser's own tab and frame data, never
 // from page content, and fills only on a user gesture (the popup or the
-// keyboard command), in the top frame and same-origin frames.
+// keyboard command), in the top frame and same-origin frames. Cards and
+// addresses are filled only into the top frame of https pages, and a card
+// only after the user confirms in vaultd's own window.
 
 import { crossOriginFrames, fillableFrames, framesWithOrigin, fromPopup, originOf } from "./lib/policy.js";
 import { fillInPage } from "./lib/fill.js";
@@ -56,6 +58,40 @@ async function fill(id, frameOrigin) {
   return { ok: false, error: "no visible login form on this page" };
 }
 
+// The card and address helpers, in the extension's isolated world of the
+// tab's top frame (repeat injections are harmless).
+async function inPage(tabId, func, args = []) {
+  await api.scripting.executeScript({ target: { tabId, frameIds: [0] }, files: ["lib/form-inject.js"] });
+  const [r] = await api.scripting.executeScript({ target: { tabId, frameIds: [0] }, func, args });
+  return r?.result;
+}
+
+// Cards and identities to offer, if this https page has fields for them.
+async function forms() {
+  const { tab, origin } = await activeTab();
+  if (!origin.startsWith("https:")) return { ok: true, items: [], card: false, identity: false };
+  let found = { card: false, identity: false };
+  try {
+    found = (await inPage(tab.id, () => globalThis.__secretVault.detect())) ?? found;
+  } catch {
+    // A page the extension may not script.
+  }
+  if (!found.card && !found.identity) return { ok: true, items: [], ...found };
+  const r = await host({ type: "forms", origin });
+  if (!r.ok) return r;
+  const items = r.items.filter((i) => (i.kind === "card" && found.card) || (i.kind === "identity" && found.identity));
+  return { ok: true, items, ...found };
+}
+
+async function fillForm(kind, id) {
+  const { tab, origin } = await activeTab();
+  if (!origin.startsWith("https:")) return { ok: false, error: "cards and addresses are filled only on https pages" };
+  const r = await host({ type: kind === "card" ? "fillCard" : "fillIdentity", id, origin });
+  if (!r.ok) return r;
+  const filled = await inPage(tab.id, (o, k, d) => globalThis.__secretVault.fillForm(o, k, d), [origin, kind, r.card ?? r.identity]);
+  return filled ? { ok: true, filled } : { ok: false, error: `no ${kind === "card" ? "card" : "address"} fields to fill on this page` };
+}
+
 async function handle(msg) {
   switch (msg.type) {
     case "status":
@@ -78,6 +114,12 @@ async function handle(msg) {
       const { origin } = await activeTab();
       return host({ type: "totp", id: msg.id, origin });
     }
+    case "forms":
+      return forms();
+    case "fillCard":
+      return fillForm("card", msg.id);
+    case "fillIdentity":
+      return fillForm("identity", msg.id);
     case "generate":
       return host({ type: "generate", length: 24 });
     default:

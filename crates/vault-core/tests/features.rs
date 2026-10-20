@@ -1,5 +1,5 @@
 use vault_core::generator::{Charset, generate_passphrase, generate_password};
-use vault_core::item::{ItemData, KeyData, UrlEntry};
+use vault_core::item::{ItemData, ItemKind, KeyData, UrlEntry};
 use vault_core::origin::{MatchMode, Origin, may_fill};
 use vault_core::totp::{TotpAlgorithm, TotpConfig};
 use vault_core::*;
@@ -178,18 +178,15 @@ fn items_round_trip_through_a_vault() {
             "",
         )
         .unwrap();
-    let item = ItemData {
-        title: "Example".into(),
-        username: "test-user".into(),
-        // Built at runtime: a dummy, not a credential.
-        password: "x".repeat(16),
-        urls: vec![entry("https://example.com", MatchMode::Origin)],
-        totp: Some(TotpConfig::from_base32("JBSWY3DPEHPK3PXP").unwrap()),
-        notes: "note".into(),
-        created: 1,
-        modified: 2,
-        key: None,
-    };
+    let mut item = ItemData::new(ItemKind::Login, "Example");
+    item.username = "test-user".into();
+    // Built at runtime: a dummy, not a credential.
+    item.password = "x".repeat(16);
+    item.urls = vec![entry("https://example.com", MatchMode::Origin)];
+    item.totp = Some(TotpConfig::from_base32("JBSWY3DPEHPK3PXP").unwrap());
+    item.notes = "note".into();
+    item.created = 1;
+    item.modified = 2;
     let id = v.new_item_id(&mut rng).unwrap();
     v.put_item(&mut rng, &id, &item.to_bytes()).unwrap();
     let bytes = v.to_bytes(&mut rng).unwrap();
@@ -209,24 +206,19 @@ fn items_round_trip_through_a_vault() {
 }
 
 #[test]
-fn schema_1_items_are_still_read() {
+fn items_are_written_as_schema_3() {
+    // Reading schemas 1 and 2 is covered by the unit tests in `item.rs`.
     let mut item = ItemData::default();
-    item.title = "Old".into();
-    item.notes = "written before keys existed".into();
-    item.created = 5;
-    let v2 = item.to_bytes();
-    assert_eq!(v2[0], 2);
-    // Schema 1 is the same encoding without the trailing `key: None` byte.
-    assert_eq!(v2.last(), Some(&0));
-    let mut v1 = vec![1u8];
-    v1.extend_from_slice(&v2[1..v2.len() - 1]);
-    assert!(ItemData::from_bytes(&v1).unwrap() == item);
-    // A schema 1 tag on schema 2 bytes is rejected, and so is an unknown tag.
-    let mut wrong = v2.to_vec();
-    wrong[0] = 1;
-    assert!(ItemData::from_bytes(&wrong).is_err());
-    wrong[0] = 3;
-    assert!(ItemData::from_bytes(&wrong).is_err());
+    item.title = "Now".into();
+    let v3 = item.to_bytes();
+    assert_eq!(v3[0], 3);
+    assert!(ItemData::from_bytes(&v3).unwrap() == item);
+    // Older tags on schema 3 bytes are rejected, and so is an unknown tag.
+    for tag in [1, 2, 4] {
+        let mut wrong = v3.to_vec();
+        wrong[0] = tag;
+        assert!(ItemData::from_bytes(&wrong).is_err(), "tag {tag}");
+    }
 }
 
 #[test]

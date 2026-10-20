@@ -47,17 +47,19 @@ Once unlocked, the window has three columns.
 
 1. **Sidebar (left).** At the top, a status box shows that the vault is
    unlocked and when it will lock itself if you leave it idle. Below that:
-   - **All items**, **Logins**, **One-time codes** and **SSH and PGP keys**
-     filter the item list. *One-time codes* shows only items with a
-     two-factor code set up; *SSH and PGP keys* shows only keys.
+   - **All items**, **Logins**, **Secure notes**, **Cards**,
+     **Identities**, **One-time codes** and **SSH and PGP keys** filter the
+     item list. *One-time codes* shows only items with a two-factor code
+     set up; *SSH and PGP keys* shows only keys.
    - **Tools**: **Generator** (make a strong password), **Import** (bring
      items in from Bitwarden or a browser export) and **Unlock methods**
      (add or remove ways to unlock).
    - **Lock** at the bottom locks the vault straight away.
 2. **Item list (middle).** Type in **Search** to filter by title, user
-   name or website. Each row shows the title and user name. A **2FA** tag
-   means the item has one-time codes; **Key** means it is an SSH or PGP key.
-   **New item** starts a blank item.
+   name or website. Each row shows the title and, under it, the user name,
+   the card's network and last four digits, or the identity's name. A
+   **2FA** tag means the item has one-time codes; **Key** means it is an
+   SSH or PGP key. **New item** asks which kind of item to start.
 3. **Details (right).** The item you picked.
 
 ### Item details
@@ -65,11 +67,15 @@ Once unlocked, the window has three columns.
 ![An item's details](images/desktop-2-detail.png)
 
 - **Username** and **Password** each have a copy button. The password stays
-  hidden until you press **Show**.
+  hidden until you press **Show**. Cards and identities show their own
+  fields the same way; a card's number, security code and PIN, and any
+  hidden custom field, stay hidden until **Show**.
 - **One-time code** shows the current code with a ring that empties as the
   code nears its end. It turns orange in the last five seconds, so wait for
   the next code if you are typing it by hand.
-- **Autofill is bound to** lists the websites the browser extension may
+- A **secure note** shows its text only after **Show**; **Copy note**
+  copies it without showing it.
+- **Autofill is bound to** (logins only) lists the websites the browser extension may
   fill this item on. *This site only* means exactly that address; *the
   whole domain* also covers its subdomains. An item with no websites is
   never offered for autofill.
@@ -87,10 +93,11 @@ the window. It is the fastest way to work without the mouse.
 
 1. Start typing part of a title, user name or website, for example `git`.
 2. **Items** lists the matches. Press **Enter** to copy the highlighted
-   item's password (for a key, Enter opens it instead).
+   item's password (for a key, card, identity or secure note, Enter opens
+   it instead).
 3. **Actions** offers more for the best match: copy the user name, copy the
    one-time code, or show the item.
-4. **Vault** actions are always there: *New item*, *Generate a password*,
+4. **Vault** actions are always there: *New item* (a new login), *Generate a password*,
    *Import items*, *Unlock methods* and *Lock now*. Type `lock` and press
    Enter to lock.
 

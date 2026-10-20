@@ -1,6 +1,7 @@
 # 3. Items, one-time codes, the generator and import
 
-An **item** is one entry in the vault, usually a login. It has:
+An **item** is one entry in the vault. There are four kinds, described in
+[Item types](#item-types); the most common is a **login**, which has:
 
 | Field | Notes |
 |---|---|
@@ -14,6 +15,34 @@ An **item** is one entry in the vault, usually a login. It has:
 Items can also hold an SSH or OpenPGP key; those are covered in chapters
 [6](06-ssh-and-git.md) and [7](07-openpgp.md).
 
+
+## Item types
+
+| Kind | Holds | Shown in lists as |
+|---|---|---|
+| Login | Username, password, websites, one-time code | The username |
+| Secure note | Just the title and the note | The title only |
+| Card | Name on card, number, expiry (MM/YY), security code, PIN | The network and last four digits, e.g. *Visa •••• 1111* |
+| Identity | Title (Mr, Ms, Dr...), first, middle and last name, company, email, phone, address, city, state or region, postcode, country | The name, e.g. *Alex Example* |
+
+Every kind can also have **notes** and **custom fields**: extra name and
+value pairs, such as a membership number or a security question. Mark a
+custom field **hidden** to treat its value like a password.
+
+Some things to know:
+
+- **A secure note's text is hidden** until you ask to see it, because notes
+  often hold secrets. The notes on the other kinds are shown as usual.
+- **Card numbers** may be typed with spaces or dashes; only the digits are
+  kept. A number that fails the card checksum is still saved, with a
+  warning, so check it for typos. The network is recognised from the first
+  digits.
+- **Only logins are tied to websites.** Cards and identities can be filled
+  into any `https` page; a card only after you approve it. See
+  [Fill a card or an address](04-browser-autofill.md#fill-a-card-or-an-address).
+- **A key** (SSH or OpenPGP) is listed with the type *Key* and the filter
+  *SSH and PGP keys*, whatever kind it was stored as.
+
 Everything here works the same on Linux and Windows, from the command line
 and from the [desktop app](05-desktop-app.md). The vault must be unlocked.
 
@@ -22,11 +51,14 @@ and from the [desktop app](05-desktop-app.md). The vault must be unlocked.
 ### Add
 
 ```sh
-vault add               # you type the password
-vault add --generate    # a random 24-character password is made for you
+vault add               # a login; you type the password
+vault add --generate    # a login with a random 24-character password
+vault add note          # a secure note
+vault add card          # a payment card
+vault add identity      # a name and address
 ```
 
-You are asked, in order:
+For a login you are asked, in order:
 
 1. **Title**, for example `GitHub`.
 2. **Username**, for example `alex@example.com`.
@@ -40,6 +72,12 @@ You are asked, in order:
    two-factor codes.
 7. **Notes**.
 
+A card asks for the name on the card, number, expiry as `MM/YY` (for
+example `07/31`), security code and PIN; the secret ones are typed hidden.
+An identity asks for each part of the name and address; press Enter to skip
+any. Every kind then offers **custom fields** (a name, whether to hide the
+value, then the value; Enter on the name finishes) and the notes.
+
 ### List and find
 
 ```sh
@@ -47,11 +85,13 @@ vault ls
 ```
 
 ```
-1c9e04aa  GitHub                       alex@example.com           https://github.com/login  [totp]
-7b20f3d1  Bank                         12345678                 https://bank.example
+1c9e04aa  login    GitHub                       alex@example.com         https://github.com/login  [totp]
+7b20f3d1  card     Travel                       Visa •••• 1111
+e5a0c912  identity Home                         Alex Example
 ```
 
-The first column is the item's ID. Any unique beginning of it works, so
+`vault ls cards` lists only cards; `logins`, `notes` and `identities` work
+the same way. The first column is the item's ID. Any unique beginning of it works, so
 `vault show 1c9` is enough.
 
 To see which items the browser would offer on a site:
@@ -67,6 +107,10 @@ vault show 1c9            # password hidden
 vault show 1c9 --reveal   # password shown
 ```
 
+Without `--reveal`, every secret is replaced by stars: a password, a card
+number, security code and PIN, a hidden custom field, and the text of a
+secure note.
+
 ### Edit
 
 ```sh
@@ -75,7 +119,8 @@ vault edit 1c9 --generate   # also replace the password with a new random one
 ```
 
 Each question shows the current value in brackets. Press Enter to keep it.
-For the one-time code, Enter keeps it and `-` removes it.
+For the one-time code, Enter keeps it and `-` removes it. A custom field is
+cleared with `-`. An item keeps its kind; to change it, make a new item.
 
 ### Delete
 
@@ -168,9 +213,9 @@ The vault can import:
 
 What is brought over:
 
-- **Bitwarden:** logins (title, username, password, websites, TOTP, notes)
-  and secure notes. Cards and identities are skipped. Encrypted exports are
-  refused; export unencrypted.
+- **Bitwarden:** logins (title, username, password, websites, TOTP, notes),
+  secure notes, cards and identities, with their custom fields. Encrypted
+  exports are refused; export unencrypted.
 - **CSV:** the URL, username and password columns, plus name, notes and
   one-time code columns when the file has them. Column order does not
   matter.

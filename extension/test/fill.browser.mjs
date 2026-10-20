@@ -60,6 +60,41 @@ try {
     other.close();
   }
 
+  // Card and address forms: the injected helper finds fields by autocomplete
+  // attribute or by name and label, and leaves other fields alone.
+  const CHECKOUT = `<!doctype html><body><form>
+<label for="n">Name on card</label><input id="n">
+<input name="cardnumber" autocomplete="cc-number">
+<select name="exp_month"><option value="">Month</option><option value="06">June</option><option value="07">July</option></select>
+<select name="exp_year"><option>2030</option><option>2031</option></select>
+<input name="cvc" maxlength="4">
+<input name="coupon">
+<input name="given" autocomplete="shipping given-name"><input name="family" autocomplete="shipping family-name">
+<input name="street" autocomplete="address-line1"><input name="zip" autocomplete="postal-code" value="KEEP">
+<input name="email" type="email">
+</form></body>`;
+  await page.setContent(CHECKOUT);
+  await page.addScriptTag({ path: fileURLToPath(new URL("../lib/form-inject.js", import.meta.url)) });
+  assert.deepEqual(await page.evaluate(() => globalThis.__secretVault.detect()), { card: true, identity: true });
+  const pageOrigin = await page.evaluate(() => location.origin);
+  const card = { holder: "A Person", number: "4111111111111111", expMonth: 7, expYear: 2031, cvv: "123" };
+  assert.equal(await page.evaluate(([o, d]) => globalThis.__secretVault.fillForm(o, "card", d), [pageOrigin, card]), 5);
+  const after = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll("input,select")].map((i) => [i.name || i.id, i.value])));
+  assert.equal(after.n, "A Person");
+  assert.equal(after.cardnumber, card.number);
+  assert.equal(after.exp_month, "07");
+  assert.equal(after.exp_year, "2031");
+  assert.equal(after.cvc, "123");
+  assert.equal(after.coupon, "");
+  assert.equal(after.given, "", "a card fill leaves the address alone");
+  const id = { givenName: "Ada", familyName: "Lovelace", address1: "1 Main St", postcode: "N1", email: "ada@example.test" };
+  assert.equal(await page.evaluate(([o, d]) => globalThis.__secretVault.fillForm(o, "identity", d), [pageOrigin, id]), 4);
+  const after2 = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll("input")].map((i) => [i.name || i.id, i.value])));
+  assert.deepEqual([after2.given, after2.family, after2.street, after2.email], ["Ada", "Lovelace", "1 Main St", "ada@example.test"]);
+  assert.equal(after2.zip, "KEEP", "a filled-in address field is not overwritten");
+  // Released for another origin: nothing is filled.
+  assert.equal(await page.evaluate(([d]) => globalThis.__secretVault.fillForm("https://other.example", "card", d), [card]), 0);
+
   // The packaged extension loads and its background script starts.
   const worker = ctx.serviceWorkers()[0] ?? (await ctx.waitForEvent("serviceworker", { timeout: 10000 }));
   assert.match(worker.url(), /background\.js$/);

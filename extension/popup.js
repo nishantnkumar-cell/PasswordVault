@@ -3,15 +3,46 @@ const $ = (id) => document.getElementById(id);
 const ask = (msg) => api.runtime.sendMessage(msg);
 const say = (text) => ($("message").textContent = text || "");
 
-function row(item) {
-  const li = document.createElement("li");
-  const who = document.createElement("div");
-  who.className = "who";
+function who(item) {
+  const div = document.createElement("div");
+  div.className = "who";
   const title = document.createElement("b");
   title.textContent = item.title;
-  const user = document.createElement("span");
-  user.textContent = item.username;
-  who.append(title, user);
+  const sub = document.createElement("span");
+  sub.textContent = item.subtitle;
+  div.append(title, sub);
+  return div;
+}
+
+// A card or address row. A card is released only after the user confirms in
+// vaultd's window, which may close this popup; the fill still completes.
+function formRow(item) {
+  const li = document.createElement("li");
+  const fill = document.createElement("button");
+  fill.className = "fill";
+  fill.textContent = "Fill";
+  fill.onclick = async () => {
+    const card = item.kind === "card";
+    if (card) say("Confirm in the Secret Vault window.");
+    const r = await ask({ type: card ? "fillCard" : "fillIdentity", id: item.id });
+    if (r.ok) return window.close();
+    say(r.error);
+  };
+  li.append(who(item), fill);
+  return li;
+}
+
+function section(title, items) {
+  if (!items.length) return [];
+  const h = document.createElement("h2");
+  h.textContent = title;
+  const ul = document.createElement("ul");
+  ul.append(...items.map(formRow));
+  return [h, ul];
+}
+
+function row(item) {
+  const li = document.createElement("li");
   const fill = document.createElement("button");
   fill.className = "fill";
   fill.textContent = "Fill";
@@ -21,7 +52,7 @@ function row(item) {
     if (r.crossOrigin) return offerFrames(item, r.crossOrigin);
     say(r.error);
   };
-  li.append(who, fill);
+  li.append(who(item), fill);
   if (item.hasTotp) {
     const totp = document.createElement("button");
     totp.textContent = "Code";
@@ -63,6 +94,7 @@ function offerFrames(item, origins) {
 async function refresh() {
   say("");
   $("items").replaceChildren();
+  $("forms").replaceChildren();
   const s = await ask({ type: "status" });
   if (!s.ok) return say(s.error);
   if (!s.initialized) return say("No vault yet. Run `vault init` in a terminal.");
@@ -71,11 +103,17 @@ async function refresh() {
   $("unlock").hidden = s.unlocked;
   $("lock").hidden = !s.unlocked;
   if (!s.unlocked) return $("password").focus();
-  const r = await ask({ type: "list" });
+  const [r, f] = await Promise.all([ask({ type: "list" }), ask({ type: "forms" })]);
   $("origin").textContent = r.origin || "";
   if (!r.ok) return say(r.error);
-  if (!r.items.length) return say("No saved login for this site.");
   $("items").append(...r.items.map(row));
+  if (f.ok) {
+    $("forms").append(
+      ...section("Cards", f.items.filter((i) => i.kind === "card")),
+      ...section("Addresses", f.items.filter((i) => i.kind === "identity")),
+    );
+  }
+  if (!r.items.length && !$("forms").childElementCount) say("No saved login for this site.");
 }
 
 $("unlock").onsubmit = async (e) => {

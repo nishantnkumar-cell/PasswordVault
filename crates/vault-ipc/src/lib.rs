@@ -13,7 +13,7 @@ use std::io::{self, Read, Write};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use zeroize::Zeroizing;
 
-pub use vault_core::item::ItemData;
+pub use vault_core::item::{ItemData, ItemKind};
 pub use vault_core::{ItemId, SlotId};
 
 /// Largest frame accepted in either direction.
@@ -61,8 +61,10 @@ pub enum UnlockMethod {
 pub enum ClientScope {
     /// Everything: the command-line client.
     Full,
-    /// Status, unlock, lock, origin lookups, filling a matching item, TOTP
-    /// for a matching item and generation: the browser's native host.
+    /// Status, unlock, lock, origin lookups, filling a matching login, TOTP
+    /// for a matching login, filling cards and identities into https pages
+    /// (cards only after the user confirms in vaultd's own window) and
+    /// generation: the browser's native host.
     Autofill,
 }
 
@@ -96,6 +98,8 @@ pub enum KeyKind {
 }
 
 /// Requests a client can make.
+// Items are large, but a request lives for one round trip; boxing buys nothing.
+#[allow(clippy::large_enum_variant)]
 #[derive(Serialize, Deserialize)]
 pub enum Request {
     /// Daemon and vault state. No token needed.
@@ -157,6 +161,15 @@ pub enum Request {
     GetForFill { id: ItemId, origin: String },
     /// TOTP code for filling, only if the item may be filled on `origin`.
     TotpForFill { id: ItemId, origin: String },
+    /// Cards and identities that may be offered on `origin`: any `https`
+    /// page, since they are not bound to sites. Summaries only.
+    FormItems { origin: String },
+    /// An identity's details for filling into a form on the `https` `origin`.
+    IdentityForFill { id: ItemId, origin: String },
+    /// A card's details for filling on the `https` `origin`. The daemon first
+    /// asks the user to confirm in a window of its own, so a client cannot
+    /// read cards without the user knowing.
+    CardForFill { id: ItemId, origin: String },
     /// Current TOTP code for an item.
     Totp { id: ItemId },
     /// Generate a password.
@@ -239,15 +252,18 @@ pub struct SlotInfo {
     pub label: String,
 }
 
-/// Item summary for listings: no password, no TOTP secret.
+/// Item summary for listings: no password, card number or TOTP secret.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ItemSummary {
     /// Item ID.
     pub id: ItemId,
+    /// What the item is.
+    pub kind: ItemKind,
     /// Title.
     pub title: String,
-    /// Username.
-    pub username: String,
+    /// [`ItemData::subtitle`]: username, card network and last four digits,
+    /// or identity name.
+    pub subtitle: String,
     /// URLs.
     pub urls: Vec<String>,
     /// Whether a TOTP seed is stored.
@@ -272,6 +288,7 @@ pub struct StatusInfo {
 }
 
 /// Responses.
+#[allow(clippy::large_enum_variant)]
 #[derive(Serialize, Deserialize)]
 pub enum Response {
     /// Success with nothing to return.

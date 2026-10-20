@@ -13,7 +13,7 @@ use vault_ipc::{
     ClientScope, ClientToken, Envelope, GenerateOptions, ImportFormat, Request, Response, Secret,
     SlotId, UnlockMethod, read_frame, write_frame,
 };
-use vaultd::approve::PairPrompt;
+use vaultd::approve::{PairPrompt, Prompt};
 use vaultd::daemon::Daemon;
 use vaultd::hw::Hardware;
 use vaultd::hw::soft::{SoftFido2, SoftTpm};
@@ -491,7 +491,10 @@ fn pairs_through_the_daemons_own_prompt() {
     let log = seen.clone();
     d.lock()
         .unwrap()
-        .set_approver(Arc::new(move |p: &PairPrompt| -> Result<bool, String> {
+        .set_approver(Arc::new(move |p: &Prompt| -> Result<bool, String> {
+            let Prompt::Pair(p) = p else {
+                return Ok(false);
+            };
             log.lock().unwrap().push(p.clone());
             if p.client_name == "slow" {
                 std::thread::sleep(Duration::from_millis(800));
@@ -506,7 +509,7 @@ fn pairs_through_the_daemons_own_prompt() {
     assert!(
         C::new(&sock)
             .err(pair_request("second"))
-            .contains("another pairing request")
+            .contains("another request is waiting")
     );
     assert!(status(&mut c).unlocked);
     let Response::Paired { token } = slow.join().unwrap() else {
@@ -546,6 +549,192 @@ fn pairs_through_the_daemons_own_prompt() {
             .contains("just declined")
     );
     assert_eq!(seen.lock().unwrap().len(), 3);
+}
+
+#[test]
+fn cards_and_identities_fill_only_with_https_and_the_users_ok() {
+    use vault_core::item::{Card, Identity, ItemKind};
+    let dir = tempfile::tempdir().unwrap();
+    let (sock, d) = start_daemon(dir.path(), server::current_user(), Duration::from_secs(600));
+    let mut c = C::new(&sock);
+    let Response::Initialized { token, .. } = c.ok(Request::Init {
+        password: s(PW),
+        client_name: "cli".into(),
+    }) else {
+        panic!()
+    };
+    c.token = Some(token);
+
+    // A card saved with stray login fields and spaces in the number comes
+    // back cleaned up.
+    let mut card = ItemData::new(ItemKind::Card, "Travel");
+    card.password = "x".repeat(10);
+    card.notes = "private".into();
+    card.card = Some(Card {
+        holder: "A Person".into(),
+        number: "4111 1111 1111 1111".into(),
+        exp_month: 7,
+        exp_year: 2031,
+        cvv: "123".into(),
+        pin: "9999".into(),
+    });
+    let Response::ItemSaved { id: card_id } = c.ok(Request::PutItem {
+        id: None,
+        item: card,
+    }) else {
+        panic!()
+    };
+    let Response::Item { item, .. } = c.ok(Request::GetItem { id: card_id }) else {
+        panic!()
+    };
+    assert!(item.password.is_empty());
+    assert_eq!(item.card.as_ref().unwrap().number, "4111111111111111");
+
+    let mut home = ItemData::new(ItemKind::Identity, "Home");
+    home.identity = Some(Identity {
+        given_name: "Ada".into(),
+        family_name: "Lovelace".into(),
+        postcode: "N1".into(),
+        ..Identity::default()
+    });
+    home.notes = "private".into();
+    let Response::ItemSaved { id: home_id } = c.ok(Request::PutItem {
+        id: None,
+        item: home,
+    }) else {
+        panic!()
+    };
+    let Response::ItemSaved { id: login_id } = c.ok(Request::PutItem {
+        id: None,
+        item: login("Shop", "https://shop.example"),
+    }) else {
+        panic!()
+    };
+
+    // Listings carry the kind and a subtitle without the card number.
+    let Response::Items(all) = c.ok(Request::ListItems) else {
+        panic!()
+    };
+    let travel = all.iter().find(|i| i.id == card_id).unwrap();
+    assert_eq!(travel.kind, ItemKind::Card);
+    assert!(travel.subtitle.ends_with("1111") && !travel.subtitle.contains("41111"));
+
+    // The browser, paired for autofill only.
+    let Response::Paired { token } = C::new(&sock).ok(Request::Pair {
+        client_name: "browser".into(),
+        scope: ClientScope::Autofill,
+        method: Some(pw()),
+    }) else {
+        panic!()
+    };
+    let mut b = C::new(&sock);
+    b.token = Some(token);
+    let shop = "https://shop.example".to_owned();
+
+    // Cards and identities are offered on any https page, never on http, and
+    // never through the login lookups.
+    let Response::Items(forms) = b.ok(Request::FormItems {
+        origin: shop.clone(),
+    }) else {
+        panic!()
+    };
+    let mut ids: Vec<_> = forms.iter().map(|i| i.id).collect();
+    ids.sort();
+    let mut want = vec![card_id, home_id];
+    want.sort();
+    assert_eq!(ids, want);
+    assert!(
+        b.err(Request::FormItems {
+            origin: "http://shop.example".into()
+        })
+        .contains("https")
+    );
+    let Response::Items(logins) = b.ok(Request::FindForOrigin {
+        origin: shop.clone(),
+    }) else {
+        panic!()
+    };
+    assert_eq!(logins.len(), 1);
+    assert_eq!(logins[0].id, login_id);
+    assert!(
+        b.err(Request::GetForFill {
+            id: card_id,
+            origin: shop.clone()
+        })
+        .contains("not bound")
+    );
+
+    // An identity fills without a prompt, and without its notes.
+    let Response::Item { item, .. } = b.ok(Request::IdentityForFill {
+        id: home_id,
+        origin: shop.clone(),
+    }) else {
+        panic!()
+    };
+    assert_eq!(item.identity.as_ref().unwrap().postcode, "N1");
+    assert!(item.notes.is_empty());
+    assert!(
+        b.err(Request::IdentityForFill {
+            id: card_id,
+            origin: shop.clone()
+        })
+        .contains("not an identity")
+    );
+
+    // A card needs the daemon's own window; without one it is refused.
+    let card_req = |origin: &str| Request::CardForFill {
+        id: card_id,
+        origin: origin.into(),
+    };
+    assert!(b.err(card_req(&shop)).contains("confirmation window"));
+
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let log = seen.clone();
+    let answer = Arc::new(Mutex::new(true));
+    let a2 = answer.clone();
+    d.lock()
+        .unwrap()
+        .set_approver(Arc::new(move |p: &Prompt| -> Result<bool, String> {
+            let Prompt::FillCard(p) = p else {
+                return Ok(false);
+            };
+            log.lock().unwrap().push(p.clone());
+            Ok(*a2.lock().unwrap())
+        }));
+    let Response::Item { item, .. } = b.ok(card_req(&shop)) else {
+        panic!()
+    };
+    let got = item.card.as_ref().unwrap();
+    assert_eq!(
+        (got.number.as_str(), got.cvv.as_str()),
+        ("4111111111111111", "123")
+    );
+    assert!(item.notes.is_empty());
+    {
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen[0].origin, shop);
+        assert_eq!(seen[0].client_name, "browser");
+        assert!(seen[0].card.contains("Travel") && seen[0].card.contains("1111"));
+        assert!(!seen[0].card.contains("41111"));
+    }
+
+    // Declined: nothing is released, and the next prompt waits a while.
+    *answer.lock().unwrap() = false;
+    assert!(b.err(card_req(&shop)).contains("declined"));
+    assert!(b.err(card_req(&shop)).contains("just declined"));
+    assert_eq!(seen.lock().unwrap().len(), 2);
+
+    // Never on http, never for a non-card, and never without a token.
+    assert!(b.err(card_req("http://shop.example")).contains("https"));
+    assert!(
+        b.err(Request::CardForFill {
+            id: home_id,
+            origin: shop.clone()
+        })
+        .contains("not a card")
+    );
+    assert!(C::new(&sock).err(card_req(&shop)).contains("not paired"));
+    assert_eq!(seen.lock().unwrap().len(), 2);
 }
 
 /// Serve the ssh-agent protocol for `d` on a second endpoint.
@@ -622,7 +811,7 @@ struct UseApprover(
 );
 
 impl vaultd::approve::Approver for UseApprover {
-    fn approve(&self, _: &PairPrompt) -> Result<bool, String> {
+    fn approve(&self, _: &Prompt) -> Result<bool, String> {
         Ok(false)
     }
     fn confirm_use(&self, p: &vaultd::approve::UsePrompt) -> Result<bool, String> {

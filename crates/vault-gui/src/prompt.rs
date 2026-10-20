@@ -1,6 +1,8 @@
-//! The approval window `vaultd` opens: a program asking to pair, or to use
-//! a key held in the vault (an SSH login, a git signature). Deny has the
-//! focus, Escape denies, and the window denies by itself after a minute.
+//! The approval window `vaultd` opens: a program asking to pair, to fill a
+//! card into a web page, or to use a key held in the vault (an SSH login, a
+//! git signature). Who is asking, what they would get, Deny or Allow. Deny
+//! has the focus, Escape denies, and the window denies by itself after a
+//! minute.
 
 use std::time::{Duration, Instant};
 
@@ -11,26 +13,33 @@ pub const TIMEOUT: Duration = Duration::from_secs(60);
 
 /// What the daemon passed on the command line.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Request {
-    /// `--client NAME --scope full|autofill [--program PATH]`.
-    Pair {
-        client: String,
-        autofill: bool,
-        program: Option<String>,
-    },
-    /// `--use --key TITLE --purpose TEXT [--program PATH]`.
-    Use {
-        key: String,
-        purpose: String,
-        program: Option<String>,
-    },
+pub struct Request {
+    /// The client's name; empty for a key use, which names no client.
+    pub client: String,
+    pub ask: Ask,
+    pub program: Option<String>,
+}
+
+/// What is being approved.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Ask {
+    /// Pair the client, for autofill only or for everything.
+    Pair { autofill: bool },
+    /// Fill the described card into a page on `origin`.
+    FillCard { card: String, origin: String },
+    /// Use the key titled `key`, for `purpose`.
+    Use { key: String, purpose: String },
 }
 
 impl Request {
-    /// Parse the arguments of either form.
+    /// Parse `--client NAME --scope full|autofill [--program PATH]`,
+    /// `--client NAME --fill-card DESCRIPTION --origin ORIGIN [--program PATH]`
+    /// or `--use --key TITLE --purpose TEXT [--program PATH]`.
     pub fn from_args(args: &[String]) -> Result<Request, String> {
         let mut client = None;
         let mut scope = None;
+        let mut card = None;
+        let mut origin = None;
         let mut program = None;
         let mut key = None;
         let mut purpose = None;
@@ -41,6 +50,8 @@ impl Request {
             match a.as_str() {
                 "--client" => client = Some(val()?),
                 "--scope" => scope = Some(val()?),
+                "--fill-card" => card = Some(val()?),
+                "--origin" => origin = Some(val()?),
                 "--program" => program = Some(val()?),
                 "--use" => use_key = true,
                 "--key" => key = Some(val()?),
@@ -49,35 +60,43 @@ impl Request {
             }
         }
         if use_key {
-            if client.is_some() || scope.is_some() {
-                return Err("--use does not take --client or --scope".into());
+            if client.is_some() || scope.is_some() || card.is_some() || origin.is_some() {
+                return Err("--use takes only --key, --purpose and --program".into());
             }
-            return Ok(Request::Use {
-                key: key.ok_or("--key is required")?,
-                purpose: purpose.ok_or("--purpose is required")?,
+            return Ok(Request {
+                client: String::new(),
+                ask: Ask::Use {
+                    key: key.ok_or("--key is required")?,
+                    purpose: purpose.ok_or("--purpose is required")?,
+                },
                 program,
             });
         }
         if key.is_some() || purpose.is_some() {
             return Err("--key and --purpose need --use".into());
         }
-        let autofill = match scope.as_deref() {
-            Some("autofill") => true,
-            Some("full") => false,
-            _ => return Err("--scope must be full or autofill".into()),
+        let ask = match (scope.as_deref(), card, origin) {
+            (Some("autofill"), None, None) => Ask::Pair { autofill: true },
+            (Some("full"), None, None) => Ask::Pair { autofill: false },
+            (None, Some(card), Some(origin)) => Ask::FillCard { card, origin },
+            (None, Some(_), None) => return Err("--fill-card needs --origin".into()),
+            _ => {
+                return Err("give --scope full|autofill, or --fill-card with --origin".into());
+            }
         };
-        Ok(Request::Pair {
+        Ok(Request {
             client: client.ok_or("--client is required")?,
-            autofill,
+            ask,
             program,
         })
     }
 
-    /// Window title.
+    /// The window title.
     pub fn title(&self) -> &'static str {
-        match self {
-            Request::Pair { .. } => "Secret Vault: approve pairing",
-            Request::Use { .. } => "Secret Vault: approve key use",
+        match self.ask {
+            Ask::Pair { .. } => "Secret Vault: approve pairing",
+            Ask::FillCard { .. } => "Secret Vault: fill a card?",
+            Ask::Use { .. } => "Secret Vault: approve key use",
         }
     }
 }
@@ -110,42 +129,50 @@ impl Prompt {
         let r = &self.request;
         egui::CentralPanel::default().show(ui, |ui| {
             ui.add_space(4.0);
-            let program = match r {
-                Request::Pair {
-                    client,
-                    autofill,
-                    program,
-                } => {
-                    ui.heading(format!("Allow \u{201c}{client}\u{201d} to use your vault?"));
+            match &r.ask {
+                Ask::Pair { autofill } => {
+                    ui.heading(format!(
+                        "Allow \u{201c}{}\u{201d} to use your vault?",
+                        r.client
+                    ));
                     ui.add_space(8.0);
                     ui.label(if *autofill {
                         "It will be able to fill your logins on websites that match them, \
-                         and nothing else."
+                         and your cards and addresses on secure pages, and nothing else."
                     } else {
                         "It will be able to read, change and delete every item in your vault."
                     });
-                    program
                 }
-                Request::Use {
-                    key,
-                    purpose,
-                    program,
-                } => {
+                Ask::FillCard { card, origin } => {
+                    ui.heading(format!("Fill {card}?"));
+                    ui.add_space(8.0);
+                    ui.label("Into a page on:");
+                    ui.label(RichText::new(origin).monospace().strong());
+                    ui.add_space(4.0);
+                    ui.label(format!(
+                        "\u{201c}{}\u{201d} asked for the card number, expiry and security code.",
+                        r.client
+                    ));
+                }
+                Ask::Use { key, purpose } => {
                     ui.heading(format!("Use the key \u{201c}{key}\u{201d}?"));
                     ui.add_space(8.0);
                     ui.label(format!("To {purpose}."));
-                    program
                 }
-            };
+            }
+            let program = &r.program;
             ui.add_space(8.0);
             ui.label("Program asking:");
             ui.label(RichText::new(program.as_deref().unwrap_or("unknown")).monospace());
             ui.add_space(8.0);
-            ui.label(match r {
-                Request::Pair { .. } => {
+            ui.label(match r.ask {
+                Ask::Pair { .. } => {
                     "If you didn't just connect something to your vault, choose Deny."
                 }
-                Request::Use { .. } => "If you didn't just start this, choose Deny.",
+                Ask::FillCard { .. } => {
+                    "If you didn't just ask to fill a card on this site, choose Deny."
+                }
+                Ask::Use { .. } => "If you didn't just start this, choose Deny.",
             });
             ui.add_space(12.0);
             ui.horizontal(|ui| {
@@ -181,21 +208,42 @@ mod tests {
             Request::from_args(&args(
                 "--client browser --scope autofill --program /usr/bin/x"
             )),
-            Ok(Request::Pair {
+            Ok(Request {
                 client: "browser".into(),
-                autofill: true,
+                ask: Ask::Pair { autofill: true },
                 program: Some("/usr/bin/x".into()),
             })
         );
         assert_eq!(
             Request::from_args(&args(
+                "--client browser --fill-card Travel --origin https://shop.example"
+            ))
+            .unwrap()
+            .ask,
+            Ask::FillCard {
+                card: "Travel".into(),
+                origin: "https://shop.example".into()
+            }
+        );
+        assert_eq!(
+            Request::from_args(&args(
                 "--use --key laptop --purpose sign --program /usr/bin/ssh"
             )),
-            Ok(Request::Use {
-                key: "laptop".into(),
-                purpose: "sign".into(),
+            Ok(Request {
+                client: String::new(),
+                ask: Ask::Use {
+                    key: "laptop".into(),
+                    purpose: "sign".into(),
+                },
                 program: Some("/usr/bin/ssh".into()),
             })
+        );
+        assert!(Request::from_args(&args("--client x --fill-card Travel")).is_err());
+        assert!(
+            Request::from_args(&args(
+                "--client x --scope full --fill-card T --origin https://a"
+            ))
+            .is_err()
         );
         assert!(Request::from_args(&args("--use --key laptop")).is_err());
         assert!(Request::from_args(&args("--use --key k --purpose p --scope full")).is_err());

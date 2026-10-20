@@ -120,6 +120,37 @@ you to grant the extension access to that site; the access is removed again
 right after the fill. The vault still releases the login only for the site
 of the tab you are on.
 
+## Fill a card or an address
+
+On an `https` checkout or address form, the popup also lists **Cards** and
+**Addresses** (your identities). They appear only when the page has fields
+for them: a card number field for cards, a name or address field for
+addresses.
+
+- **Address:** click **Fill** and the name, email, phone and address go
+  into the matching fields.
+- **Card:** click **Fill**. The popup says *Confirm in the Secret Vault
+  window*, and a Secret Vault window opens naming the card (for example
+  *Travel (Visa •••• 1111)*), the site and the program asking. Press
+  **Allow** to fill it, or **Deny**. **Deny** has the focus, so pressing
+  Enter does not allow by accident. Opening the window may close the popup;
+  the fill still completes.
+
+Why the extra step for cards: a login is only ever filled on its own
+website, but a card is not tied to any site, so the vault asks you each
+time instead. A program holding the browser's pairing therefore cannot
+read your cards without you seeing it.
+
+Things to know:
+
+- Only the page's top frame is filled. Many checkouts put the card fields
+  inside the payment provider's own frame (Stripe and similar); those are
+  not filled yet, so copy the number from the desktop app instead.
+- Notes and custom fields are never sent to the browser.
+- On Linux and Windows alike, the approval window needs `vaultd` to run in
+  your desktop session. A `vaultd` started with `--no-prompt` cannot fill
+  cards; addresses still work.
+
 ## One-time codes and generated passwords
 
 - **Code** next to a login copies its current one-time code to the

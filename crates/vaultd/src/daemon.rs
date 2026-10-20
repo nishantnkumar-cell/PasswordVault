@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use vault_core::generator::{Charset, generate_password};
-use vault_core::item::{ItemData, KeyData};
+use vault_core::item::{ItemData, ItemKind, KeyData};
 use vault_core::origin::may_fill;
 use vault_core::{
     Factor, HwKey, ItemId, KdfCost, KeyslotMeta, OsRandom, ParsedVault, PcrPolicy, SecureRandom,
@@ -48,7 +48,7 @@ pub struct Daemon {
     pending_use: Option<(String, String)>,
 }
 
-/// Wait after a declined or unanswered pairing prompt before showing another.
+/// Wait after a declined or unanswered prompt before showing another.
 const PROMPT_COOLDOWN: Duration = Duration::from_secs(10);
 
 type R<T> = Result<T, String>;
@@ -213,28 +213,41 @@ impl Daemon {
         }
     }
 
-    /// Claim the one pairing prompt that may be open at a time. The caller
-    /// asks without holding the daemon lock, then calls [`Self::end_prompt`].
-    pub fn begin_prompt(&mut self) -> R<Arc<dyn Approver>> {
-        if !self.store.exists() {
-            return Err("no vault exists yet".into());
-        }
-        let a = self.approver.clone().ok_or(
-            "this daemon cannot show an approval prompt; pair by proving an unlock method instead",
-        )?;
+    /// Claim the one prompt that may be open at a time. The caller asks
+    /// without holding the daemon lock, then calls [`Self::finish_prompt`].
+    fn claim_prompt(&mut self, cannot: &str) -> R<Arc<dyn Approver>> {
+        let a = self.approver.clone().ok_or(cannot)?;
         if self.prompting {
-            return Err("another pairing request is waiting for approval".into());
+            return Err("another request is waiting for your approval".into());
         }
         if self.next_prompt.is_some_and(|t| Instant::now() < t) {
-            return Err("a pairing request was just declined; try again in a few seconds".into());
+            return Err("a request was just declined; try again in a few seconds".into());
         }
         self.prompting = true;
         Ok(a)
     }
 
+    /// Release the prompt; anything but an approval holds off the next one.
+    fn finish_prompt(&mut self, answer: &Result<bool, String>) {
+        self.prompting = false;
+        if !matches!(answer, Ok(true)) {
+            self.next_prompt = Some(Instant::now() + PROMPT_COOLDOWN);
+        }
+    }
+
+    /// Claim the prompt for pairing. Finish with [`Self::end_prompt`].
+    pub fn begin_prompt(&mut self) -> R<Arc<dyn Approver>> {
+        if !self.store.exists() {
+            return Err("no vault exists yet".into());
+        }
+        self.claim_prompt(
+            "this daemon cannot show an approval prompt; pair by proving an unlock method instead",
+        )
+    }
+
     /// Finish a prompt from [`Self::begin_prompt`]: pair if approved.
     pub fn end_prompt(&mut self, prompt: &PairPrompt, answer: Result<bool, String>) -> Response {
-        self.prompting = false;
+        self.finish_prompt(&answer);
         let r = match answer {
             Ok(true) => token(&mut OsRandom).and_then(|t| {
                 self.store
@@ -245,10 +258,49 @@ impl Daemon {
             Ok(false) => Err("pairing was declined".into()),
             Err(m) => Err(format!("could not show the approval prompt: {m}")),
         };
-        if r.is_err() {
-            self.next_prompt = Some(Instant::now() + PROMPT_COOLDOWN);
-        }
         r.unwrap_or_else(Response::Error)
+    }
+
+    /// Start releasing a card for filling: check the client and the page,
+    /// then claim the prompt. Returns the approver, the client's name and
+    /// the card. Finish with [`Self::end_card_fill`].
+    pub fn begin_card_fill(
+        &mut self,
+        token: Option<&ClientToken>,
+        id: &ItemId,
+        origin: &str,
+    ) -> R<(Arc<dyn Approver>, String, ItemData)> {
+        let t = token.ok_or("this client is not paired; run `vault pair`")?;
+        let (name, _) = self
+            .store
+            .client(t)
+            .ok_or("unknown client token; pair again")?;
+        self.last_activity = Instant::now();
+        form_origin(origin)?;
+        let item = self.item(id)?;
+        if item.kind != ItemKind::Card {
+            return Err("that item is not a card".into());
+        }
+        let a = self.claim_prompt(
+            "filling a card needs vaultd's confirmation window, which this daemon cannot show",
+        )?;
+        Ok((a, name, item.for_form_fill()))
+    }
+
+    /// Finish [`Self::begin_card_fill`]: release the card if approved.
+    pub fn end_card_fill(
+        &mut self,
+        id: ItemId,
+        item: ItemData,
+        answer: Result<bool, String>,
+    ) -> Response {
+        self.finish_prompt(&answer);
+        match answer {
+            Ok(true) if self.vault.is_some() => Response::Item { id, item },
+            Ok(true) => Response::Error("the vault was locked while you were asked".into()),
+            Ok(false) => Response::Error("filling the card was declined".into()),
+            Err(m) => Response::Error(format!("could not show the confirmation window: {m}")),
+        }
     }
 
     /// Handle one request. If it used a key that needs approval, the
@@ -285,6 +337,9 @@ impl Daemon {
                     | Request::FindForOrigin { .. }
                     | Request::GetForFill { .. }
                     | Request::TotpForFill { .. }
+                    | Request::FormItems { .. }
+                    | Request::IdentityForFill { .. }
+                    | Request::CardForFill { .. }
                     | Request::Generate { .. }
             )
         {
@@ -552,7 +607,7 @@ impl Daemon {
 
     fn fillable(&mut self, id: &ItemId, origin: &str) -> R<ItemData> {
         let item = self.item(id)?;
-        if item.urls.iter().any(|u| may_fill(u, origin)) {
+        if item.kind == ItemKind::Login && item.urls.iter().any(|u| may_fill(u, origin)) {
             Ok(item)
         } else {
             Err("this item is not bound to that site".into())
@@ -567,8 +622,9 @@ impl Daemon {
             if keep(&it) {
                 out.push(ItemSummary {
                     id,
+                    kind: it.kind,
                     title: it.title.clone(),
-                    username: it.username.clone(),
+                    subtitle: it.subtitle(),
                     urls: it.urls.iter().map(|u| u.url.clone()).collect(),
                     has_totp: it.totp.is_some(),
                     key: it.key.as_ref().map(describe_key),
@@ -756,6 +812,7 @@ impl Daemon {
                     }
                 };
                 item.modified = t;
+                item.normalize();
                 self.vault()?
                     .put_item(rng, &id, &item.to_bytes())
                     .map_err(e)?;
@@ -767,10 +824,28 @@ impl Daemon {
                 self.save()?;
                 Ok(Response::Ok)
             }
-            Request::FindForOrigin { origin } => {
+            Request::FindForOrigin { origin } => Ok(Response::Items(self.summaries(|it| {
+                it.kind == ItemKind::Login && it.urls.iter().any(|u| may_fill(u, &origin))
+            })?)),
+            Request::FormItems { origin } => {
+                form_origin(&origin)?;
                 Ok(Response::Items(self.summaries(|it| {
-                    it.urls.iter().any(|u| may_fill(u, &origin))
+                    matches!(it.kind, ItemKind::Card | ItemKind::Identity)
                 })?))
+            }
+            Request::IdentityForFill { id, origin } => {
+                form_origin(&origin)?;
+                let item = self.item(&id)?;
+                if item.kind != ItemKind::Identity {
+                    return Err("that item is not an identity".into());
+                }
+                Ok(Response::Item {
+                    item: item.for_form_fill(),
+                    id,
+                })
+            }
+            Request::CardForFill { .. } => {
+                Err("filling a card goes through the server's confirmation prompt".into())
             }
             Request::GetForFill { id, origin } => Ok(Response::Item {
                 item: without_key(self.fillable(&id, &origin)?),
@@ -981,6 +1056,16 @@ fn totp(item: &ItemData) -> R<Response> {
         code: Zeroizing::new(cfg.code_at(t).map_err(e)?),
         remaining: cfg.remaining(t),
     })
+}
+
+/// Cards and identities are not bound to sites, so they are filled only into
+/// `https` pages (and the extension fills only the top frame).
+fn form_origin(origin: &str) -> R<()> {
+    if origin.starts_with("https://") && origin.len() > "https://".len() {
+        Ok(())
+    } else {
+        Err("cards and addresses are filled only on https pages".into())
+    }
 }
 
 fn fits(f: &Factor, m: &UnlockMethod) -> bool {

@@ -9,7 +9,7 @@ use std::time::Duration;
 use vault_core::KdfCost;
 use vault_core::item::KeyData;
 use vault_ipc::{Envelope, Request, Response, read_frame, write_frame};
-use vaultd::approve::{Approver, PairPrompt, UsePrompt};
+use vaultd::approve::{Approver, Prompt, UsePrompt};
 use vaultd::daemon::Daemon;
 use vaultd::hw::Hardware;
 use vaultd::server;
@@ -20,7 +20,7 @@ use zeroize::Zeroizing;
 struct Allow(Mutex<Vec<UsePrompt>>);
 
 impl Approver for Allow {
-    fn approve(&self, _: &PairPrompt) -> Result<bool, String> {
+    fn approve(&self, _: &Prompt) -> Result<bool, String> {
         Ok(false)
     }
     fn confirm_use(&self, p: &UsePrompt) -> Result<bool, String> {

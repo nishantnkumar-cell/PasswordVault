@@ -1,15 +1,19 @@
-//! The pairing approval window, driven headless.
+//! The approval window, driven headless.
 
 use eframe::egui::Key;
 use eframe::egui::accesskit::Role;
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
-use vault_gui::prompt::{Prompt, Request};
+use vault_gui::prompt::{Ask, Prompt, Request};
 
 fn window(autofill: bool) -> Harness<'static, Prompt> {
-    let p = Prompt::new(Request::Pair {
+    asking(Ask::Pair { autofill })
+}
+
+fn asking(ask: Ask) -> Harness<'static, Prompt> {
+    let p = Prompt::new(Request {
         client: "browser".into(),
-        autofill,
+        ask,
         program: Some("/usr/lib/vault/vault-native-host".into()),
     });
     let mut h = Harness::builder().with_size([460.0, 300.0]).build_ui_state(
@@ -65,20 +69,25 @@ fn allow_and_escape() {
 }
 
 #[test]
+fn a_card_fill_names_the_card_and_the_site() {
+    let mut h = asking(Ask::FillCard {
+        card: "Travel (Visa \u{2022}\u{2022}\u{2022}\u{2022} 1111)".into(),
+        origin: "https://shop.example".into(),
+    });
+    assert!(h.query_by_label_contains("Fill Travel (Visa").is_some());
+    assert!(h.query_by_label("https://shop.example").is_some());
+    assert!(h.get_by_role_and_label(Role::Button, "Deny").is_focused());
+    h.get_by_role_and_label(Role::Button, "Allow").click();
+    h.step();
+    assert_eq!(h.state().answer, Some(true));
+}
+
+#[test]
 fn key_use_names_the_key_and_purpose() {
-    let p = Prompt::new(Request::Use {
+    let mut h = asking(Ask::Use {
         key: "laptop".into(),
         purpose: "sign a git commit or tag".into(),
-        program: Some("/usr/bin/ssh-keygen".into()),
     });
-    let mut h = Harness::builder().with_size([460.0, 300.0]).build_ui_state(
-        |ui, p: &mut Prompt| {
-            p.show(ui);
-        },
-        p,
-    );
-    h.step();
-    h.step();
     assert!(
         h.query_by_label_contains("Use the key \u{201c}laptop\u{201d}")
             .is_some()
@@ -87,7 +96,10 @@ fn key_use_names_the_key_and_purpose() {
         h.query_by_label_contains("To sign a git commit or tag.")
             .is_some()
     );
-    assert!(h.query_by_label_contains("/usr/bin/ssh-keygen").is_some());
+    assert!(
+        h.query_by_label_contains("/usr/lib/vault/vault-native-host")
+            .is_some()
+    );
     h.get_by_label("Deny").click();
     h.step();
     assert_eq!(h.state().answer, Some(false));
