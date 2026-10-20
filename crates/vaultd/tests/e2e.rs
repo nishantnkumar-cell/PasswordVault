@@ -16,7 +16,7 @@ use vault_ipc::{
 use vaultd::approve::{PairPrompt, Prompt};
 use vaultd::daemon::Daemon;
 use vaultd::hw::Hardware;
-use vaultd::hw::soft::{SoftFido2, SoftTpm};
+use vaultd::hw::soft::{SoftFido2, SoftPresence, SoftTpm};
 use vaultd::server;
 use vaultd::store::Store;
 use zeroize::Zeroizing;
@@ -37,6 +37,7 @@ fn soft_hw() -> Hardware {
         tpm: Some(Box::new(SoftTpm {
             device_key: [5; 32],
         })),
+        presence: None,
     }
 }
 
@@ -71,13 +72,17 @@ fn start_daemon(
     owner: server::Owner,
     idle: Duration,
 ) -> (std::path::PathBuf, server::Shared) {
+    start_daemon_with(dir, owner, idle, soft_hw())
+}
+
+fn start_daemon_with(
+    dir: &Path,
+    owner: server::Owner,
+    idle: Duration,
+    hw: Hardware,
+) -> (std::path::PathBuf, server::Shared) {
     let store = Store::open(dir.join("data/vault.svault"), dir.join("state")).unwrap();
-    let d = Arc::new(Mutex::new(Daemon::new(
-        store,
-        soft_hw(),
-        KdfCost::MINIMUM,
-        idle,
-    )));
+    let d = Arc::new(Mutex::new(Daemon::new(store, hw, KdfCost::MINIMUM, idle)));
     let sock = endpoint(dir);
     let l = server::bind(&sock, false).unwrap();
     let d2 = d.clone();
@@ -1187,4 +1192,109 @@ fn pgp_keys_sign_encrypt_and_ask_first() {
         panic!()
     };
     assert_eq!(items.iter().filter(|i| i.key.is_some()).count(), 3);
+}
+
+#[test]
+fn quick_unlock_with_windows_hello() {
+    use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+    let dir = tempfile::tempdir().unwrap();
+    let allow = Arc::new(AtomicBool::new(true));
+    let asked = Arc::new(AtomicU32::new(0));
+    let mut hw = soft_hw();
+    hw.presence = Some(Box::new(SoftPresence {
+        allow: allow.clone(),
+        asked: asked.clone(),
+    }));
+    let (sock, _d) = start_daemon_with(
+        dir.path(),
+        server::current_user(),
+        Duration::from_secs(600),
+        hw,
+    );
+    let mut c = C::new(&sock);
+    let Response::Initialized { token, .. } = c.ok(Request::Init {
+        password: s(PW),
+        client_name: "cli".into(),
+    }) else {
+        panic!()
+    };
+    c.token = Some(token);
+    let Response::ItemSaved { id } = c.ok(Request::PutItem {
+        id: None,
+        item: login("Example", "https://example.com"),
+    }) else {
+        panic!()
+    };
+    let hello = || Request::Unlock {
+        method: UnlockMethod::Hello,
+    };
+
+    // Off by default: locking forgets the key.
+    let st = status(&mut c);
+    assert!(st.quick_unlock.supported);
+    assert_eq!(st.quick_unlock.hours, 0);
+    c.ok(Request::Lock);
+    assert!(c.err(hello()).contains("not available"));
+    assert_eq!(asked.load(Ordering::SeqCst), 0);
+    c.ok(Request::Unlock { method: pw() });
+
+    // Turning it on needs Windows Hello, and at most a day.
+    assert!(
+        c.err(Request::SetQuickUnlock { hours: 25 })
+            .contains("at most")
+    );
+    allow.store(false, Ordering::SeqCst);
+    assert!(
+        c.err(Request::SetQuickUnlock { hours: 8 })
+            .contains("cancelled")
+    );
+    allow.store(true, Ordering::SeqCst);
+    c.ok(Request::SetQuickUnlock { hours: 8 });
+    assert_eq!(status(&mut c).quick_unlock.hours, 8);
+
+    // Lock, then Windows Hello opens it again.
+    c.ok(Request::Lock);
+    let st = status(&mut c);
+    assert!(!st.unlocked);
+    assert!(st.quick_unlock.until.is_some());
+    c.ok(hello());
+    assert!(status(&mut c).unlocked);
+    assert!(matches!(
+        c.ok(Request::GetItem { id }),
+        Response::Item { .. }
+    ));
+
+    // Hello never stands in for a full method.
+    assert!(
+        C::new(&sock)
+            .err(Request::Pair {
+                client_name: "x".into(),
+                scope: ClientScope::Full,
+                method: Some(UnlockMethod::Hello),
+            })
+            .contains("password")
+    );
+
+    // Three failed checks forget the key.
+    c.ok(Request::Lock);
+    allow.store(false, Ordering::SeqCst);
+    c.err(hello());
+    c.err(hello());
+    assert!(c.err(hello()).contains("quick unlock is off"));
+    allow.store(true, Ordering::SeqCst);
+    assert!(c.err(hello()).contains("not available"));
+    assert!(status(&mut c).quick_unlock.until.is_none());
+
+    // A full lock forgets it too, and a password unlock brings it back.
+    c.ok(Request::Unlock { method: pw() });
+    c.ok(Request::LockFully);
+    assert!(c.err(hello()).contains("not available"));
+    c.ok(Request::Unlock { method: pw() });
+    c.ok(Request::Lock);
+    c.ok(hello());
+
+    // Off again: locking forgets the key.
+    c.ok(Request::SetQuickUnlock { hours: 0 });
+    c.ok(Request::Lock);
+    assert!(c.err(hello()).contains("not available"));
 }

@@ -189,16 +189,9 @@ impl Tpm for WinTpm {
         let opaque = two_pass("export key", |out, cap, len| {
             // SAFETY: as above.
             unsafe {
-                NCryptExportKey(
-                    key.0,
-                    0,
-                    BCRYPT_OPAQUE_KEY_BLOB,
-                    null(),
-                    out,
-                    cap,
-                    len,
-                    NCRYPT_SILENT_FLAG,
-                )
+                // The provider refuses NCRYPT_SILENT_FLAG here (NTE_BAD_FLAGS);
+                // exporting the wrapped blob shows no UI anyway.
+                NCryptExportKey(key.0, 0, BCRYPT_OPAQUE_KEY_BLOB, null(), out, cap, len, 0)
             }
         })?;
         if opaque.len() > MAX_KEY_BLOB {
@@ -238,7 +231,7 @@ impl Tpm for WinTpm {
                 &mut k,
                 opaque.as_ptr(),
                 opaque.len() as u32,
-                NCRYPT_SILENT_FLAG,
+                0,
             )
         })?;
         let key = Handle(k);

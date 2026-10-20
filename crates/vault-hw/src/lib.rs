@@ -6,6 +6,9 @@ use vault_core::HwKey;
 
 #[cfg(feature = "fido2")]
 pub mod fido2;
+#[cfg(windows)]
+pub mod hello;
+pub mod protect;
 pub mod soft;
 #[cfg(all(feature = "tpm", target_os = "linux"))]
 pub mod tpm;
@@ -50,10 +53,21 @@ pub trait Tpm: Send {
     fn unseal(&self, blob: &[u8], pin: Option<&str>, bind_pcr7: bool) -> HwResult<HwKey>;
 }
 
+/// The operating system's own check that the user is at the computer
+/// (Windows Hello). It yields no secret, so it only approves a quick unlock
+/// of a key the daemon still holds; it never opens a vault on its own.
+pub trait Presence: Send {
+    /// Whether the check is set up and usable for this user.
+    fn check_available(&self) -> HwResult<()>;
+    /// Ask the user, showing `message`. Ok only if the OS verified them.
+    fn verify(&self, message: &str) -> HwResult<()>;
+}
+
 /// The factors this daemon can use.
 pub struct Hardware {
     pub fido2: Option<Box<dyn Fido2>>,
     pub tpm: Option<Box<dyn Tpm>>,
+    pub presence: Option<Box<dyn Presence>>,
 }
 
 impl Hardware {
@@ -70,6 +84,10 @@ impl Hardware {
             tpm: Some(Box::new(wintpm::WinTpm)),
             #[cfg(not(all(feature = "tpm", any(target_os = "linux", windows))))]
             tpm: None,
+            #[cfg(windows)]
+            presence: Some(Box::new(hello::WinHello)),
+            #[cfg(not(windows))]
+            presence: None,
         }
     }
 }

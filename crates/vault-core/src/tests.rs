@@ -826,3 +826,28 @@ mod merge_props {
         }
     }
 }
+
+#[test]
+fn parked_key_resumes_only_with_its_wrap_key_and_vault_key() {
+    let mut rng = TestRng(0);
+    let f = fixture(&mut rng);
+    let mut v = unlock_pw(&f.bytes, &f.pw_slot).unwrap();
+    let wrap = HwKey::new([0x5A; 32]);
+    let parked = v.park(&wrap, &mut rng).unwrap();
+    let p = ParsedVault::parse(&f.bytes).unwrap();
+    let back = p.resume(&parked, &wrap).unwrap();
+    assert_eq!(&**back.get_item(&f.items[0]).unwrap(), b"item a");
+    assert_eq!(
+        p.resume(&parked, &HwKey::new([0x5B; 32])).err(),
+        Some(Error::WrongFactor)
+    );
+
+    // Another vault, and the same vault after its key was rotated, refuse it.
+    let other = fixture(&mut TestRng(99));
+    let q = ParsedVault::parse(&other.bytes).unwrap();
+    assert_eq!(q.resume(&parked, &wrap).err(), Some(Error::DifferentVault));
+    v.revoke(&mut rng, &[(f.pw_slot, pw(PW))]).unwrap();
+    let rotated = v.to_bytes(&mut rng).unwrap();
+    let r = ParsedVault::parse(&rotated).unwrap();
+    assert_eq!(r.resume(&parked, &wrap).err(), Some(Error::DifferentKey));
+}

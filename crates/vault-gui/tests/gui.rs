@@ -29,6 +29,7 @@ fn start_daemon(dir: &Path, idle: Duration) -> (PathBuf, server::Shared) {
     let hw = Hardware {
         fido2: None,
         tpm: None,
+        presence: None,
     };
     let d = Arc::new(Mutex::new(Daemon::new(store, hw, KdfCost::MINIMUM, idle)));
     let sock = endpoint(dir);

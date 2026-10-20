@@ -6,7 +6,7 @@ use std::sync::Mutex;
 use sha2::{Digest, Sha256};
 use vault_core::HwKey;
 
-use super::{Fido2, HwResult, Tpm};
+use super::{Fido2, HwResult, Presence, Tpm};
 
 /// Simulates an authenticator with distinct UV and non-UV secrets.
 pub struct SoftFido2 {
@@ -72,5 +72,27 @@ impl Tpm for SoftTpm {
             *b = blob[i] ^ self.device_key[i];
         }
         Ok(HwKey::new(s))
+    }
+}
+
+/// Answers presence checks with a fixed verdict, and counts them.
+pub struct SoftPresence {
+    pub allow: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    pub asked: std::sync::Arc<std::sync::atomic::AtomicU32>,
+}
+
+impl Presence for SoftPresence {
+    fn check_available(&self) -> HwResult<()> {
+        Ok(())
+    }
+
+    fn verify(&self, _message: &str) -> HwResult<()> {
+        use std::sync::atomic::Ordering;
+        self.asked.fetch_add(1, Ordering::SeqCst);
+        if self.allow.load(Ordering::SeqCst) {
+            Ok(())
+        } else {
+            Err("Windows Hello: cancelled".into())
+        }
     }
 }

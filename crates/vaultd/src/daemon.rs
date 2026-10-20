@@ -10,12 +10,13 @@ use vault_core::generator::{Charset, generate_password};
 use vault_core::item::{ItemData, ItemKind, ItemMerge, KeyData};
 use vault_core::origin::may_fill;
 use vault_core::{
-    Factor, HwKey, ItemId, KdfCost, KeyslotMeta, OsRandom, ParsedVault, PcrPolicy, SecureRandom,
-    SlotId, Unlock, Vault,
+    Factor, HwKey, ItemId, KdfCost, KeyslotMeta, OsRandom, ParkedKey, ParsedVault, PcrPolicy,
+    SecureRandom, SlotId, Unlock, Vault,
 };
+use vault_hw::protect::ProtectedKey;
 use vault_ipc::{
-    ClientScope, ClientToken, Envelope, ImportFormat, ItemSummary, Request, Response, Secret,
-    SlotInfo, StatusInfo, SyncInfo, UnlockMethod,
+    ClientScope, ClientToken, Envelope, ImportFormat, ItemSummary, QuickUnlockInfo, Request,
+    Response, Secret, SlotInfo, StatusInfo, SyncInfo, UnlockMethod,
 };
 use zeroize::Zeroizing;
 
@@ -32,6 +33,10 @@ pub const RP_ID: &str = "vault.local";
 const FREE_ATTEMPTS: u32 = 3;
 /// Longest wait between attempts.
 const MAX_BACKOFF: Duration = Duration::from_secs(300);
+/// Longest quick unlock window after a full unlock.
+const MAX_QUICK_HOURS: u32 = 24;
+/// Failed Windows Hello attempts before the quick unlock key is forgotten.
+const QUICK_ATTEMPTS: u32 = 3;
 
 pub struct Daemon {
     store: Store,
@@ -51,6 +56,21 @@ pub struct Daemon {
     /// Set by a request that used a key marked `confirm`: its title and the
     /// purpose. The server asks the user before releasing the response.
     pending_use: Option<(String, String)>,
+    /// Quick unlock window in hours; 0 is off.
+    quick_hours: u32,
+    /// When quick unlock stops working: the last full unlock plus
+    /// `quick_hours`. Wall clock, so time asleep counts.
+    quick_until: Option<SystemTime>,
+    /// While locked with quick unlock on: the vault key, wrapped.
+    parked: Option<Parked>,
+}
+
+/// A locked vault's key kept for quick unlock (format.md section 4.6). The
+/// wrap key is protected in memory where the OS can (Windows).
+struct Parked {
+    key: ParkedKey,
+    wrap: ProtectedKey,
+    failures: u32,
 }
 
 /// Folder sync and what to report about it.
@@ -164,7 +184,11 @@ impl Daemon {
             device,
             sync,
             pending_use: None,
+            quick_hours: 0,
+            quick_until: None,
+            parked: None,
         };
+        d.quick_hours = d.store.quick_unlock_hours().min(MAX_QUICK_HOURS);
         d.join_from_sync();
         d
     }
@@ -174,6 +198,9 @@ impl Daemon {
     pub fn tick(&mut self) {
         if self.vault.is_some() && self.last_activity.elapsed() >= self.idle {
             self.lock();
+        }
+        if self.parked.is_some() && !self.quick_open() {
+            self.parked = None;
         }
         if self.vault.is_some()
             && let Some(all) = self.sync.as_mut().and_then(|s| s.folder.due())
@@ -305,9 +332,108 @@ impl Daemon {
         Ok(write)
     }
 
-    /// Drop the vault and its keys.
+    /// Drop the vault and its keys. With quick unlock on and its window
+    /// open, keep the vault key wrapped under a fresh random key first.
     pub fn lock(&mut self) {
+        let Some(v) = self.vault.take() else {
+            return;
+        };
+        if self.hw.presence.is_none() || !self.quick_open() {
+            return;
+        }
+        let mut wrap = Zeroizing::new([0u8; 32]);
+        if OsRandom.fill(&mut wrap[..]).is_err() {
+            return;
+        }
+        if let Ok(key) = v.park(&HwKey::new(*wrap), &mut OsRandom) {
+            self.parked = Some(Parked {
+                key,
+                wrap: ProtectedKey::new(*wrap),
+                failures: 0,
+            });
+        }
+    }
+
+    /// Lock, and forget the quick unlock key too.
+    pub fn lock_fully(&mut self) {
         self.vault = None;
+        self.parked = None;
+        self.quick_until = None;
+    }
+
+    /// Whether quick unlock is on and within its window.
+    fn quick_open(&self) -> bool {
+        self.quick_hours > 0 && self.quick_until.is_some_and(|t| SystemTime::now() < t)
+    }
+
+    /// Re-open the parked vault after Windows Hello confirms the user.
+    fn quick_unlock(&mut self) -> R<Vault> {
+        const NOT_NOW: &str = "quick unlock is not available now: unlock with your password \
+                               (or another method) first";
+        if self.parked.is_none() || !self.quick_open() {
+            self.parked = None;
+            return Err(NOT_NOW.into());
+        }
+        let hello = self.hw.presence.as_ref().ok_or(NOT_NOW)?;
+        if let Err(m) = hello.verify("Unlock Secret Vault") {
+            let p = self.parked.as_mut().ok_or(NOT_NOW)?;
+            p.failures += 1;
+            if p.failures >= QUICK_ATTEMPTS {
+                self.parked = None;
+                return Err(format!(
+                    "{m}; quick unlock is off until you unlock with your password"
+                ));
+            }
+            return Err(m);
+        }
+        let bytes = self
+            .store
+            .read()
+            .map_err(|_| "no vault; run `vault init`")?;
+        let parsed = ParsedVault::parse(&bytes).map_err(e)?;
+        let p = self.parked.as_mut().ok_or(NOT_NOW)?;
+        let opened = p.wrap.with(|w| parsed.resume(&p.key, w));
+        match opened {
+            Ok(v) => {
+                self.parked = None;
+                self.check_rollback(&v);
+                Ok(v)
+            }
+            Err(err) => {
+                // The key was rotated (a revoke synced in) or the file was
+                // replaced: a full unlock is needed.
+                self.parked = None;
+                Err(format!("{}; unlock with your password", e(err)))
+            }
+        }
+    }
+
+    fn set_quick_unlock(&mut self, hours: u32) -> R<Response> {
+        if hours > MAX_QUICK_HOURS {
+            return Err(format!(
+                "quick unlock lasts at most {MAX_QUICK_HOURS} hours after a full unlock"
+            ));
+        }
+        if hours > 0 {
+            let hello = self
+                .hw
+                .presence
+                .as_ref()
+                .ok_or("quick unlock needs Windows Hello, which this system does not have")?;
+            hello.check_available()?;
+            hello.verify("Turn on quick unlock for Secret Vault")?;
+        }
+        self.store
+            .set_quick_unlock_hours(hours)
+            .map_err(|e| e.to_string())?;
+        self.quick_hours = hours;
+        // The window counts from now, for the unlock that is open.
+        self.quick_until = (hours > 0 && self.vault.is_some())
+            .then(|| SystemTime::now() + Duration::from_secs(u64::from(hours) * 3600));
+        if hours == 0 {
+            self.parked = None;
+        }
+        Ok(Response::Status(self.status()))
     }
 
     /// Let clients pair by asking the user through `approver`.
@@ -514,6 +640,7 @@ impl Daemon {
                 env.request,
                 Request::Unlock { .. }
                     | Request::Lock
+                    | Request::LockFully
                     | Request::FindForOrigin { .. }
                     | Request::GetForFill { .. }
                     | Request::TotpForFill { .. }
@@ -536,6 +663,10 @@ impl Daemon {
                 client_name,
             } => self.init(&password, &client_name),
             Request::Pair {
+                method: Some(UnlockMethod::Hello),
+                ..
+            } => Err("pair with your password or another full unlock method".into()),
+            Request::Pair {
                 client_name,
                 scope,
                 method: Some(method),
@@ -551,6 +682,17 @@ impl Daemon {
             Request::Pair { method: None, .. } => {
                 Err("pairing without a factor goes through the server's approval prompt".into())
             }
+            Request::Unlock {
+                method: UnlockMethod::Hello,
+            } => {
+                if self.vault.is_none() {
+                    let mut v = self.quick_unlock()?;
+                    v.set_device(self.device);
+                    self.vault = Some(v);
+                    self.sync_now(None, true);
+                }
+                Ok(Response::Ok)
+            }
             Request::Unlock { method } => {
                 let v = self.prove(&method)?;
                 self.opened(v, &method);
@@ -559,6 +701,10 @@ impl Daemon {
             Request::SetSync { path } => self.set_sync(path),
             Request::Lock => {
                 self.lock();
+                Ok(Response::Ok)
+            }
+            Request::LockFully => {
+                self.lock_fully();
                 Ok(Response::Ok)
             }
             Request::Generate { options } => {
@@ -577,10 +723,13 @@ impl Daemon {
     }
 
     /// Hold a vault just unlocked with `method`, and catch up with the
-    /// synced copy.
+    /// synced copy. A full unlock starts a new quick unlock window.
     fn opened(&mut self, mut v: Vault, method: &UnlockMethod) {
         v.set_device(self.device);
         self.vault = Some(v);
+        self.parked = None;
+        self.quick_until = (self.quick_hours > 0)
+            .then(|| SystemTime::now() + Duration::from_secs(u64::from(self.quick_hours) * 3600));
         self.sync_now(Some(method), true);
     }
 
@@ -622,6 +771,17 @@ impl Daemon {
                     .saturating_sub(self.last_activity.elapsed())
                     .as_secs()
             }),
+            quick_unlock: QuickUnlockInfo {
+                supported: self.hw.presence.is_some(),
+                hours: self.quick_hours,
+                until: self
+                    .parked
+                    .as_ref()
+                    .filter(|_| self.vault.is_none() && self.quick_open())
+                    .and(self.quick_until)
+                    .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs()),
+            },
             sync: self.sync.as_ref().map(|s| SyncInfo {
                 path: s.folder.path().display().to_string(),
                 last_sync: s.last_sync,
@@ -695,6 +855,13 @@ impl Daemon {
 
     /// Unlock with the first slot the method fits. Rate limited.
     fn prove(&mut self, method: &UnlockMethod) -> R<Vault> {
+        if matches!(method, UnlockMethod::Hello) {
+            return Err(
+                "Windows Hello only re-opens a vault locked on this computer; \
+                 use your password or another full unlock method here"
+                    .into(),
+            );
+        }
         if let Some(t) = self.next_attempt
             && Instant::now() < t
         {
@@ -1279,8 +1446,13 @@ impl Daemon {
             | Request::Unlock { .. }
             | Request::SetSync { .. }
             | Request::Lock
+            | Request::LockFully
             | Request::Generate { .. } => {
                 unreachable!("handled in dispatch")
+            }
+            Request::SetQuickUnlock { hours } => {
+                self.vault()?;
+                self.set_quick_unlock(hours)
             }
         }
     }

@@ -5536,6 +5536,8 @@ dependencies = [
  "sha2 0.11.1",
  "tss-esapi",
  "vault-core",
+ "windows",
+ "windows-future",
  "windows-sys 0.61.2",
  "zeroize",
 ]

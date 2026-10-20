@@ -2,6 +2,7 @@
 //! and Windows (no administrator rights needed on Windows):
 //!
 //!     cargo run -p vault-hw --example tpm-check
+//!     cargo run -p vault-hw --example tpm-check -- 1234    (test PIN, no prompt)
 //!
 //! It wraps a random test secret three ways (no PIN, with a PIN, bound to
 //! PCR 7) and unwraps each again. With a PIN it also tries one wrong PIN,
@@ -48,8 +49,10 @@ fn main() {
             std::process::exit(1);
         }
     };
-    let pin = rpassword::prompt_password("Test PIN to use (Enter to skip the PIN test): ")
-        .unwrap_or_default();
+    let pin = std::env::args().nth(1).unwrap_or_else(|| {
+        rpassword::prompt_password("Test PIN to use (Enter to skip the PIN test): ")
+            .unwrap_or_default()
+    });
     let pin = (!pin.is_empty()).then_some(pin);
     let mut cases = vec![(None, false), (None, true)];
     if let Some(p) = pin.as_deref() {

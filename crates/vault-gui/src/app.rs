@@ -90,6 +90,7 @@ enum Op {
     AddSlot,
     RemoveSlot(SlotId),
     Sync,
+    QuickUnlock,
 }
 
 /// Which screen is showing.
@@ -418,6 +419,8 @@ pub struct App {
     confirm_remove: Option<SlotId>,
 
     sync_path: String,
+    /// Hours picked on the quick unlock form; `None` until first shown.
+    quick_hours: Option<u32>,
 
     copied: Option<(Secret, Instant)>,
 
@@ -471,6 +474,7 @@ impl App {
             new_recovery: None,
             confirm_remove: None,
             sync_path: String::new(),
+            quick_hours: None,
             copied: None,
             styled: false,
             filter: Filter::All,
@@ -725,6 +729,19 @@ impl App {
                 self.confirm_remove = None;
                 self.notice = Some("Unlock method removed.".into());
                 self.send(Op::ListSlots, Request::ListSlots);
+            }
+            (Op::QuickUnlock, Response::Status(s)) => {
+                self.notice = Some(if s.quick_unlock.hours == 0 {
+                    "Quick unlock is off.".into()
+                } else {
+                    format!(
+                        "Quick unlock is on: Windows Hello can unlock for {} hours after each \
+                         unlock with your password.",
+                        s.quick_unlock.hours
+                    )
+                });
+                self.quick_hours = Some(s.quick_unlock.hours);
+                self.on_status(s);
             }
             (Op::Sync, Response::Status(s)) => {
                 self.notice = Some(match &s.sync {
@@ -1029,6 +1046,29 @@ impl App {
     fn pair_or_unlock(&mut self, ui: &mut Ui, pair: bool) {
         if pair {
             ui.label("Pair this app with your vault by unlocking it once.");
+        }
+        let quick = self
+            .status
+            .as_ref()
+            .and_then(|(s, _)| s.quick_unlock.until)
+            .filter(|_| !pair);
+        if quick.is_some() {
+            let ok = self.busy.is_none();
+            if theme::primary(ui, ok, "Unlock with Windows Hello").clicked() && ok {
+                self.act(
+                    "Confirm it's you in the Windows Security window…",
+                    Op::Unlock,
+                    Request::Unlock {
+                        method: UnlockMethod::Hello,
+                    },
+                );
+            }
+            ui.label(
+                RichText::new("Face, fingerprint or your Windows PIN. Or use another method:")
+                    .small()
+                    .color(theme::MUTED),
+            );
+            ui.add_space(12.0);
         }
         let f = &mut self.unlock;
         theme::caption(ui, "Unlock with");
@@ -2167,6 +2207,7 @@ impl App {
                 self.new_recovery = None;
             }
         }
+        self.quick_unlock_form(ui);
         ui.separator();
         ui.heading("Add a method");
         let f = &mut self.slot_form;
@@ -2254,6 +2295,56 @@ impl App {
             SlotKind::Recovery => ("Adding…", Request::AddRecoverySlot { label }),
         };
         self.act(busy, Op::AddSlot, request);
+    }
+}
+
+impl App {
+    /// Quick unlock with Windows Hello, where vaultd supports it.
+    fn quick_unlock_form(&mut self, ui: &mut Ui) {
+        let Some(q) = self.status.as_ref().map(|(s, _)| s.quick_unlock.clone()) else {
+            return;
+        };
+        if !q.supported {
+            return;
+        }
+        ui.separator();
+        ui.heading("Quick unlock with Windows Hello");
+        ui.label(
+            "After you unlock with your password (or another method), Windows Hello can \
+             unlock the vault again when it locks, until the time below runs out or the \
+             computer restarts. Then the password is needed again.",
+        );
+        let hours = self
+            .quick_hours
+            .get_or_insert(if q.hours == 0 { 8 } else { q.hours });
+        let name = |h: u32| match h {
+            0 => "Off".to_string(),
+            1 => "1 hour".to_string(),
+            h => format!("{h} hours"),
+        };
+        ui.horizontal(|ui| {
+            egui::ComboBox::from_id_salt("quick-hours")
+                .selected_text(name(*hours))
+                .show_ui(ui, |ui| {
+                    for h in [0, 1, 2, 4, 8, 12, 24] {
+                        ui.selectable_value(hours, h, name(h));
+                    }
+                });
+        });
+        let picked = *hours;
+        let ok = self.busy.is_none() && picked != q.hours;
+        if ui.add_enabled(ok, egui::Button::new("Apply")).clicked() {
+            let busy = if picked == 0 {
+                "Turning quick unlock off…"
+            } else {
+                "Confirm it's you in the Windows Security window…"
+            };
+            self.act(
+                busy,
+                Op::QuickUnlock,
+                Request::SetQuickUnlock { hours: picked },
+            );
+        }
     }
 }
 

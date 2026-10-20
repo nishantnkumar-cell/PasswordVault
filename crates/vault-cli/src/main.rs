@@ -12,8 +12,8 @@ use vault_core::origin::MatchMode;
 use vault_core::totp::TotpConfig;
 use vault_ipc::{
     ClientScope, ClientToken, Envelope, GenerateOptions, ImportFormat, ItemSummary, KeyKind,
-    Request, Response, Secret, SecretBytes, SlotInfo, SyncInfo, UnlockMethod, hex, local, parse_id,
-    read_frame, write_frame,
+    QuickUnlockInfo, Request, Response, Secret, SecretBytes, SlotInfo, SyncInfo, UnlockMethod, hex,
+    local, parse_id, read_frame, write_frame,
 };
 use zeroize::Zeroizing;
 
@@ -29,7 +29,11 @@ SETUP
 
 UNLOCKING                      METHOD is one of --password (default), --fido2, --tpm, --recovery
   unlock [METHOD]              unlock the vault
-  lock                         lock it and wipe keys from memory
+  unlock --hello               quick unlock with Windows Hello (after a full unlock, see below)
+  lock [--full]                lock it and wipe keys from memory (--full: forget the
+                               quick unlock key too, so the next unlock needs METHOD)
+  quick-unlock [HOURS|off]     show, turn on (for HOURS after each full unlock, 1 to 24)
+                               or turn off quick unlock with Windows Hello (Windows)
 
 ITEMS                          ID may be any unique prefix of an item ID
   ls [KIND]                    list items, or only logins, notes, cards or identities
@@ -85,6 +89,29 @@ ENVIRONMENT
                                on Windows \\.\pipe\vaultd-<your SID>]
   VAULT_TOKEN_FILE             pairing token [default: $XDG_CONFIG_HOME/vault/token,
                                on Windows %APPDATA%\vault\token]";
+
+fn print_quick(q: &QuickUnlockInfo) {
+    if q.hours == 0 {
+        println!("quick unlock: off (turn on with `vault quick-unlock 8`)");
+        return;
+    }
+    println!(
+        "quick unlock: Windows Hello, for {} h after each full unlock",
+        q.hours
+    );
+    if let Some(t) = q.until {
+        let left = t.saturating_sub(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_or(0, |d| d.as_secs()),
+        );
+        println!(
+            "              available now for {} h {} min (`vault unlock --hello`)",
+            left / 3600,
+            left % 3600 / 60
+        );
+    }
+}
 
 fn print_sync(s: &SyncInfo) {
     println!("sync:      {}", s.path);
@@ -591,6 +618,9 @@ fn main() {
             if let Some(t) = s.idle_lock_in {
                 println!("auto-lock in: {t} s");
             }
+            if s.quick_unlock.supported {
+                print_quick(&s.quick_unlock);
+            }
             println!(
                 "paired:    {}",
                 if load_token().is_some() { "yes" } else { "no" }
@@ -633,14 +663,44 @@ fn main() {
             }
         }
         "unlock" => {
-            Client::connect().call(Request::Unlock {
-                method: method(rest),
-            });
+            let method = if rest.iter().any(|a| a == "--hello") {
+                eprintln!("Confirm it's you in the Windows Security window...");
+                UnlockMethod::Hello
+            } else {
+                method(rest)
+            };
+            Client::connect().call(Request::Unlock { method });
             println!("Unlocked.");
         }
         "lock" => {
-            Client::connect().call(Request::Lock);
-            println!("Locked.");
+            if rest.iter().any(|a| a == "--full") {
+                Client::connect().call(Request::LockFully);
+                println!("Locked. The next unlock needs your password or another full method.");
+            } else {
+                Client::connect().call(Request::Lock);
+                println!("Locked.");
+            }
+        }
+        "quick-unlock" => {
+            let mut c = Client::connect();
+            let req = match rest.first().map(String::as_str) {
+                None => Request::Status,
+                Some("off" | "0") => Request::SetQuickUnlock { hours: 0 },
+                Some(h) => {
+                    let hours = h.parse().unwrap_or_else(|_| {
+                        die("usage: vault quick-unlock [HOURS|off], HOURS from 1 to 24")
+                    });
+                    eprintln!("Confirm it's you in the Windows Security window...");
+                    Request::SetQuickUnlock { hours }
+                }
+            };
+            let Response::Status(s) = c.call(req) else {
+                die("unexpected response")
+            };
+            if !s.quick_unlock.supported {
+                die("quick unlock needs Windows Hello, which this system does not have");
+            }
+            print_quick(&s.quick_unlock);
         }
         "ls" => {
             let only = kind_arg(rest);
