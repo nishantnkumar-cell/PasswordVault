@@ -14,6 +14,36 @@ to work yet.
 
 ## Unreleased
 
+### App icon: a keyhole on a red tile
+
+- **Secret Vault has its own icon.** A white keyhole on a signal-red tile
+  replaces the generic padlock (Linux) and the default program icon
+  (Windows). It shows in the title bar, the taskbar or dock, the window
+  switcher, the Start menu and applications menu, and the approval window
+  `vaultd` opens.
+- **Made for small sizes.** At 48 px and below the icon drops its halo and
+  ring and draws a bigger keyhole on a full tile, so it stays clear in the
+  system tray and title bar.
+- **One source, every format.** `contrib/icons/generate.py` draws the icon
+  and exports it for each system; the files are in `contrib/icons/`.
+
+Platform notes:
+
+- **Windows:** the icon is built into `vault-gui.exe` and `vault-prompt.exe`,
+  so the Start menu shortcut, taskbar and Explorer show it, and the installer
+  (`SecretVault-Setup-<version>.exe`) uses it too. Nothing to do: install or
+  upgrade as usual.
+- **Linux:** the icon ships as a hicolor theme folder (PNG from 16 to 512 px,
+  a scalable SVG and a one-colour *symbolic* version for GNOME), and the
+  `.desktop` file now asks for it by the app id `dev.passwordvault.app`.
+  Copy the folder once to see it in your applications menu and dock. On
+  Wayland the dock and window switcher take the icon from the `.desktop`
+  file, not from the window, so the copy step matters there.
+- **macOS:** a `.icns` file with the padding macOS expects is included for
+  when the desktop app comes to macOS; the app does not run there yet.
+
+How to use it: [desktop app, adding it to your menu](user-guide/05-desktop-app.md#start-it).
+
 ### Windows: installer, background start and security keys without admin
 
 - **Installer.** `SecretVault-Setup-<version>.exe` installs the daemon, the
