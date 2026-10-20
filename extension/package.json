@@ -1,7 +1,11 @@
 {
   "name": "secret-vault-extension",
   "private": true,
+  "license": "PolyForm-Noncommercial-1.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "test": "node --test test/*.test.mjs"
   }

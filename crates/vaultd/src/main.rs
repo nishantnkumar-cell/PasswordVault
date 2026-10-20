@@ -19,6 +19,8 @@ OPTIONS:
   --vault PATH       vault file      [default: DATA/vault.svault]
   --state-dir PATH   daemon state    [default: STATE]
   --socket PATH      Unix socket or Windows pipe [default: see docs/vaultd.md]
+  --ssh-agent PATH   ssh-agent socket or pipe for SSH_AUTH_SOCK [default: see docs/ssh.md]
+  --no-ssh-agent     do not serve the ssh-agent protocol
   --owner-uid UID    the only UID allowed to connect [default: this process's UID] (Unix)
   --owner-user NAME  same, by user name (for a system unit running as its own user) (Unix)
   --idle-secs N      lock after N idle seconds [default: 900]
@@ -64,6 +66,7 @@ fn main() {
     let mut idle = 900u64;
     let mut cost = KdfCost::DEFAULT;
     let mut prompt = true;
+    let mut agent = Some(local::ssh_agent_endpoint().unwrap_or_else(|e| die(&e.to_string())));
 
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
@@ -75,6 +78,8 @@ fn main() {
             "--vault" => vault = val().into(),
             "--state-dir" => state = val().into(),
             "--socket" => socket = val().into(),
+            "--ssh-agent" => agent = Some(val().into()),
+            "--no-ssh-agent" => agent = None,
             #[cfg(unix)]
             "--owner-user" => {
                 let name = val();
@@ -123,8 +128,12 @@ fn main() {
             ),
         }
     }
-    let listener = server::bind(&socket, owner != server::current_user())
+    let shared = owner != server::current_user();
+    let listener = server::bind(&socket, shared)
         .unwrap_or_else(|e| die(&format!("{}: {e}", socket.display())));
+    let agent_listener = agent
+        .as_ref()
+        .map(|p| server::bind(p, shared).unwrap_or_else(|e| die(&format!("{}: {e}", p.display()))));
 
     // Lock and exit cleanly on SIGTERM / SIGINT / SIGHUP.
     #[cfg(unix)]
@@ -138,10 +147,14 @@ fn main() {
     {
         let d = daemon.clone();
         let sock = socket.clone();
+        let agent_sock = agent.clone();
         std::thread::spawn(move || {
             if signals.forever().next().is_some() {
                 d.lock().unwrap_or_else(|p| p.into_inner()).lock();
                 let _ = std::fs::remove_file(&sock);
+                if let Some(a) = &agent_sock {
+                    let _ = std::fs::remove_file(a);
+                }
                 std::process::exit(0);
             }
         });
@@ -160,8 +173,22 @@ fn main() {
         let d = daemon.clone();
         std::thread::spawn(move || vaultd::winsession::run(d));
     }
+    if let (Some(l), Some(p)) = (agent_listener, &agent) {
+        let d = daemon.clone();
+        #[cfg_attr(unix, allow(clippy::clone_on_copy))]
+        let o = owner.clone();
+        eprintln!("vaultd: ssh-agent on {}", p.display());
+        std::thread::spawn(move || {
+            server::serve(l, o, move |c, pid| {
+                let _ = vaultd::ssh::connection(c, &d, pid);
+            })
+        });
+    }
     eprintln!("vaultd: listening on {}", socket.display());
-    server::serve(listener, daemon, owner);
+    let d = daemon.clone();
+    server::serve(listener, owner, move |c, pid| {
+        let _ = server::connection(c, &d, pid);
+    });
 }
 
 fn die(msg: &str) -> ! {

@@ -1,7 +1,7 @@
-//! Approval prompts: the daemon asks the user itself, in a window it starts
-//! (`vault-prompt`), naming the program that asked. Used for pairing a client
-//! and before releasing a card to the browser. A client can make the request
-//! but cannot answer it.
+//! Approval by the user: the daemon asks itself, in a window it starts
+//! (`vault-prompt`), naming the program that asked. Used for pairing a
+//! client, before releasing a card to the browser, and before each use of a
+//! key marked `confirm`. A client can make the request but cannot answer it.
 
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -33,6 +33,17 @@ pub struct CardPrompt {
     pub program: Option<String>,
 }
 
+/// A key use the user is asked to approve.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UsePrompt {
+    /// The key item's title.
+    pub key: String,
+    /// What the signature is for, read from the request. Not verified.
+    pub purpose: String,
+    /// The connecting process's executable, as the OS reports it.
+    pub program: Option<String>,
+}
+
 /// What the user is asked.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Prompt {
@@ -45,6 +56,11 @@ pub enum Prompt {
 /// Something that can ask the user. `Ok(true)` means approved.
 pub trait Approver: Send + Sync {
     fn approve(&self, prompt: &Prompt) -> Result<bool, String>;
+
+    /// Ask before using a key. Approvers that cannot ask refuse.
+    fn confirm_use(&self, _prompt: &UsePrompt) -> Result<bool, String> {
+        Err("this approver cannot ask about key use".into())
+    }
 }
 
 /// Any closure can approve (tests, embedders).
@@ -77,7 +93,46 @@ impl Helper {
     }
 }
 
+impl Helper {
+    /// Run the window with `args`: exit 0 approves, 1 declines.
+    fn run(&self, cmd: &mut Command) -> Result<bool, String> {
+        cmd.stdin(Stdio::null()).stdout(Stdio::null());
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| format!("{}: {e}", self.exe.display()))?;
+        let start = Instant::now();
+        loop {
+            if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
+                return match status.code() {
+                    Some(0) => Ok(true),
+                    Some(1) => Ok(false),
+                    _ => Err(format!("the approval window failed ({status})")),
+                };
+            }
+            if start.elapsed() >= self.timeout {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Ok(false);
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    }
+}
+
 impl Approver for Helper {
+    fn confirm_use(&self, p: &UsePrompt) -> Result<bool, String> {
+        let mut cmd = Command::new(&self.exe);
+        cmd.arg("--use")
+            .arg("--key")
+            .arg(&p.key)
+            .arg("--purpose")
+            .arg(&p.purpose);
+        if let Some(prog) = &p.program {
+            cmd.arg("--program").arg(prog);
+        }
+        self.run(&mut cmd)
+    }
+
     fn approve(&self, p: &Prompt) -> Result<bool, String> {
         let mut cmd = Command::new(&self.exe);
         let program = match p {
@@ -102,29 +157,10 @@ impl Approver for Helper {
                 &p.program
             }
         };
-        cmd.stdin(Stdio::null()).stdout(Stdio::null());
         if let Some(prog) = program {
             cmd.arg("--program").arg(prog);
         }
-        let mut child = cmd
-            .spawn()
-            .map_err(|e| format!("{}: {e}", self.exe.display()))?;
-        let start = Instant::now();
-        loop {
-            if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
-                return match status.code() {
-                    Some(0) => Ok(true),
-                    Some(1) => Ok(false),
-                    _ => Err(format!("the approval window failed ({status})")),
-                };
-            }
-            if start.elapsed() >= self.timeout {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Ok(false);
-            }
-            std::thread::sleep(Duration::from_millis(100));
-        }
+        self.run(&mut cmd)
     }
 }
 
@@ -213,5 +249,16 @@ mod tests {
             r#"[ "$*" = "--client browser --fill-card Visa 1111 --origin https://shop.example" ] || exit 2"#,
         );
         assert_eq!(echo.approve(&card), Ok(true));
+        let u = UsePrompt {
+            key: "laptop".into(),
+            purpose: "sign a git commit or tag".into(),
+            program: Some("/usr/bin/ssh-keygen".into()),
+        };
+        let echo = script(
+            "echo-use",
+            r#"[ "$*" = "--use --key laptop --purpose sign a git commit or tag --program /usr/bin/ssh-keygen" ] || exit 2"#,
+        );
+        assert_eq!(echo.confirm_use(&u), Ok(true));
+        assert_eq!(script("no-use", "exit 1").confirm_use(&u), Ok(false));
     }
 }

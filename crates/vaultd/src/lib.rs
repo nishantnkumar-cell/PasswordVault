@@ -7,7 +7,9 @@ pub mod daemon;
 pub use vault_hw as hw;
 #[cfg(all(feature = "logind", target_os = "linux"))]
 pub mod logind;
+pub mod pgp;
 pub mod server;
+pub mod ssh;
 pub mod store;
 pub mod sync;
 #[cfg(windows)]

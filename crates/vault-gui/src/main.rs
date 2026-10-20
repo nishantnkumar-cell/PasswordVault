@@ -1,6 +1,8 @@
 //! `vault-gui`: desktop app for `vaultd`.
 
 #![forbid(unsafe_code)]
+// No console window behind the app in release builds (debug builds keep it for logs).
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use eframe::egui;
 use vault_gui::{App, Paths, SystemClip};
@@ -18,8 +20,9 @@ fn main() -> eframe::Result {
         viewport: egui::ViewportBuilder::default()
             .with_title("Secret Vault")
             .with_app_id("dev.passwordvault.app")
-            .with_inner_size([920.0, 600.0])
-            .with_min_inner_size([560.0, 380.0]),
+            .with_icon(vault_gui::window_icon())
+            .with_inner_size([1180.0, 740.0])
+            .with_min_inner_size([760.0, 480.0]),
         ..Default::default()
     };
     eframe::run_native(

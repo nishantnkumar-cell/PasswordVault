@@ -70,6 +70,22 @@ pub fn endpoint() -> io::Result<PathBuf> {
     }
 }
 
+/// Where `vaultd` serves the ssh-agent protocol (point `SSH_AUTH_SOCK`
+/// here): a socket next to the daemon's, or on Windows
+/// `\\.\pipe\vaultd-ssh-<user SID>`.
+pub fn ssh_agent_endpoint() -> io::Result<PathBuf> {
+    #[cfg(unix)]
+    return Ok(match std::env::var_os("XDG_RUNTIME_DIR") {
+        Some(d) => PathBuf::from(d).join("vault/ssh-agent.sock"),
+        None => state_dir().join("ssh-agent.sock"),
+    });
+    #[cfg(windows)]
+    {
+        let sid = crate::win::sid_string(&crate::win::current_user()?)?;
+        Ok(PathBuf::from(format!(r"\\.\pipe\vaultd-ssh-{sid}")))
+    }
+}
+
 /// A connection to the daemon.
 #[cfg(unix)]
 pub type Stream = std::os::unix::net::UnixStream;

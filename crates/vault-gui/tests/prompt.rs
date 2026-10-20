@@ -81,3 +81,26 @@ fn a_card_fill_names_the_card_and_the_site() {
     h.step();
     assert_eq!(h.state().answer, Some(true));
 }
+
+#[test]
+fn key_use_names_the_key_and_purpose() {
+    let mut h = asking(Ask::Use {
+        key: "laptop".into(),
+        purpose: "sign a git commit or tag".into(),
+    });
+    assert!(
+        h.query_by_label_contains("Use the key \u{201c}laptop\u{201d}")
+            .is_some()
+    );
+    assert!(
+        h.query_by_label_contains("To sign a git commit or tag.")
+            .is_some()
+    );
+    assert!(
+        h.query_by_label_contains("/usr/lib/vault/vault-native-host")
+            .is_some()
+    );
+    h.get_by_label("Deny").click();
+    h.step();
+    assert_eq!(h.state().answer, Some(false));
+}

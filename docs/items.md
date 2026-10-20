@@ -1,8 +1,11 @@
-# Item payload, schema 2
+# Item payload, schema 3
 
-Each vault item's data (format.md section 5, `ItemData`) is `0x02 || postcard(ItemData)`. The leading byte is the item schema version, independent of the file format version. Readers reject an unknown schema byte and non-canonical encodings.
+Each vault item's data (format.md section 5, `ItemData`) is `0x03 || postcard(ItemData)`. The leading byte is the item schema version, independent of the file format version. Readers reject an unknown schema byte and non-canonical encodings.
 
-Schema 1 (`0x01`, logins only, below) is still read: such an item comes back as a `Login` and is written as schema 2 the next time it is saved. Nothing rewrites the vault just to upgrade.
+Older schemas are still read, and an item is written as schema 3 the next time it is saved; nothing rewrites the vault just to upgrade:
+
+- Schema 1 (`0x01`, logins only: the login fields below, notes and timestamps) comes back as a `Login`.
+- Schema 2 (`0x02`, schema 1 plus `key`) comes back as a `Login` that keeps its key.
 
 ```rust
 struct ItemData {
@@ -18,6 +21,12 @@ struct ItemData {
     notes: String,
     created: u64,               // seconds since the Unix epoch
     modified: u64,
+    key: Option<KeyData>,       // any kind; never sent to clients
+}
+
+enum KeyData {
+    Ssh { openssh: String, confirm: bool },   // OpenSSH private key, no passphrase
+    OpenPgp { tsk: Vec<u8>, confirm: bool },  // transferable secret key, no passphrase
 }
 
 struct UrlEntry {

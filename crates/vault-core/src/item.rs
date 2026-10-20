@@ -8,11 +8,13 @@ use crate::Error;
 use crate::origin::MatchMode;
 use crate::totp::TotpConfig;
 
-/// Version tag of the item payload, so the schema can evolve independently of
-/// the file format. Schema 1 (logins only) is still read and is upgraded when
-/// the item is next saved.
+/// Version tags of the item payload, so the schema can evolve independently
+/// of the file format. Schema 1 held logins only; schema 2 added
+/// [`ItemData::key`]; schema 3 added kinds, cards, identities and custom
+/// fields. Older items are still read and are upgraded when next saved.
 const ITEM_SCHEMA_V1: u8 = 1;
 const ITEM_SCHEMA_V2: u8 = 2;
+const ITEM_SCHEMA_V3: u8 = 3;
 
 /// What an item holds.
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -92,6 +94,45 @@ pub struct ItemData {
     pub created: u64,
     /// Seconds since the Unix epoch.
     pub modified: u64,
+    /// A private key the daemon uses on the user's behalf. Set only through
+    /// the daemon's key requests, never returned to clients.
+    pub key: Option<KeyData>,
+}
+
+/// A private key held in the vault. Stored unencrypted inside the item: the
+/// vault's own encryption protects it.
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Zeroize)]
+pub enum KeyData {
+    /// An SSH key, in OpenSSH private key format without a passphrase.
+    Ssh {
+        /// The `-----BEGIN OPENSSH PRIVATE KEY-----` text.
+        openssh: String,
+        /// Ask the user before each use.
+        confirm: bool,
+    },
+    /// An OpenPGP transferable secret key, binary, without a passphrase.
+    OpenPgp {
+        /// The secret key packets.
+        tsk: Vec<u8>,
+        /// Ask the user before each signature or decryption.
+        confirm: bool,
+    },
+}
+
+impl KeyData {
+    /// Whether each use needs the user's approval.
+    pub fn confirm(&self) -> bool {
+        match self {
+            KeyData::Ssh { confirm, .. } | KeyData::OpenPgp { confirm, .. } => *confirm,
+        }
+    }
+
+    /// Change whether each use needs the user's approval.
+    pub fn set_confirm(&mut self, on: bool) {
+        match self {
+            KeyData::Ssh { confirm, .. } | KeyData::OpenPgp { confirm, .. } => *confirm = on,
+        }
+    }
 }
 
 /// A URL an item is bound to, with its matching mode.
@@ -377,6 +418,31 @@ impl crate::Resolve for ItemMerge {
     }
 }
 
+/// Schema 2 payload: schema 1 plus a key. Read for upgrading only.
+#[derive(Serialize, Deserialize, Default)]
+struct ItemDataV2 {
+    title: String,
+    username: String,
+    password: String,
+    urls: Vec<UrlEntry>,
+    totp: Option<TotpConfig>,
+    notes: String,
+    created: u64,
+    modified: u64,
+    key: Option<KeyData>,
+}
+
+impl Drop for ItemDataV2 {
+    fn drop(&mut self) {
+        self.title.zeroize();
+        self.username.zeroize();
+        self.password.zeroize();
+        self.urls.zeroize();
+        self.notes.zeroize();
+        self.key.zeroize();
+    }
+}
+
 impl ItemData {
     /// An empty item of `kind`. (`ItemData` zeroizes on drop, so struct
     /// update syntax is not available; start here and set fields.)
@@ -389,17 +455,31 @@ impl ItemData {
 
     /// Encode for [`crate::Vault::put_item`].
     pub fn to_bytes(&self) -> zeroize::Zeroizing<Vec<u8>> {
-        let mut out = zeroize::Zeroizing::new(vec![ITEM_SCHEMA_V2]);
+        let mut out = zeroize::Zeroizing::new(vec![ITEM_SCHEMA_V3]);
         out.extend_from_slice(&crate::format::encode(self));
         out
     }
 
-    /// Decode bytes from [`crate::Vault::get_item`]. Schema 1 items come back
-    /// as logins.
+    /// Decode bytes from [`crate::Vault::get_item`]. Schema 1 and 2 items
+    /// come back as logins.
     pub fn from_bytes(bytes: &[u8]) -> Result<ItemData, Error> {
         match bytes.split_first() {
-            Some((&ITEM_SCHEMA_V2, rest)) => {
+            Some((&ITEM_SCHEMA_V3, rest)) => {
                 crate::format::decode_canonical(rest).map_err(|_| Error::CorruptItem)
+            }
+            Some((&ITEM_SCHEMA_V2, rest)) => {
+                let mut v2: ItemDataV2 =
+                    crate::format::decode_canonical(rest).map_err(|_| Error::CorruptItem)?;
+                let mut item = ItemData::new(ItemKind::Login, std::mem::take(&mut v2.title));
+                item.username = std::mem::take(&mut v2.username);
+                item.password = std::mem::take(&mut v2.password);
+                item.urls = std::mem::take(&mut v2.urls);
+                item.totp = v2.totp.take();
+                item.notes = std::mem::take(&mut v2.notes);
+                item.created = v2.created;
+                item.modified = v2.modified;
+                item.key = v2.key.take();
+                Ok(item)
             }
             Some((&ITEM_SCHEMA_V1, rest)) => {
                 let mut v1: ItemDataV1 =
@@ -500,11 +580,29 @@ mod tests {
             (item.notes.as_str(), item.created, item.modified),
             ("n", 5, 6)
         );
-        // Saved again, it is schema 2 and reads back the same.
+        // Saved again, it is schema 3 and reads back the same.
         let again = item.to_bytes();
-        assert_eq!(again[0], ITEM_SCHEMA_V2);
+        assert_eq!(again[0], ITEM_SCHEMA_V3);
         assert!(ItemData::from_bytes(&again).unwrap() == item);
         assert!(ItemData::from_bytes(&[9, 0]).is_err());
+    }
+
+    #[test]
+    fn schema_2_items_keep_their_key() {
+        let mut v2 = ItemDataV2::default();
+        v2.title = "deploy key".into();
+        v2.modified = 6;
+        v2.key = Some(KeyData::Ssh {
+            openssh: "k".into(),
+            confirm: true,
+        });
+        let mut bytes = vec![ITEM_SCHEMA_V2];
+        bytes.extend_from_slice(&crate::format::encode(&v2));
+        let item = ItemData::from_bytes(&bytes).unwrap();
+        assert_eq!(item.kind, ItemKind::Login);
+        assert_eq!((item.title.as_str(), item.modified), ("deploy key", 6));
+        assert!(item.key.as_ref().is_some_and(KeyData::confirm));
+        assert!(ItemData::from_bytes(&item.to_bytes()).unwrap() == item);
     }
 
     #[test]

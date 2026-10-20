@@ -45,4 +45,4 @@ On an `https` page the popup also offers cards and addresses, but only when the 
 
 ## Tests
 
-`npm test` in `extension/` runs the policy and form-matching tests. `test/fill.browser.mjs` loads the extension in Chromium and checks that the login fill fills the real form and none of four decoy fields, and that card and address fills hit the right fields of a checkout form; it needs `playwright-core` and a full Chromium (see the file header).
+`npm test` in `extension/` runs the policy and form-matching tests. It needs Node.js 24 (the current LTS) or newer. `test/fill.browser.mjs` loads the extension in Chromium and checks that the login fill fills the real form and none of four decoy fields, and that card and address fills hit the right fields of a checkout form; it needs `playwright-core` and a full Chromium (see the file header).
