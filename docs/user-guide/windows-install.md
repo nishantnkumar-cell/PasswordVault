@@ -78,7 +78,10 @@ account cannot open another account's vault.
    a small **approval window** from vaultd asks whether to allow it. Check
    the program name it shows, then click **Allow**.
 
-To check that vaultd is running, open PowerShell and run:
+To check that vaultd is running, open a **new** PowerShell window and run
+the command below. A terminal that was already open during the install
+doesn't see the new PATH; in Windows Terminal, close the whole app first,
+since new tabs keep the old PATH too.
 
     vault status
 
