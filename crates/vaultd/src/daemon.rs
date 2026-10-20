@@ -57,6 +57,9 @@ struct SyncState {
     /// The synced copy changed but could not be merged, so it must not be
     /// overwritten yet.
     blocked: bool,
+    /// The last write to the synced copy failed (a cloud client may have
+    /// held it open); try again at the next check.
+    pending: bool,
     conflicts: u64,
     other_copies: BTreeSet<String>,
 }
@@ -68,6 +71,7 @@ impl SyncState {
             last_sync: None,
             error: None,
             blocked: false,
+            pending: false,
             conflicts: 0,
             other_copies: BTreeSet::new(),
         }
@@ -226,7 +230,7 @@ impl Daemon {
         method: Option<&UnlockMethod>,
         all: bool,
     ) -> R<bool> {
-        let mut write = !st.folder.exists();
+        let mut write = st.pending || !st.folder.exists();
         st.blocked = false;
         st.error = None;
         for c in st.folder.changed(all) {
@@ -592,6 +596,7 @@ impl Daemon {
             && let Err(err) = s.folder.write(&bytes)
         {
             s.error = Some(format!("could not write the synced copy: {err}"));
+            s.pending = true;
         }
         Ok(Response::Initialized {
             recovery_code: Zeroizing::new(code.as_str().to_owned()),
@@ -748,8 +753,14 @@ impl Daemon {
             && !s.blocked
         {
             match s.folder.write(&bytes) {
-                Ok(()) => s.last_sync = Some(now()),
-                Err(err) => s.error = Some(format!("could not write the synced copy: {err}")),
+                Ok(()) => {
+                    s.last_sync = Some(now());
+                    s.pending = false;
+                }
+                Err(err) => {
+                    s.error = Some(format!("could not write the synced copy: {err}"));
+                    s.pending = true;
+                }
             }
         }
         Ok(())
