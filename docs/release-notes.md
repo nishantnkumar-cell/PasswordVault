@@ -44,6 +44,34 @@ Platform notes:
 
 How to use it: [desktop app, adding it to your menu](user-guide/05-desktop-app.md#start-it).
 
+### Build tools and dependencies brought up to date
+
+This changes nothing in how the vault works or in the vault file. It matters
+if you build Secret Vault yourself or run its tests.
+
+- **Rust.** The project now builds and is tested with Rust 1.99, the latest
+  stable release. Run `rustup update` before building if your Rust is older
+  ([getting started](user-guide/01-getting-started.md)). Same on Linux,
+  Windows and macOS.
+- **Rust libraries.** All dependencies were moved to their newest compatible
+  releases, and the daemon's signal handling library moved to `signal-hook`
+  0.4 (Linux and macOS only; Windows does not use it). Three stay where they
+  are on purpose: `zbus` stays on 5.x (Linux only) because 6.0, out on
+  2026-10-16, dropped the blocking API the screen-lock watcher uses; `rand`
+  0.8 and `signature` 2 stay because the OpenPGP and SSH libraries
+  (`pgp` 0.21, `ssh-key` 0.6, both their latest stable releases) are built
+  on them.
+- **Node.js for the extension tests** is now Node.js 24, the current LTS
+  (it was 22). `extension/package.json` declares it. The extension
+  itself runs in the browser and does not use Node.js.
+- **Windows installer.** The script compiles with Inno Setup 7 (the newest
+  release) and with Inno Setup 6. CI builds it with the newest Inno Setup
+  that Chocolatey offers, which is 6.7.1 today, and moves to 7 when
+  Chocolatey does. The installer behaves the same either way.
+- **CI** uses the current `actions/checkout`, `actions/setup-node` and
+  `actions/upload-artifact` (v7), which run on Node.js 24. This removes the
+  GitHub warning that Node.js 20 actions are deprecated.
+
 ### Windows: installer, background start and security keys without admin
 
 - **Installer.** `SecretVault-Setup-<version>.exe` installs the daemon, the

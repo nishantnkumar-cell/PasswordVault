@@ -17,6 +17,8 @@ logind = ["dep:zbus"]
 postcard = { version = "=1.1.3", features = ["alloc"] }
 serde = { version = "1.0.229", features = ["derive"] }
 sha2 = "=0.11.1"
+# rand 0.8 and signature 2 are what pgp 0.21 and ssh-key 0.6 (their latest stable
+# releases) build on; move them together when those crates do.
 pgp = { version = "0.21.0", default-features = false, features = ["pqc"] }
 rand = "0.8.6"
 signature = "2.2"
@@ -29,13 +31,14 @@ zeroize = "1.9.1"
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.31", features = ["socket", "process", "resource", "fs", "user", "signal", "mman"] }
-signal-hook = "0.3"
+signal-hook = "0.4"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Security", "Win32_Security_Authorization", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_LibraryLoader", "Win32_System_Pipes", "Win32_System_Power", "Win32_System_RemoteDesktop", "Win32_UI_WindowsAndMessaging"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-zbus = { version = "5.12", optional = true, default-features = false, features = ["blocking-api", "async-io"] }
+# zbus 6 (2026-10-16) removed the blocking API this crate uses; stay on 5.x for now.
+zbus = { version = "5.19", optional = true, default-features = false, features = ["blocking-api", "async-io"] }
 
 [dev-dependencies]
 tempfile = "3"
