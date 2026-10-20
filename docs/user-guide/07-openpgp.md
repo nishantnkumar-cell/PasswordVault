@@ -167,4 +167,5 @@ the file and delete it when done.
   signatures with `vault pgp verify`.
 - Certificates of other people are files, not vault items.
 - No key expiry, revocation certificates or subkey management yet.
-- The desktop app does not show OpenPGP keys yet.
+- The desktop app lists OpenPGP keys with their fingerprint but cannot
+  create, import or use them.

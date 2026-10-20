@@ -5,6 +5,7 @@
 pub mod app;
 pub mod client;
 pub mod prompt;
+pub mod theme;
 
 pub use app::{App, Clip, Screen, SystemClip};
 pub use client::Paths;

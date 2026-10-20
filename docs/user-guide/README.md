@@ -37,7 +37,9 @@ random program on your computer cannot just ask for your passwords.
 2. [Unlocking and unlock methods](02-unlocking.md): password, security key, TPM, recovery code; adding, removing and revoking them.
 3. [Items, one-time codes, the generator and import](03-items.md)
 4. [Browser autofill](04-browser-autofill.md)
-5. [Desktop app](05-desktop-app.md)
+5. [Desktop app](05-desktop-app.md), with a tour of the window and the
+   Ctrl K command palette in
+   [The desktop window and command palette](desktop-window-and-palette.md).
 6. [SSH keys and git signing](06-ssh-and-git.md)
 7. [OpenPGP keys](07-openpgp.md): signing, encrypting and decrypting files and mail.
 8. [Troubleshooting, backups and safety tips](08-troubleshooting.md)

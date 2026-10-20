@@ -10,9 +10,15 @@ like the CLI: it never opens the vault file itself and holds no keys.
 | Desktop app | Yes (X11 or Wayland, OpenGL) | Yes | Not yet |
 | Copied secrets kept out of clipboard history and cloud clipboard | No such feature on Linux desktops | Yes | Not yet |
 
-Some things are only in the command line: SSH and OpenPGP keys
-([chapters 6](06-ssh-and-git.md) and [7](07-openpgp.md)), revoking unlock
-methods with key rotation, and finding items for a website.
+Some things are only in the command line: creating, importing and using
+SSH and OpenPGP keys ([chapters 6](06-ssh-and-git.md) and
+[7](07-openpgp.md)), revoking unlock methods with key rotation, and finding
+items for a website. The app lists key items and shows their fingerprint.
+
+For a tour of the window (sidebar, item list, details), the **Ctrl K**
+command palette and keyboard shortcuts, with screenshots, see
+[The desktop window and command palette](desktop-window-and-palette.md).
+This chapter covers setting up the app and each task step by step.
 
 ## Start it
 
@@ -54,8 +60,8 @@ The app keeps its own pairing, separate from the CLI's and the browser's.
 
 ## Unlock and lock
 
-Pick how to unlock (Password, Security key, TPM, Recovery code), fill in
-what it asks and press **Unlock**. For a security key, touch it when it
+In the **Unlock with** list pick Password, Security key, This device (TPM)
+or Recovery code, fill in what it asks and press **Unlock** (or Enter). For a security key, touch it when it
 blinks. On Windows, TPM is listed but cannot work yet, and the security key
 works only when `vaultd` runs as administrator.
 
@@ -65,8 +71,9 @@ it; the app follows within two seconds and forgets everything it showed.
 
 ## Items
 
-The **Items** page lists your logins on the left, with a **Search** box
-above them. Select one to see it on the right.
+The middle column lists your items, with a **Search** box above it.
+**All items**, **Logins**, **One-time codes** and **SSH and PGP keys** in
+the sidebar filter the list. Select an item to see it on the right.
 
 - **Copy username**, **Copy password**, **Copy code** (when the item has a
   one-time code). **Show** reveals the password in place; **Hide** covers
@@ -78,7 +85,7 @@ above them. Select one to see it on the right.
 
 1. **Title** (required), **Username**.
 2. **Password**: type it, or press **Generate** to make one with the
-   Generator page's settings.
+   Generator's settings.
 3. **Websites**: type the address, then choose **This site only** (exact
    origin, the safe default) or **Whole domain** (all `https` subdomains).
    Tick **Allow http** only for an old site that has no `https`. **Add
@@ -97,7 +104,7 @@ clipboard history (Win+V) and cloud clipboard sync.
 
 ## Generator
 
-The **Generator** page makes passwords of 8 to 64 characters, with or
+**Generator**, under Tools in the sidebar, makes passwords of 8 to 64 characters, with or
 without **Symbols**, optionally avoiding look-alike characters. **Copy
 password** copies the result. New items use these settings when you press
 **Generate** in the item form.
@@ -106,7 +113,7 @@ password** copies the result. New items use these settings when you press
 
 1. Export from your old password manager
    ([how](03-items.md#import-from-another-password-manager)).
-2. On the **Import** page, choose the format: Bitwarden (unencrypted
+2. Open **Import** under Tools in the sidebar and choose the format: Bitwarden (unencrypted
    `.json`) or browser passwords (`.csv`, which also covers Safari).
 3. Type or paste the full path of the file into **File** (there is no file
    picker yet) and press **Import**.
@@ -114,7 +121,7 @@ password** copies the result. New items use these settings when you press
 
 ## Unlock methods
 
-The **Unlock methods** page lists the vault's slots. **Remove** deletes one
+**Unlock methods**, under Tools in the sidebar, lists the vault's slots. **Remove** deletes one
 after a confirmation (this does not rotate the vault key; for a lost or
 stolen factor use `vault revoke`, see
 [chapter 2](02-unlocking.md#revoke-a-lost-or-stolen-factor)).

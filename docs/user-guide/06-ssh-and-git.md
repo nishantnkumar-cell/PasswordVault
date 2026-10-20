@@ -166,7 +166,8 @@ protect the file.
 - No RSA keys.
 - `ssh-add` cannot add keys to the vault's agent or remove them; manage
   keys with `vault ssh`.
-- Keys are not shown in the desktop app yet; `vault show` and the app see
-  the item without its key, and editing the item keeps the key.
+- The desktop app lists key items with their type and fingerprint but
+  cannot create, import or export keys. `vault show` and the app never see
+  the private key, and editing the item keeps it.
 - Change the agent's address with `vaultd --ssh-agent PATH`, or turn it off
   with `vaultd --no-ssh-agent`.
