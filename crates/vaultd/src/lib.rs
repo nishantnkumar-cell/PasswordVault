@@ -11,5 +11,6 @@ pub mod pgp;
 pub mod server;
 pub mod ssh;
 pub mod store;
+pub mod sync;
 #[cfg(windows)]
 pub mod winsession;

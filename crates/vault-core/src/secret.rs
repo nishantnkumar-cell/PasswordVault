@@ -13,6 +13,15 @@ impl Key {
     pub(crate) fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
+
+    pub(crate) fn copy(&self) -> Key {
+        Key(self.0)
+    }
+
+    pub(crate) fn ct_eq(&self, other: &Key) -> bool {
+        use subtle::ConstantTimeEq;
+        self.0.ct_eq(&other.0).into()
+    }
 }
 
 /// A 32-byte secret from a hardware factor: a FIDO2 hmac-secret output or a

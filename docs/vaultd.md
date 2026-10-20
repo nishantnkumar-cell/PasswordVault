@@ -33,7 +33,7 @@ Build without hardware support with `cargo build -p vaultd --no-default-features
 `crates/vault-ipc`: each frame is a u32 little-endian length (max 16 MiB) and a postcard body. A client sends `Envelope { token, request }` and gets one `Response`.
 
 - The server checks the peer's UID with `SO_PEERCRED` and refuses every other UID.
-- `Status`, `Init` and `Pair` need no token. `Pair` returns a 32-byte token; the daemon stores only its SHA-256. It is granted either by proving an unlock method (`method: Some`, which also unlocks) or, with `method: None`, by the user in an approval window the daemon opens itself (below).
+- `Status`, `Init` and `Pair` need no token, nor does `SetSync` while no vault exists (a new device joining a synced vault, docs/sync.md). `Pair` returns a 32-byte token; the daemon stores only its SHA-256. It is granted either by proving an unlock method (`method: Some`, which also unlocks) or, with `method: None`, by the user in an approval window the daemon opens itself (below).
 
 ## Pairing by approval
 
@@ -54,6 +54,7 @@ The same window confirms each card the browser asks to fill (docs/browser.md, Ca
 - **Unlock** tries every enrolled slot of the requested kind. After 3 failures, each further failure doubles a wait (2 s up to 5 min) before the next attempt is accepted.
 - **Auto-lock** after `--idle-secs` (default 900) without an authenticated request, and on SIGTERM, SIGINT or SIGHUP.
 - **Rollback.** After every unlock and write the daemon records `(vault_id, generation)`. If an unlocked file's generation is lower, `status` warns and every write is refused.
+- **Sync.** `SetSync { path }` turns folder sync on or off; the path is kept in the state directory with a random device ID. While unlocked the daemon merges the synced copy when it changes and writes it after every save. `SyncNow` merges at once. `Status` reports the path, the last merge, any problem and the conflict copies it merged. See docs/sync.md.
 - **New slots** are test-unlocked from the file on disk before the command reports success. TPM slots are also unsealed once before enrollment.
 - **TPM.** Sealed under a transient ECC P-256 storage key; every seal and unseal runs in a session salted to that key with parameter encryption. With a PIN the object is subject to the TPM's dictionary-attack lockout. With `--pcr7`, a change to Secure Boot state makes the slot unusable until it is re-enrolled; use another slot to unlock and re-add it.
 - **Hardening.** `RLIMIT_CORE=0` and `PR_SET_DUMPABLE=0` at start. Secrets in the protocol and the item model are zeroized on drop.

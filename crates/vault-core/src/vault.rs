@@ -1,10 +1,13 @@
 //! Unlocking, editing and writing a vault (sections 4 to 6).
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use unicode_normalization::UnicodeNormalization;
 use zeroize::Zeroizing;
 
 use crate::Error;
+use crate::clock::{Clock, DeviceId};
 use crate::crypto::{self, NONCE_LEN, OpenError, TAG_LEN};
 use crate::format::{
     self, AEAD_XCHACHA20POLY1305, Argon2Params, FORMAT_VERSION, Factor, Header, KdfCost, Keyslot,
@@ -33,11 +36,25 @@ pub enum Unlock<'a> {
     },
 }
 
+/// The body as first written, before sync (section 5).
+#[derive(Serialize, Deserialize)]
+struct BodyV1 {
+    generation: u64,
+    slot_labels: Vec<(SlotId, String)>,
+    items: Vec<ItemRecord>,
+}
+
+/// The body with merge metadata (section 5.1). Readers try this first and
+/// fall back to [`BodyV1`].
 #[derive(Serialize, Deserialize)]
 struct Body {
     generation: u64,
     slot_labels: Vec<(SlotId, String)>,
     items: Vec<ItemRecord>,
+    clocks: Vec<(ItemId, Clock)>,
+    tombstones: Vec<(ItemId, Clock)>,
+    removed_slots: Vec<SlotId>,
+    key_epoch: u64,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -55,12 +72,23 @@ pub(crate) struct ItemRecord {
 
 /// An unlocked vault. Holds the vault key in memory until dropped.
 pub struct Vault {
-    vault_id: [u8; 16],
-    vault_key: Key,
-    slots: Vec<Keyslot>,
-    generation: u64,
-    slot_labels: Vec<(SlotId, String)>,
+    pub(crate) vault_id: [u8; 16],
+    pub(crate) vault_key: Key,
+    pub(crate) slots: Vec<Keyslot>,
+    pub(crate) generation: u64,
+    pub(crate) slot_labels: Vec<(SlotId, String)>,
     pub(crate) items: Vec<ItemRecord>,
+    /// Per-item version vectors; an item with no entry has the empty clock.
+    pub(crate) clocks: BTreeMap<ItemId, Clock>,
+    /// Deleted items and the clock they were deleted at.
+    pub(crate) tombstones: BTreeMap<ItemId, Clock>,
+    /// Every slot ever removed, so a merge never brings one back.
+    pub(crate) removed_slots: Vec<SlotId>,
+    /// +1 on every revoke; on a merge of two different vault keys, the
+    /// higher epoch wins.
+    pub(crate) key_epoch: u64,
+    /// Who is editing, for the clocks. Not stored in the file.
+    pub(crate) device: DeviceId,
 }
 
 fn slot_aad(vault_id: &[u8; 16], meta: &KeyslotMeta) -> Vec<u8> {
@@ -72,11 +100,11 @@ fn slot_aad(vault_id: &[u8; 16], meta: &KeyslotMeta) -> Vec<u8> {
     aad
 }
 
-fn item_key_aad(vault_id: &[u8; 16], item_id: &ItemId) -> Vec<u8> {
+pub(crate) fn item_key_aad(vault_id: &[u8; 16], item_id: &ItemId) -> Vec<u8> {
     [b"vault/item-key/v1".as_slice(), vault_id, item_id].concat()
 }
 
-fn item_data_aad(vault_id: &[u8; 16], item_id: &ItemId, version: u64) -> Vec<u8> {
+pub(crate) fn item_data_aad(vault_id: &[u8; 16], item_id: &ItemId, version: u64) -> Vec<u8> {
     [
         b"vault/item-data/v1".as_slice(),
         vault_id,
@@ -87,7 +115,7 @@ fn item_data_aad(vault_id: &[u8; 16], item_id: &ItemId, version: u64) -> Vec<u8>
     .concat()
 }
 
-fn header_key(vault_key: &Key, vault_id: &[u8; 16]) -> Key {
+pub(crate) fn header_key(vault_key: &Key, vault_id: &[u8; 16]) -> Key {
     crypto::hkdf(
         vault_key.as_bytes(),
         Some(vault_id),
@@ -95,11 +123,11 @@ fn header_key(vault_key: &Key, vault_id: &[u8; 16]) -> Key {
     )
 }
 
-fn body_key(vault_key: &Key, vault_id: &[u8; 16]) -> Key {
+pub(crate) fn body_key(vault_key: &Key, vault_id: &[u8; 16]) -> Key {
     crypto::hkdf(vault_key.as_bytes(), Some(vault_id), &[b"vault/body/v1"])
 }
 
-fn body_aad(vault_id: &[u8; 16], header_mac: &[u8; 32]) -> Vec<u8> {
+pub(crate) fn body_aad(vault_id: &[u8; 16], header_mac: &[u8; 32]) -> Vec<u8> {
     [
         b"vault/body-aad/v1".as_slice(),
         vault_id,
@@ -168,7 +196,7 @@ fn wrap_slot(
     })
 }
 
-fn unwrap_slot(vault_id: &[u8; 16], kek: &Key, slot: &Keyslot) -> Result<Key, Error> {
+pub(crate) fn unwrap_slot(vault_id: &[u8; 16], kek: &Key, slot: &Keyslot) -> Result<Key, Error> {
     let aad = slot_aad(vault_id, &slot.meta);
     let pt = crypto::open(
         kek,
@@ -184,7 +212,7 @@ fn unwrap_slot(vault_id: &[u8; 16], kek: &Key, slot: &Keyslot) -> Result<Key, Er
     to_key(&pt).ok_or(Error::CorruptSlot)
 }
 
-fn to_key(bytes: &[u8]) -> Option<Key> {
+pub(crate) fn to_key(bytes: &[u8]) -> Option<Key> {
     let arr: [u8; 32] = bytes.try_into().ok()?;
     Some(Key::from_bytes(arr))
 }
@@ -205,7 +233,29 @@ impl ParsedVault {
         }
         let kek = derive_kek(&slot.meta, cred)?;
         let vault_key = unwrap_slot(&vault_id, &kek, slot)?;
+        self.open_body(vault_key)
+    }
 
+    /// Open another copy of an unlocked vault with the key it already holds,
+    /// as when merging a synced copy. Fails with [`Error::DifferentVault`]
+    /// for another vault, and [`Error::DifferentKey`] when this copy's header
+    /// does not verify under that key: its key was rotated on another
+    /// device, or the file was tampered with.
+    pub fn open_with(&self, vault: &Vault) -> Result<Vault, Error> {
+        if self.header.vault_id != vault.vault_id {
+            return Err(Error::DifferentVault);
+        }
+        match self.open_body(vault.vault_key.copy()) {
+            Err(Error::HeaderTampered) => Err(Error::DifferentKey),
+            r => r.map(|mut v| {
+                v.device = vault.device;
+                v
+            }),
+        }
+    }
+
+    fn open_body(&self, vault_key: Key) -> Result<Vault, Error> {
+        let vault_id = self.header.vault_id;
         if !crypto::hmac_verify(
             &header_key(&vault_key, &vault_id),
             &[&self.mac_input],
@@ -234,7 +284,16 @@ impl ParsedVault {
         if rest[len..].iter().any(|&b| b != 0) || plain.len() != padded_len(8 + len) {
             return Err(Error::CorruptBody);
         }
-        let body: Body = format::decode_canonical(&rest[..len]).map_err(|_| Error::CorruptBody)?;
+        let body = decode_body(&rest[..len])?;
+        let mut clocks = BTreeMap::new();
+        for (id, c) in body.clocks {
+            if body.items.iter().any(|r| r.item_id == id) {
+                clocks.insert(id, c.normalized());
+            }
+        }
+        let mut removed_slots = body.removed_slots;
+        removed_slots.sort_unstable();
+        removed_slots.dedup();
 
         Ok(Vault {
             vault_id,
@@ -243,8 +302,33 @@ impl ParsedVault {
             generation: body.generation,
             slot_labels: body.slot_labels,
             items: body.items,
+            clocks,
+            tombstones: body
+                .tombstones
+                .into_iter()
+                .map(|(id, c)| (id, c.normalized()))
+                .collect(),
+            removed_slots,
+            key_epoch: body.key_epoch,
+            device: 0,
         })
     }
+}
+
+fn decode_body(bytes: &[u8]) -> Result<Body, Error> {
+    if let Ok(b) = format::decode_canonical::<Body>(bytes) {
+        return Ok(b);
+    }
+    let v1: BodyV1 = format::decode_canonical(bytes).map_err(|_| Error::CorruptBody)?;
+    Ok(Body {
+        generation: v1.generation,
+        slot_labels: v1.slot_labels,
+        items: v1.items,
+        clocks: Vec::new(),
+        tombstones: Vec::new(),
+        removed_slots: Vec::new(),
+        key_epoch: 0,
+    })
 }
 
 impl Vault {
@@ -258,7 +342,18 @@ impl Vault {
             generation: 0,
             slot_labels: Vec::new(),
             items: Vec::new(),
+            clocks: BTreeMap::new(),
+            tombstones: BTreeMap::new(),
+            removed_slots: Vec::new(),
+            key_epoch: 0,
+            device: 0,
         })
+    }
+
+    /// Set who is editing. Every edit is counted against this device in the
+    /// item's clock, so copies edited on different devices can be merged.
+    pub fn set_device(&mut self, device: DeviceId) {
+        self.device = device;
     }
 
     /// The vault's permanent identifier.
@@ -378,6 +473,7 @@ impl Vault {
         }
         self.slots.remove(pos);
         self.slot_labels.retain(|(i, _)| i != id);
+        self.note_removed(&[*id]);
         Ok(())
     }
 
@@ -435,10 +531,18 @@ impl Vault {
             .filter(|id| !kept.iter().any(|k| &k.meta.id == id))
             .collect();
         self.slot_labels.retain(|(i, _)| !removed.contains(i));
+        self.note_removed(&removed);
         self.slots = kept;
         self.items = items;
         self.vault_key = new_key;
+        self.key_epoch = self.key_epoch.saturating_add(1);
         Ok(removed)
+    }
+
+    pub(crate) fn note_removed(&mut self, ids: &[SlotId]) {
+        self.removed_slots.extend_from_slice(ids);
+        self.removed_slots.sort_unstable();
+        self.removed_slots.dedup();
     }
 
     /// A fresh random item ID.
@@ -451,7 +555,7 @@ impl Vault {
         self.items.iter().map(|r| &r.item_id)
     }
 
-    fn unwrap_item_key(&self, rec: &ItemRecord) -> Result<Key, Error> {
+    pub(crate) fn unwrap_item_key(&self, rec: &ItemRecord) -> Result<Key, Error> {
         let pt = crypto::open(
             &self.vault_key,
             &rec.key_nonce,
@@ -514,6 +618,13 @@ impl Vault {
             Some(i) => self.items[i] = rec,
             None => self.items.push(rec),
         }
+        let mut clock = self.clocks.remove(id).unwrap_or_default();
+        // An ID that comes back after a delete must outrank its tombstone.
+        if let Some(t) = self.tombstones.remove(id) {
+            clock = clock.join(&t);
+        }
+        clock.bump(self.device);
+        self.clocks.insert(*id, clock);
         Ok(())
     }
 
@@ -543,6 +654,12 @@ impl Vault {
             .position(|r| &r.item_id == id)
             .ok_or(Error::NotFound)?;
         self.items.remove(pos);
+        let mut clock = self.clocks.remove(id).unwrap_or_default();
+        if let Some(t) = self.tombstones.get(id) {
+            clock = clock.join(t);
+        }
+        clock.bump(self.device);
+        self.tombstones.insert(*id, clock);
         Ok(())
     }
 
@@ -574,6 +691,18 @@ impl Vault {
             generation: self.generation,
             slot_labels: self.slot_labels.clone(),
             items: self.items.clone(),
+            clocks: self
+                .items
+                .iter()
+                .filter_map(|r| Some((r.item_id, self.clocks.get(&r.item_id)?.clone())))
+                .collect(),
+            tombstones: self
+                .tombstones
+                .iter()
+                .map(|(id, c)| (*id, c.clone()))
+                .collect(),
+            removed_slots: self.removed_slots.clone(),
+            key_epoch: self.key_epoch,
         };
         let encoded = Zeroizing::new(format::encode(&body));
         let mut plain = Zeroizing::new(vec![0u8; padded_len(8 + encoded.len())]);

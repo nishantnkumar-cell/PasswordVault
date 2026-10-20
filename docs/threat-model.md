@@ -21,7 +21,7 @@ This document is versioned with the code. Any change to the format, IPC, or fact
 - **A2, remote phisher.** Controls a web origin the user visits, possibly a lookalike domain or a page with injected iframes.
 - **A3, same-user malware.** Runs code as the logged-in user, without root.
 - **A4, root or kernel attacker** on a running machine.
-- **A5, file tamperer.** Can modify the vault file at rest (shared folder, backup medium, sync target later) but does not know the factors.
+- **A5, file tamperer.** Can modify the vault file at rest (shared folder, backup medium, the synced copy in a cloud folder) but does not know the factors.
 - **A6, future quantum adversary** recording ciphertext today.
 
 ## 3. Trust boundaries
@@ -93,6 +93,8 @@ Out of scope for v1. Root can read `vaultd` memory while unlocked. The vault is 
 | Craft ciphertext valid under several keys (partitioning oracle) | Key commitment on every keyslot, the body and every item | M |
 | Roll back the whole file to an older version | Generation counter inside the encrypted body; `vaultd` keeps the last seen generation in its state directory and warns on regression. A TPM NV counter is a later hardening option | P |
 | Corrupt the file | Atomic write with directory fsync; commit tag separates "wrong factor" from "corrupt" | M |
+| Feed an old or doctored synced copy (folder sync, docs/sync.md) | A synced copy is opened only under the vault key already held (header MAC) or with the user's own factor. Merging is monotone: an old copy cannot bring back deleted items or removed slots, or undo a revoke (the higher key epoch wins). A copy of another vault is refused | M |
+| Swap or withhold the synced copy so devices stop seeing each other's edits | Not prevented: the folder's owner controls delivery. Each device keeps its own file and merges again when the copy changes, so nothing is lost locally | Accepted |
 
 ### A6, quantum adversary
 
@@ -109,7 +111,7 @@ v1 uses only symmetric primitives with 256-bit keys (XChaCha20-Poly1305, HKDF-SH
 - Root or kernel compromise, firmware attacks, evil-maid attacks on a running unlocked machine.
 - Same-user malware on X11.
 - Side channels (power, EM, cache timing) beyond using constant-time crates.
-- Face unlock, phone factors, Secret Service, passkey storage, sync, sharing. Each gets a section here before it is built.
+- Face unlock, phone factors, Secret Service, passkey storage, server sync, sharing. Each gets a section here before it is built. Folder sync (docs/sync.md) is covered under A5.
 
 ## 8. Open items
 

@@ -48,6 +48,8 @@ random program on your computer cannot just ask for your passwords.
 8. [Troubleshooting, backups and safety tips](08-troubleshooting.md)
 9. [Programs that call gpg](09-gpg-programs.md): git signing with OpenPGP,
    `pass`, and NeoMutt, through `vault-gpg`.
+10. [Sync between devices](10-sync.md): one vault on several computers
+    through OneDrive, Google Drive, Dropbox or any synced folder.
 
 ## What works where
 
@@ -66,6 +68,7 @@ random program on your computer cannot just ask for your passwords.
 | OpenPGP keys | Yes | Yes | Not yet |
 | `vault-gpg` for git and NeoMutt | Yes | git only (untested on real hardware) | Not yet |
 | `vault-gpg` for `pass` | Yes | Not applicable | Not yet |
+| Sync through OneDrive, Google Drive, Dropbox | Yes | Yes | Not yet |
 | Locks on screen lock and suspend | Yes | Yes | Not yet |
 | Keys kept out of swap and crash dumps | Yes | Not yet | Not yet |
 

@@ -737,6 +737,41 @@ fn cards_and_identities_fill_only_with_https_and_the_users_ok() {
     assert_eq!(seen.lock().unwrap().len(), 2);
 }
 
+fn titles(c: &mut C) -> Vec<String> {
+    let Response::Items(items) = c.ok(Request::ListItems) else {
+        unreachable!()
+    };
+    let mut t: Vec<_> = items.into_iter().map(|i| i.title).collect();
+    t.sort();
+    t
+}
+
+fn set_sync(c: &mut C, path: Option<&Path>) -> vault_ipc::StatusInfo {
+    match c.ok(Request::SetSync {
+        path: path.map(|p| p.display().to_string()),
+    }) {
+        Response::Status(s) => s,
+        _ => unreachable!(),
+    }
+}
+
+fn sync_now(c: &mut C) -> vault_ipc::SyncInfo {
+    match c.ok(Request::SyncNow) {
+        Response::Status(s) => s.sync.unwrap(),
+        _ => unreachable!(),
+    }
+}
+
+fn put(c: &mut C, id: Option<vault_ipc::ItemId>, title: &str) -> vault_ipc::ItemId {
+    match c.ok(Request::PutItem {
+        id,
+        item: ItemData::new(vault_core::item::ItemKind::Note, title),
+    }) {
+        Response::ItemSaved { id } => id,
+        _ => unreachable!(),
+    }
+}
+
 /// Serve the ssh-agent protocol for `d` on a second endpoint.
 fn start_agent(dir: &Path, d: &server::Shared) -> std::path::PathBuf {
     #[cfg(unix)]
@@ -818,6 +853,98 @@ impl vaultd::approve::Approver for UseApprover {
         self.1.lock().unwrap().push(p.clone());
         Ok(self.0.load(std::sync::atomic::Ordering::SeqCst))
     }
+}
+
+#[test]
+fn two_devices_sync_through_a_folder() {
+    let shared = tempfile::tempdir().unwrap();
+    let synced = shared.path().join("vault.svault");
+    let (dir_a, dir_b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let long = Duration::from_secs(600);
+
+    // Device A makes the vault and turns sync on.
+    let mut a = C::new(&start(dir_a.path(), server::current_user(), long));
+    let Response::Initialized { token, .. } = a.ok(Request::Init {
+        password: s(PW),
+        client_name: "cli".into(),
+    }) else {
+        unreachable!()
+    };
+    a.token = Some(token);
+    let x = put(&mut a, None, "Wifi");
+    let st = set_sync(&mut a, Some(&synced)).sync.unwrap();
+    assert_eq!(st.error, None);
+    assert!(synced.exists());
+
+    // Device B has no vault: turning sync on joins A's, then pairing unlocks.
+    let mut b = C::new(&start(dir_b.path(), server::current_user(), long));
+    assert!(set_sync(&mut b, Some(&synced)).initialized);
+    let Response::Paired { token } = b.ok(Request::Pair {
+        client_name: "cli".into(),
+        scope: ClientScope::Full,
+        method: Some(pw()),
+    }) else {
+        unreachable!()
+    };
+    b.token = Some(token);
+    assert_eq!(titles(&mut b), ["Wifi"]);
+
+    // Edits flow both ways.
+    put(&mut b, None, "From B");
+    assert_eq!(sync_now(&mut a).error, None);
+    assert_eq!(titles(&mut a), ["From B", "Wifi"]);
+
+    // Edits made while B was offline conflict; both are kept.
+    set_sync(&mut b, None);
+    put(&mut a, Some(x), "Wifi home");
+    put(&mut b, Some(x), "Wifi office");
+    let st = set_sync(&mut b, Some(&synced)).sync.unwrap();
+    assert_eq!(st.conflicts, 1);
+    sync_now(&mut a);
+    // The later edit wins; both landed in the same second here, so either
+    // may, but both devices agree.
+    let got = titles(&mut a);
+    assert!(
+        got == ["From B", "Wifi home (conflict)", "Wifi office"]
+            || got == ["From B", "Wifi home", "Wifi office (conflict)"],
+        "{got:?}"
+    );
+    assert_eq!(titles(&mut b), got);
+
+    // A cloud service's conflict copy next to the synced file is merged too.
+    set_sync(&mut b, None);
+    put(&mut b, None, "Only in a copy");
+    std::fs::copy(
+        dir_b.path().join("data/vault.svault"),
+        shared.path().join("vault (1).svault"),
+    )
+    .unwrap();
+    let st = sync_now(&mut a);
+    assert_eq!(st.other_copies, ["vault (1).svault"]);
+    assert!(titles(&mut a).contains(&"Only in a copy".to_owned()));
+    set_sync(&mut b, Some(&synced));
+
+    // A revokes the recovery code. B notices the new key, and takes it at
+    // its next unlock.
+    let Response::Slots(slots) = a.ok(Request::ListSlots) else {
+        unreachable!()
+    };
+    let pw_slot = slots.iter().find(|s| s.kind == "password").unwrap().id;
+    a.ok(Request::Revoke {
+        keep: vec![(pw_slot, pw())],
+    });
+    put(&mut b, None, "Before the new key");
+    assert!(sync_now(&mut b).error.unwrap().contains("re-keyed"));
+    b.ok(Request::Lock);
+    b.ok(Request::Unlock { method: pw() });
+    assert_eq!(status(&mut b).sync.unwrap().error, None);
+    let Response::Slots(slots) = b.ok(Request::ListSlots) else {
+        unreachable!()
+    };
+    assert_eq!(slots.len(), 1);
+    sync_now(&mut a);
+    assert!(titles(&mut a).contains(&"Before the new key".to_owned()));
+    assert_eq!(titles(&mut a), titles(&mut b));
 }
 
 #[test]

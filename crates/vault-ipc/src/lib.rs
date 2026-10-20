@@ -176,6 +176,13 @@ pub enum Request {
     Generate { options: GenerateOptions },
     /// Import items from an export file's contents.
     Import { format: ImportFormat, data: Secret },
+    /// Keep the vault in sync with a copy at `path`, usually in a folder
+    /// that OneDrive, Google Drive or Dropbox syncs; `None` stops syncing.
+    /// Needs no token while no vault exists here, so a new device can join
+    /// a vault from its synced copy (then pair with `Pair` and a method).
+    SetSync { path: Option<String> },
+    /// Merge the synced copy now instead of at the next check.
+    SyncNow,
     /// Generate a key inside the daemon and store it as a new item.
     GenerateKey {
         title: String,
@@ -285,6 +292,25 @@ pub struct StatusInfo {
     pub rollback_detected: bool,
     /// Seconds until auto-lock.
     pub idle_lock_in: Option<u64>,
+    /// Folder sync, if it is on.
+    pub sync: Option<SyncInfo>,
+}
+
+/// Folder sync state.
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct SyncInfo {
+    /// The synced copy.
+    pub path: String,
+    /// When the copies were last merged (Unix seconds), if they were.
+    pub last_sync: Option<u64>,
+    /// Why the last attempt failed, if it did.
+    pub error: Option<String>,
+    /// Items edited on two devices at once since the daemon started; each
+    /// losing edit was kept as a copy titled "(conflict)".
+    pub conflicts: u64,
+    /// Other copies next to the synced one (such as a cloud service's
+    /// conflict copies) that were merged in and can be deleted.
+    pub other_copies: Vec<String>,
 }
 
 /// Responses.

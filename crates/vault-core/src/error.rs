@@ -36,6 +36,11 @@ pub enum Error {
     BadRecoveryCode,
     /// The OS random number generator failed.
     Random,
+    /// The two files belong to different vaults.
+    DifferentVault,
+    /// The other copy's header does not verify under this vault key: the key
+    /// was rotated on another device, or the file was tampered with.
+    DifferentKey,
 }
 
 impl fmt::Display for Error {
@@ -56,6 +61,8 @@ impl fmt::Display for Error {
             Error::TooManySlots => "too many slots",
             Error::BadRecoveryCode => "bad recovery code",
             Error::Random => "random number generator failed",
+            Error::DifferentVault => "the files belong to different vaults",
+            Error::DifferentKey => "the other copy is locked with a different vault key",
         };
         f.write_str(s)
     }
