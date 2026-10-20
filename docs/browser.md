@@ -37,4 +37,4 @@ TOTP codes and generated passwords are copied to the clipboard from the popup.
 
 ## Tests
 
-`npm test` in `extension/` runs the policy tests. `test/fill.browser.mjs` loads the extension in Chromium and checks that the fill function fills the real form and none of four decoy fields; it needs `playwright-core` and a full Chromium (see the file header).
+`npm test` in `extension/` runs the policy tests. It needs Node.js 24 (the current LTS) or newer. `test/fill.browser.mjs` loads the extension in Chromium and checks that the fill function fills the real form and none of four decoy fields; it needs `playwright-core` and a full Chromium (see the file header).

@@ -12,7 +12,8 @@ needs no administrator rights; "Install for all users" asks once, during
 setup. Step by step: [user-guide/windows-install.md](user-guide/windows-install.md).
 
 To build the installer yourself, build the programs and compile
-`contrib\windows\vault.iss` with Inno Setup 6:
+`contrib\windows\vault.iss` with Inno Setup 7 (the build also works with
+Inno Setup 6.x if that is what you have):
 
     cargo build --release --locked
     iscc contrib\windows\vault.iss /DAppVersion=0.1.0

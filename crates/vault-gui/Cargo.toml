@@ -17,6 +17,9 @@ vault-core = { path = "../vault-core" }
 vault-ipc = { path = "../vault-ipc" }
 zeroize = "1.9.1"
 
+[build-dependencies]
+embed-resource = "3"
+
 [dev-dependencies]
 egui_kittest = "0.37"
 vaultd = { path = "../vaultd" }

@@ -50,6 +50,64 @@ the vault unlocked.
 
 How to use it: [Programs that call gpg](user-guide/09-gpg-programs.md).
 
+### App icon: a keyhole on a red tile
+
+- **Secret Vault has its own icon.** A white keyhole on a signal-red tile
+  replaces the generic padlock (Linux) and the default program icon
+  (Windows). It shows in the title bar, the taskbar or dock, the window
+  switcher, the Start menu and applications menu, and the approval window
+  `vaultd` opens.
+- **Made for small sizes.** At 48 px and below the icon drops its halo and
+  ring and draws a bigger keyhole on a full tile, so it stays clear in the
+  system tray and title bar.
+- **One source, every format.** `contrib/icons/generate.py` draws the icon
+  and exports it for each system; the files are in `contrib/icons/`.
+
+Platform notes:
+
+- **Windows:** the icon is built into `vault-gui.exe` and `vault-prompt.exe`,
+  so the Start menu shortcut, taskbar and Explorer show it, and the installer
+  (`SecretVault-Setup-<version>.exe`) uses it too. Nothing to do: install or
+  upgrade as usual.
+- **Linux:** the icon ships as a hicolor theme folder (PNG from 16 to 512 px,
+  a scalable SVG and a one-colour *symbolic* version for GNOME), and the
+  `.desktop` file now asks for it by the app id `dev.passwordvault.app`.
+  Copy the folder once to see it in your applications menu and dock. On
+  Wayland the dock and window switcher take the icon from the `.desktop`
+  file, not from the window, so the copy step matters there.
+- **macOS:** a `.icns` file with the padding macOS expects is included for
+  when the desktop app comes to macOS; the app does not run there yet.
+
+How to use it: [desktop app, adding it to your menu](user-guide/05-desktop-app.md#start-it).
+
+### Build tools and dependencies brought up to date
+
+This changes nothing in how the vault works or in the vault file. It matters
+if you build Secret Vault yourself or run its tests.
+
+- **Rust.** The project now builds and is tested with Rust 1.99, the latest
+  stable release. Run `rustup update` before building if your Rust is older
+  ([getting started](user-guide/01-getting-started.md)). Same on Linux,
+  Windows and macOS.
+- **Rust libraries.** All dependencies were moved to their newest compatible
+  releases, and the daemon's signal handling library moved to `signal-hook`
+  0.4 (Linux and macOS only; Windows does not use it). Three stay where they
+  are on purpose: `zbus` stays on 5.x (Linux only) because 6.0, out on
+  2026-10-16, dropped the blocking API the screen-lock watcher uses; `rand`
+  0.8 and `signature` 2 stay because the OpenPGP and SSH libraries
+  (`pgp` 0.21, `ssh-key` 0.6, both their latest stable releases) are built
+  on them.
+- **Node.js for the extension tests** is now Node.js 24, the current LTS
+  (it was 22). `extension/package.json` declares it. The extension
+  itself runs in the browser and does not use Node.js.
+- **Windows installer.** The script compiles with Inno Setup 7 (the newest
+  release) and with Inno Setup 6. CI builds it with the newest Inno Setup
+  that Chocolatey offers, which is 6.7.1 today, and moves to 7 when
+  Chocolatey does. The installer behaves the same either way.
+- **CI** uses the current `actions/checkout`, `actions/setup-node` and
+  `actions/upload-artifact` (v7), which run on Node.js 24. This removes the
+  GitHub warning that Node.js 20 actions are deprecated.
+
 ### Windows: installer, background start and security keys without admin
 
 - **Installer.** `SecretVault-Setup-<version>.exe` installs the daemon, the
