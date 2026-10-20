@@ -25,6 +25,12 @@ Like vaultd, it runs on Linux and Windows; macOS follows the daemon port.
   `VAULT_DESKTOP_TOKEN_FILE` override the paths.
 - Unlock with a password, password + security key, password + TPM, or the
   recovery code. Ctrl+L locks.
+- Three columns once unlocked: a sidebar (status, filters for logins,
+  one-time codes and keys, tools, Lock), the item list, and the item.
+- Ctrl+K opens a command palette: find an item and press Enter to copy its
+  password, or run an action (copy user name or code, new item, generate,
+  import, unlock methods, lock). See
+  [the user guide](user-guide/desktop-window-and-palette.md).
 - Items: search, view, copy username, password or one-time code, show the
   password, add, edit (websites with match mode and http opt-in, TOTP secret
   or `otpauth://` link, notes), delete after a confirmation.
@@ -56,6 +62,7 @@ Like vaultd, it runs on Linux and Windows; macOS follows the daemon port.
 They drive the real window headless through its accessibility tree
 (egui_kittest) against an in-process daemon on a real socket: create, pair a
 second window, unlock with a wrong then right password, add with a generated
-password, copy, show, search, lock (clipboard cleared, items dropped),
+password, copy, show, search, sidebar filters, the command palette (copy by
+Enter, arrow keys, Escape, lock), lock (clipboard cleared, items dropped),
 import, add a TOTP seed, reject a bad seed, delete, add a recovery slot, a
 stale token, idle lock and a missing daemon.

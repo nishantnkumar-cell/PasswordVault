@@ -6,7 +6,7 @@
 
 use std::time::{Duration, Instant};
 
-use eframe::egui::{self, Key, RichText, TextEdit, Ui};
+use eframe::egui::{self, Key, Margin, RichText, Stroke, TextEdit, Ui, Vec2};
 use vault_core::item::{ItemData, UrlEntry};
 use vault_core::origin::MatchMode;
 use vault_core::totp::TotpConfig;
@@ -17,6 +17,7 @@ use vault_ipc::{
 use zeroize::Zeroizing;
 
 use crate::client::{Backend, Failure, Paths};
+use crate::theme;
 
 /// How long a copied secret stays on the clipboard.
 pub const CLIPBOARD_CLEAR: Duration = Duration::from_secs(30);
@@ -109,6 +110,53 @@ pub enum View {
     Generator,
     Import,
     Slots,
+}
+
+/// Which items the list shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Filter {
+    All,
+    Logins,
+    Codes,
+    Keys,
+}
+
+impl Filter {
+    fn admits(self, i: &ItemSummary) -> bool {
+        match self {
+            Filter::All => true,
+            Filter::Logins => i.key.is_none(),
+            Filter::Codes => i.has_totp,
+            Filter::Keys => i.key.is_some(),
+        }
+    }
+}
+
+/// A secret to copy once the daemon sends it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Field {
+    Password,
+    Code,
+}
+
+/// The Ctrl K palette: one box to find an item or run an action.
+#[derive(Default)]
+struct Palette {
+    query: String,
+    sel: usize,
+    focused: bool,
+}
+
+/// What a palette row does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Action {
+    Copy(ItemId, Field),
+    CopyUsername(ItemId),
+    Open(ItemId),
+    NewItem,
+    Generate,
+    Go(View),
+    Lock,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -293,6 +341,11 @@ pub struct App {
     confirm_remove: Option<SlotId>,
 
     copied: Option<(Secret, Instant)>,
+
+    styled: bool,
+    filter: Filter,
+    palette: Option<Palette>,
+    pending_copy: Option<(ItemId, Field)>,
 }
 
 impl App {
@@ -339,6 +392,10 @@ impl App {
             new_recovery: None,
             confirm_remove: None,
             copied: None,
+            styled: false,
+            filter: Filter::All,
+            palette: None,
+            pending_copy: None,
         }
     }
 
@@ -394,6 +451,8 @@ impl App {
         self.slot_form = SlotForm::default();
         self.new_recovery = None;
         self.confirm_remove = None;
+        self.palette = None;
+        self.pending_copy = None;
         self.clear_clipboard();
     }
 
@@ -526,12 +585,21 @@ impl App {
                         self.totp_pending = true;
                         self.send(Op::Totp(id), Request::Totp { id });
                     }
+                    if self.pending_copy == Some((id, Field::Password)) {
+                        self.pending_copy = None;
+                        let pw = Zeroizing::new(item.password.clone());
+                        self.copy(&pw, "Password");
+                    }
                     self.open = Some((id, item));
                     self.reveal = false;
                     self.confirm_delete = false;
                 }
             }
             (Op::Totp(id), Response::Totp { code, remaining }) => {
+                if self.pending_copy == Some((id, Field::Code)) {
+                    self.pending_copy = None;
+                    self.copy(&code, "Code");
+                }
                 self.totp = Some((id, code, Instant::now() + Duration::from_secs(remaining)));
             }
             (Op::Save, Response::ItemSaved { id }) => {
@@ -622,51 +690,96 @@ impl App {
 
     /// Draw the window.
     pub fn show(&mut self, ui: &mut Ui) {
+        if !self.styled {
+            theme::apply(ui.ctx());
+            self.styled = true;
+        }
         self.tick(ui.ctx());
         if self.screen == Screen::Unlocked {
             self.unlocked(ui);
             return;
         }
-        egui::CentralPanel::default().show(ui, |ui| {
-            ui.vertical_centered(|ui| {
-                ui.set_max_width(380.0);
-                ui.add_space(32.0);
-                ui.heading("Secret Vault");
-                ui.add_space(16.0);
-                self.messages(ui);
-                match self.screen.clone() {
-                    Screen::Connecting => {
-                        ui.spinner();
-                        ui.label("Connecting to vaultd…");
-                    }
-                    Screen::Unreachable(m) => {
-                        ui.label(m);
-                        ui.label(if cfg!(windows) {
-                            "Start vaultd.exe, or sign out and in if it starts at login."
-                        } else {
-                            "Start it with `systemctl --user start vaultd`."
+        egui::CentralPanel::default()
+            .frame(egui::Frame::new().fill(theme::SIDEBAR))
+            .show(ui, |ui| {
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    ui.vertical_centered(|ui| {
+                        ui.add_space(48.0);
+                        theme::card().inner_margin(Margin::same(28)).show(ui, |ui| {
+                            ui.set_width(420.0);
+                            ui.vertical(|ui| self.front(ui));
                         });
-                        if ui.button("Try again").clicked() {
-                            self.screen = Screen::Connecting;
-                            self.refresh();
-                        }
-                    }
-                    Screen::Create => self.create(ui),
-                    Screen::ShowRecovery => self.show_recovery(ui),
-                    Screen::Pair => self.pair_or_unlock(ui, true),
-                    Screen::Locked => self.pair_or_unlock(ui, false),
-                    Screen::Unlocked => {}
-                }
+                        ui.add_space(24.0);
+                    });
+                });
+            });
+    }
+
+    /// The card shown before the vault is unlocked.
+    fn front(&mut self, ui: &mut Ui) {
+        let sub = match &self.screen {
+            Screen::Connecting | Screen::Unreachable(_) => "Connecting",
+            Screen::Create | Screen::ShowRecovery => "New vault",
+            Screen::Pair => "Not paired with this app",
+            Screen::Locked | Screen::Unlocked => "Locked",
+        };
+        ui.horizontal(|ui| {
+            theme::monogram(ui, "Secret Vault", 40.0);
+            ui.vertical(|ui| {
+                ui.label(
+                    RichText::new("Secret Vault")
+                        .strong()
+                        .size(17.0)
+                        .color(theme::INK),
+                );
+                ui.label(RichText::new(sub).small().color(theme::MUTED));
             });
         });
+        ui.add_space(12.0);
+        self.messages(ui);
+        match self.screen.clone() {
+            Screen::Connecting => {
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.label("Connecting to vaultd…");
+                });
+            }
+            Screen::Unreachable(m) => {
+                ui.label(m);
+                ui.label(if cfg!(windows) {
+                    "Start vaultd.exe, or sign out and in if it starts at login."
+                } else {
+                    "Start it with `systemctl --user start vaultd`."
+                });
+                if theme::primary(ui, true, "Try again").clicked() {
+                    self.screen = Screen::Connecting;
+                    self.refresh();
+                }
+            }
+            Screen::Create => self.create(ui),
+            Screen::ShowRecovery => self.show_recovery(ui),
+            Screen::Pair => self.pair_or_unlock(ui, true),
+            Screen::Locked => self.pair_or_unlock(ui, false),
+            Screen::Unlocked => {}
+        }
     }
 
     fn messages(&mut self, ui: &mut Ui) {
+        let pill = |fill| {
+            egui::Frame::new()
+                .fill(fill)
+                .corner_radius(8)
+                .inner_margin(Margin::symmetric(12, 8))
+        };
         if let Some(e) = &self.error {
-            ui.colored_label(ui.visuals().error_fg_color, e);
+            pill(egui::Color32::from_rgb(0xFD, 0xEC, 0xEA)).show(ui, |ui| {
+                ui.colored_label(theme::ERROR, e);
+            });
         }
         if let Some(n) = &self.notice {
-            ui.label(n);
+            pill(theme::INK).show(ui, |ui| {
+                ui.label(RichText::new(n).color(egui::Color32::WHITE));
+            });
         }
         if let Some(b) = self.busy {
             ui.horizontal(|ui| {
@@ -687,9 +800,7 @@ impl App {
             ui.end_row();
         });
         let ok = self.busy.is_none();
-        submit |= ui
-            .add_enabled(ok, egui::Button::new("Create vault"))
-            .clicked();
+        submit |= theme::primary(ui, ok, "Create vault").clicked();
         if submit && ok {
             if self.new_password.chars().count() < 8 {
                 self.error = Some("The password needs at least 8 characters.".into());
@@ -721,7 +832,7 @@ impl App {
              so anyone who has it can read your passwords.",
         );
         ui.add_space(8.0);
-        if ui.button("I've written it down").clicked() {
+        if theme::primary(ui, true, "I've written it down").clicked() {
             self.recovery_code = None;
             self.screen = Screen::Connecting;
             self.refresh();
@@ -733,11 +844,29 @@ impl App {
             ui.label("Pair this app with your vault by unlocking it once.");
         }
         let f = &mut self.unlock;
-        ui.horizontal_wrapped(|ui| {
-            ui.selectable_value(&mut f.method, Method::Password, "Password");
-            ui.selectable_value(&mut f.method, Method::SecurityKey, "Security key");
-            ui.selectable_value(&mut f.method, Method::Tpm, "TPM");
-            ui.selectable_value(&mut f.method, Method::Recovery, "Recovery code");
+        theme::caption(ui, "Unlock with");
+        ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
+            for (m, name, how) in [
+                (Method::Password, "Password", "your master password"),
+                (
+                    Method::SecurityKey,
+                    "Security key",
+                    "password, then touch the key",
+                ),
+                (
+                    Method::Tpm,
+                    "This device (TPM)",
+                    "password and this computer's chip",
+                ),
+                (Method::Recovery, "Recovery code", "from your printed sheet"),
+            ] {
+                let b = egui::Button::selectable(f.method == m, RichText::new(name).strong())
+                    .right_text(RichText::new(how).small().color(theme::MUTED))
+                    .min_size(Vec2::new(0.0, 34.0));
+                if ui.add(b).clicked() {
+                    f.method = m;
+                }
+            }
         });
         ui.add_space(8.0);
         let mut submit = false;
@@ -756,7 +885,7 @@ impl App {
         });
         let ok = self.busy.is_none();
         let label = if pair { "Pair" } else { "Unlock" };
-        submit |= ui.add_enabled(ok, egui::Button::new(label)).clicked();
+        submit |= theme::primary(ui, ok, label).clicked();
         if submit && ok {
             let busy = match self.unlock.method {
                 Method::SecurityKey => "Touch your security key when it blinks…",
@@ -802,55 +931,40 @@ impl App {
         if ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, Key::L)) {
             self.act("Locking…", Op::Lock, Request::Lock);
         }
-        egui::Panel::top("bar").show(ui, |ui| {
-            ui.horizontal(|ui| {
-                for (v, name) in [
-                    (View::Items, "Items"),
-                    (View::Generator, "Generator"),
-                    (View::Import, "Import"),
-                    (View::Slots, "Unlock methods"),
-                ] {
-                    if ui.selectable_label(self.view == v, name).clicked() && self.view != v {
-                        self.view = v;
-                        self.error = None;
-                        self.notice = None;
-                        if v == View::Slots {
-                            self.send(Op::ListSlots, Request::ListSlots);
-                        }
-                    }
-                }
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button("Lock").clicked() {
-                        self.act("Locking…", Op::Lock, Request::Lock);
-                    }
-                });
-            });
-        });
-        egui::Panel::bottom("status").show(ui, |ui| {
-            let mut line = "Unlocked".to_owned();
-            if let Some((s, at)) = &self.status {
-                if let Some(left) = s.idle_lock_in {
-                    let left = left.saturating_sub(at.elapsed().as_secs());
-                    line += &format!(". Locks after {}:{:02} idle", left / 60, left % 60);
-                }
-                if s.rollback_detected {
-                    line +=
-                        ". WARNING: the vault file is older than one seen before, so saving is off";
-                }
-            }
-            ui.label(line);
-        });
+        if ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, Key::K)) {
+            self.palette = match self.palette.take() {
+                Some(_) => None,
+                None => Some(Palette::default()),
+            };
+        }
+        egui::Panel::left("nav")
+            .resizable(false)
+            .exact_size(210.0)
+            .frame(
+                egui::Frame::new()
+                    .fill(theme::SIDEBAR)
+                    .inner_margin(Margin::symmetric(12, 16)),
+            )
+            .show(ui, |ui| self.sidebar(ui));
+        let page = egui::Frame::new()
+            .fill(theme::GROUND)
+            .inner_margin(Margin::symmetric(28, 22));
         match self.view {
             View::Items => {
                 egui::Panel::left("list")
                     .resizable(true)
-                    .default_size(260.0)
+                    .default_size(300.0)
+                    .frame(
+                        egui::Frame::new()
+                            .fill(theme::SURFACE)
+                            .inner_margin(Margin::symmetric(12, 16)),
+                    )
                     .show(ui, |ui| self.item_list(ui));
-                egui::CentralPanel::default().show(ui, |ui| {
+                egui::CentralPanel::default().frame(page).show(ui, |ui| {
                     self.messages(ui);
                     egui::ScrollArea::vertical().show(ui, |ui| {
                         if self.edit.is_some() {
-                            self.edit_form(ui);
+                            theme::card().show(ui, |ui| self.edit_form(ui));
                         } else {
                             self.item_detail(ui);
                         }
@@ -858,68 +972,204 @@ impl App {
                 });
             }
             View::Generator => {
-                egui::CentralPanel::default().show(ui, |ui| {
+                egui::CentralPanel::default().frame(page).show(ui, |ui| {
                     self.messages(ui);
-                    self.generator(ui);
+                    theme::card().show(ui, |ui| self.generator(ui));
                 });
             }
             View::Import => {
-                egui::CentralPanel::default().show(ui, |ui| {
+                egui::CentralPanel::default().frame(page).show(ui, |ui| {
                     self.messages(ui);
-                    self.import(ui);
+                    theme::card().show(ui, |ui| self.import(ui));
                 });
             }
             View::Slots => {
-                egui::CentralPanel::default().show(ui, |ui| {
+                egui::CentralPanel::default().frame(page).show(ui, |ui| {
                     self.messages(ui);
-                    egui::ScrollArea::vertical().show(ui, |ui| self.slots_page(ui));
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        theme::card().show(ui, |ui| self.slots_page(ui));
+                    });
                 });
             }
         }
+        if self.palette.is_some() {
+            self.palette(ui);
+        }
+    }
+
+    /// Switch pages, dropping the last page's messages.
+    fn go(&mut self, v: View) {
+        if self.view == v {
+            return;
+        }
+        self.view = v;
+        self.error = None;
+        self.notice = None;
+        if v == View::Slots {
+            self.send(Op::ListSlots, Request::ListSlots);
+        }
+    }
+
+    fn sidebar(&mut self, ui: &mut Ui) {
+        ui.horizontal(|ui| {
+            theme::monogram(ui, "Secret Vault", 30.0);
+            ui.label(
+                RichText::new("Secret Vault")
+                    .strong()
+                    .size(16.0)
+                    .color(theme::INK),
+            );
+        });
+        ui.add_space(4.0);
+        let mut idle = None;
+        let mut rollback = false;
+        if let Some((s, at)) = &self.status {
+            if let Some(left) = s.idle_lock_in {
+                let left = left.saturating_sub(at.elapsed().as_secs());
+                idle = Some(format!("locks in {}:{:02}", left / 60, left % 60));
+            }
+            rollback = s.rollback_detected;
+        }
+        egui::Frame::new()
+            .fill(theme::SURFACE)
+            .stroke(Stroke::new(1.0, theme::BORDER))
+            .corner_radius(8)
+            .inner_margin(Margin::symmetric(10, 6))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.horizontal(|ui| {
+                    let (r, _) = ui.allocate_exact_size(Vec2::splat(8.0), egui::Sense::hover());
+                    ui.painter().circle_filled(r.center(), 4.0, theme::OK);
+                    ui.label(RichText::new("Unlocked").strong().color(theme::INK));
+                    if let Some(t) = idle {
+                        ui.label(RichText::new(t).small().color(theme::MUTED));
+                    }
+                });
+            });
+        if rollback {
+            ui.colored_label(
+                theme::WARN,
+                "WARNING: the vault file is older than one seen before, so saving is off.",
+            );
+        }
+        ui.add_space(10.0);
+        let mut go = None;
+        ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
+            for (f, name) in [
+                (Filter::All, "All items"),
+                (Filter::Logins, "Logins"),
+                (Filter::Codes, "One-time codes"),
+                (Filter::Keys, "SSH and PGP keys"),
+            ] {
+                let on = self.view == View::Items && self.filter == f;
+                if nav_button(ui, on, name).clicked() {
+                    go = Some((View::Items, f));
+                }
+            }
+            ui.add_space(10.0);
+            theme::caption(ui, "Tools");
+            for (v, name) in [
+                (View::Generator, "Generator"),
+                (View::Import, "Import"),
+                (View::Slots, "Unlock methods"),
+            ] {
+                if nav_button(ui, self.view == v, name).clicked() {
+                    go = Some((v, self.filter));
+                }
+            }
+        });
+        let mut lock = false;
+        ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
+            ui.label(
+                RichText::new("Ctrl K finds items and actions")
+                    .small()
+                    .color(theme::MUTED),
+            );
+            lock = ui
+                .add(
+                    egui::Button::new((egui::Atom::grow(), "Lock", egui::Atom::grow()))
+                        .min_size(Vec2::new(ui.available_width(), 34.0)),
+                )
+                .clicked();
+        });
+        if lock {
+            self.act("Locking…", Op::Lock, Request::Lock);
+        }
+        if let Some((v, f)) = go {
+            self.filter = f;
+            self.go(v);
+        }
+    }
+
+    fn matches(i: &ItemSummary, q: &str) -> bool {
+        q.is_empty()
+            || i.title.to_lowercase().contains(q)
+            || i.username.to_lowercase().contains(q)
+            || i.urls.iter().any(|u| u.to_lowercase().contains(q))
     }
 
     fn item_list(&mut self, ui: &mut Ui) {
-        ui.add_space(4.0);
         ui.horizontal(|ui| {
             let l = ui.label("Search");
-            ui.add(TextEdit::singleline(&mut self.search).desired_width(f32::INFINITY))
-                .labelled_by(l.id);
+            ui.add(
+                TextEdit::singleline(&mut self.search)
+                    .hint_text("Title, user or site")
+                    .desired_width(f32::INFINITY),
+            )
+            .labelled_by(l.id);
         });
-        if ui.button("New item").clicked() {
-            self.selected = None;
-            self.open = None;
-            self.edit = Some(Edit::new());
-        }
-        ui.separator();
         let q = self.search.to_lowercase();
+        let shown: Vec<&ItemSummary> = self
+            .items
+            .iter()
+            .filter(|i| self.filter.admits(i) && Self::matches(i, &q))
+            .collect();
+        let mut new = false;
+        ui.horizontal(|ui| {
+            ui.label(
+                RichText::new(format!("{} of {} items", shown.len(), self.items.len()))
+                    .small()
+                    .color(theme::MUTED),
+            );
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                new = theme::primary(ui, true, "New item").clicked();
+            });
+        });
+        ui.separator();
         let mut pick = None;
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
-                for i in &self.items {
-                    let hit = q.is_empty()
-                        || i.title.to_lowercase().contains(&q)
-                        || i.username.to_lowercase().contains(&q)
-                        || i.urls.iter().any(|u| u.to_lowercase().contains(&q));
-                    if !hit {
-                        continue;
+                for i in &shown {
+                    let text = two_lines(&i.title, &i.username);
+                    let mut tags = Vec::new();
+                    if i.has_totp {
+                        tags.push("2FA");
                     }
-                    let text = if i.username.is_empty() {
-                        i.title.clone()
-                    } else {
-                        format!("{}\n{}", i.title, i.username)
-                    };
-                    if ui
-                        .selectable_label(self.selected == Some(i.id), text)
-                        .clicked()
-                    {
+                    if i.key.is_some() {
+                        tags.push("Key");
+                    }
+                    let mut row = egui::Button::selectable(self.selected == Some(i.id), text)
+                        .right_text(egui::Atom::grow())
+                        .min_size(Vec2::new(0.0, 44.0));
+                    if !tags.is_empty() {
+                        row = row.right_text(theme::badge(&tags.join(" · "), theme::ACCENT_DARK));
+                    }
+                    if ui.add(row).clicked() {
                         pick = Some(i.id);
                     }
                 }
                 if self.items.is_empty() {
                     ui.label("No items yet.");
+                } else if shown.is_empty() {
+                    ui.label(RichText::new("Nothing matches.").color(theme::MUTED));
                 }
             });
         });
+        if new {
+            self.selected = None;
+            self.open = None;
+            self.edit = Some(Edit::new());
+        }
         if let Some(id) = pick {
             self.select(id);
         }
@@ -930,100 +1180,174 @@ impl App {
             if self.selected.is_some() {
                 ui.spinner();
             } else {
-                ui.label("Pick an item on the left, or make a new one.");
+                ui.add_space(40.0);
+                ui.vertical_centered(|ui| {
+                    ui.label(
+                        RichText::new("Pick an item on the left, make a new one, or press Ctrl K.")
+                            .color(theme::MUTED),
+                    );
+                });
             }
             return;
         };
         let id = *id;
+        let key = self
+            .items
+            .iter()
+            .find(|i| i.id == id)
+            .and_then(|i| i.key.clone());
         let mut copy: Option<(Secret, &'static str)> = None;
         let mut edit = false;
         let mut delete = false;
-        ui.heading(&item.title);
-        ui.add_space(8.0);
-        egui::Grid::new("detail")
-            .num_columns(3)
-            .spacing([12.0, 8.0])
-            .show(ui, |ui| {
-                ui.label("Username");
-                ui.label(&item.username);
-                if ui.button("Copy username").clicked() {
-                    copy = Some((Zeroizing::new(item.username.clone()), "Username"));
-                }
-                ui.end_row();
 
-                ui.label("Password");
-                if self.reveal {
-                    ui.label(RichText::new(&item.password).monospace());
+        ui.horizontal(|ui| {
+            theme::monogram(ui, &item.title, 52.0);
+            ui.vertical(|ui| {
+                ui.heading(RichText::new(&item.title).strong().color(theme::INK));
+                let kind = if key.is_some() { "Key" } else { "Login" };
+                ui.label(RichText::new(kind).color(theme::MUTED));
+            });
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if self.confirm_delete {
+                    if ui.button("Cancel").clicked() {
+                        self.confirm_delete = false;
+                    }
+                    if ui
+                        .add(
+                            egui::Button::new(
+                                RichText::new("Yes, delete").color(egui::Color32::WHITE),
+                            )
+                            .fill(theme::ERROR),
+                        )
+                        .clicked()
+                    {
+                        delete = true;
+                    }
+                    ui.label("Delete this item for good?");
                 } else {
-                    ui.label("••••••••••••");
-                }
-                ui.horizontal(|ui| {
-                    if ui.button("Copy password").clicked() {
-                        copy = Some((Zeroizing::new(item.password.clone()), "Password"));
+                    if ui.button("Delete").clicked() {
+                        self.confirm_delete = true;
                     }
-                    let t = if self.reveal { "Hide" } else { "Show" };
-                    if ui.button(t).clicked() {
-                        self.reveal = !self.reveal;
+                    if ui.button("Edit").clicked() {
+                        edit = true;
                     }
-                });
-                ui.end_row();
-
-                if item.totp.is_some() {
-                    ui.label("One-time code");
-                    match &self.totp {
-                        Some((tid, code, until)) if *tid == id => {
-                            let left = until.saturating_duration_since(Instant::now()).as_secs();
-                            ui.label(
-                                RichText::new(format!("{}  ({left}s)", code.as_str())).monospace(),
-                            );
-                            if ui.button("Copy code").clicked() {
-                                copy = Some((code.clone(), "Code"));
-                            }
-                        }
-                        _ => {
-                            ui.spinner();
-                            ui.label("");
-                        }
-                    }
-                    ui.end_row();
-                }
-
-                for (n, u) in item.urls.iter().enumerate() {
-                    ui.label(if n == 0 { "Websites" } else { "" });
-                    ui.label(&u.url);
-                    let mut how = match u.mode {
-                        MatchMode::Origin => "this site only".to_owned(),
-                        MatchMode::RegistrableDomain => "whole domain".to_owned(),
-                    };
-                    if u.allow_http {
-                        how += ", http allowed";
-                    }
-                    ui.label(how);
-                    ui.end_row();
                 }
             });
-        if !item.notes.is_empty() {
-            ui.add_space(8.0);
-            ui.label("Notes");
-            ui.label(&item.notes);
-        }
-        ui.add_space(16.0);
-        ui.horizontal(|ui| {
-            if ui.button("Edit").clicked() {
-                edit = true;
+        });
+        ui.add_space(12.0);
+
+        theme::card().show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            egui::Grid::new("detail")
+                .num_columns(3)
+                .spacing([16.0, 12.0])
+                .show(ui, |ui| {
+                    ui.label(RichText::new("Username").color(theme::MUTED));
+                    ui.label(RichText::new(&item.username).color(theme::INK));
+                    if ui.button("Copy username").clicked() {
+                        copy = Some((Zeroizing::new(item.username.clone()), "Username"));
+                    }
+                    ui.end_row();
+
+                    ui.label(RichText::new("Password").color(theme::MUTED));
+                    if self.reveal {
+                        ui.label(RichText::new(&item.password).monospace().color(theme::INK));
+                    } else {
+                        ui.label(RichText::new("••••••••••••").monospace());
+                    }
+                    ui.horizontal(|ui| {
+                        let t = if self.reveal { "Hide" } else { "Show" };
+                        if ui.button(t).clicked() {
+                            self.reveal = !self.reveal;
+                        }
+                        if theme::primary(ui, true, "Copy password").clicked() {
+                            copy = Some((Zeroizing::new(item.password.clone()), "Password"));
+                        }
+                    });
+                    ui.end_row();
+
+                    if let Some(cfg) = &item.totp {
+                        ui.label(RichText::new("One-time code").color(theme::MUTED));
+                        match &self.totp {
+                            Some((tid, code, until)) if *tid == id => {
+                                let left = until.saturating_duration_since(Instant::now());
+                                ui.horizontal(|ui| {
+                                    theme::countdown(ui, left.as_secs_f32(), cfg.period as f32);
+                                    ui.label(
+                                        RichText::new(spaced(code))
+                                            .monospace()
+                                            .size(20.0)
+                                            .color(theme::INK),
+                                    );
+                                    ui.label(
+                                        RichText::new(format!("{}s", left.as_secs()))
+                                            .small()
+                                            .color(theme::MUTED),
+                                    );
+                                });
+                                if ui.button("Copy code").clicked() {
+                                    copy = Some((code.clone(), "Code"));
+                                }
+                            }
+                            _ => {
+                                ui.spinner();
+                                ui.label("");
+                            }
+                        }
+                        ui.end_row();
+                    }
+                });
+        });
+
+        ui.add_space(12.0);
+        theme::card().show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            theme::caption(ui, "Autofill is bound to");
+            if item.urls.is_empty() {
+                ui.label(
+                    RichText::new("No websites, so this item is never offered for autofill.")
+                        .color(theme::MUTED),
+                );
             }
-            if self.confirm_delete {
-                ui.label("Delete this item for good?");
-                if ui.button("Yes, delete").clicked() {
-                    delete = true;
+            for u in &item.urls {
+                let mut how = match u.mode {
+                    MatchMode::Origin => "this site only".to_owned(),
+                    MatchMode::RegistrableDomain => "the whole domain".to_owned(),
+                };
+                if u.allow_http {
+                    how += ", http allowed";
                 }
-                if ui.button("Cancel").clicked() {
-                    self.confirm_delete = false;
-                }
-            } else if ui.button("Delete").clicked() {
-                self.confirm_delete = true;
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(&u.url).monospace().color(theme::INK));
+                    ui.label(RichText::new(how).small().color(theme::MUTED));
+                });
             }
         });
+
+        if let Some(k) = &key {
+            ui.add_space(12.0);
+            theme::card().show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                theme::caption(ui, "Private key");
+                ui.label(RichText::new(k).monospace().color(theme::INK));
+                ui.label(
+                    RichText::new(
+                        "The private key never leaves the vault: vaultd signs and decrypts for you.",
+                    )
+                    .color(theme::MUTED),
+                );
+            });
+        }
+
+        if !item.notes.is_empty() {
+            ui.add_space(12.0);
+            theme::card().show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                theme::caption(ui, "Notes");
+                ui.label(&item.notes);
+            });
+        }
+
         if edit {
             self.edit = self.open.as_ref().map(|(id, i)| Edit::from_item(*id, i));
         }
@@ -1035,6 +1359,229 @@ impl App {
         }
     }
 
+    /// Rows for the palette: matching items, actions on the best match, then
+    /// the vault's own actions.
+    fn palette_rows(&self, q: &str) -> Vec<(&'static str, String, Action)> {
+        let q = q.trim().to_lowercase();
+        let mut rows = Vec::new();
+        let hits: Vec<&ItemSummary> = self
+            .items
+            .iter()
+            .filter(|i| Self::matches(i, &q))
+            .take(if q.is_empty() { 4 } else { 6 })
+            .collect();
+        for i in &hits {
+            let label = if i.username.is_empty() {
+                i.title.clone()
+            } else {
+                format!("{}\n{}", i.title, i.username)
+            };
+            let action = if i.key.is_some() {
+                Action::Open(i.id)
+            } else {
+                Action::Copy(i.id, Field::Password)
+            };
+            rows.push(("Items", label, action));
+        }
+        if let Some(top) = hits.first().filter(|_| !q.is_empty()) {
+            let t = &top.title;
+            if top.key.is_none() {
+                rows.push((
+                    "Actions",
+                    format!("Copy password for {t}"),
+                    Action::Copy(top.id, Field::Password),
+                ));
+            }
+            if !top.username.is_empty() {
+                rows.push((
+                    "Actions",
+                    format!("Copy username for {t}"),
+                    Action::CopyUsername(top.id),
+                ));
+            }
+            if top.has_totp {
+                rows.push((
+                    "Actions",
+                    format!("Copy one-time code for {t}"),
+                    Action::Copy(top.id, Field::Code),
+                ));
+            }
+            rows.push(("Actions", format!("Show {t}"), Action::Open(top.id)));
+        }
+        for (label, action) in [
+            ("New item", Action::NewItem),
+            ("Generate a password", Action::Generate),
+            ("Import items", Action::Go(View::Import)),
+            ("Unlock methods", Action::Go(View::Slots)),
+            ("Lock now", Action::Lock),
+        ] {
+            if q.is_empty() || label.to_lowercase().contains(&q) {
+                rows.push(("Vault", label.to_owned(), action));
+            }
+        }
+        rows
+    }
+
+    fn palette(&mut self, ui: &mut Ui) {
+        let ctx = ui.ctx().clone();
+        let query = self
+            .palette
+            .as_ref()
+            .map(|p| p.query.clone())
+            .unwrap_or_default();
+        let rows = self.palette_rows(&query);
+        let (down, up, enter, esc) = ctx.input_mut(|i| {
+            (
+                i.consume_key(egui::Modifiers::NONE, Key::ArrowDown),
+                i.consume_key(egui::Modifiers::NONE, Key::ArrowUp),
+                i.consume_key(egui::Modifiers::NONE, Key::Enter),
+                i.consume_key(egui::Modifiers::NONE, Key::Escape),
+            )
+        });
+        let Some(p) = self.palette.as_mut() else {
+            return;
+        };
+        let last = rows.len().saturating_sub(1);
+        if down {
+            p.sel = (p.sel + 1).min(last);
+        }
+        if up {
+            p.sel = p.sel.saturating_sub(1);
+        }
+        p.sel = p.sel.min(last);
+        let mut run = None;
+        if enter {
+            run = rows.get(p.sel).map(|r| r.2);
+        }
+        // Pinned near the top so the box stays put as the list shrinks.
+        let id = egui::Id::unique("palette");
+        let area = egui::Modal::default_area(id).anchor(egui::Align2::CENTER_TOP, [0.0, 72.0]);
+        let modal = egui::Modal::new(id)
+            .area(area)
+            .frame(theme::card().inner_margin(Margin::same(14)))
+            .show(&ctx, |ui| {
+                ui.set_width(560.0);
+                let l = ui.label(
+                    RichText::new("Find an item or action")
+                        .small()
+                        .color(theme::MUTED),
+                );
+                let r = ui
+                    .add(
+                        TextEdit::singleline(&mut p.query)
+                            .hint_text("Type to search")
+                            .font(egui::TextStyle::Heading)
+                            .desired_width(f32::INFINITY),
+                    )
+                    .labelled_by(l.id);
+                if !p.focused {
+                    r.request_focus();
+                    p.focused = true;
+                }
+                if r.changed() {
+                    // The rows were built from the old query; draw again.
+                    p.sel = 0;
+                    ui.ctx().request_repaint();
+                }
+                ui.separator();
+                if rows.is_empty() {
+                    ui.label(RichText::new("Nothing matches.").color(theme::MUTED));
+                }
+                egui::ScrollArea::vertical()
+                    .max_height(380.0)
+                    .show(ui, |ui| {
+                        ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
+                            let mut group = "";
+                            for (n, (g, text, action)) in rows.iter().enumerate() {
+                                if *g != group {
+                                    group = g;
+                                    theme::caption(ui, g);
+                                }
+                                let mut b = egui::Button::selectable(n == p.sel, text.as_str())
+                                    .right_text(egui::Atom::grow())
+                                    .min_size(Vec2::new(0.0, 34.0));
+                                if n == p.sel {
+                                    b = b.right_text(
+                                        RichText::new("Enter").small().color(theme::MUTED),
+                                    );
+                                }
+                                if ui.add(b).clicked() {
+                                    run = Some(*action);
+                                }
+                            }
+                        });
+                    });
+                ui.separator();
+                ui.label(
+                    RichText::new("Up and down to move · Enter to run · Esc to close")
+                        .small()
+                        .color(theme::MUTED),
+                );
+            });
+        if esc || modal.should_close() {
+            self.palette = None;
+        }
+        if let Some(a) = run {
+            self.palette = None;
+            self.run(a);
+        }
+    }
+
+    fn run(&mut self, a: Action) {
+        match a {
+            Action::Copy(id, field) => {
+                self.go(View::Items);
+                let open = self.open.as_ref().is_some_and(|(o, _)| *o == id);
+                match field {
+                    Field::Password if open => {
+                        let pw = self
+                            .open
+                            .as_ref()
+                            .map(|(_, i)| Zeroizing::new(i.password.clone()))
+                            .unwrap_or_default();
+                        self.copy(&pw, "Password");
+                    }
+                    Field::Code if open && self.totp.as_ref().is_some_and(|t| t.0 == id) => {
+                        let code = self.totp.as_ref().map(|t| t.1.clone()).unwrap_or_default();
+                        self.copy(&code, "Code");
+                    }
+                    _ => {
+                        self.pending_copy = Some((id, field));
+                        if !open {
+                            self.select(id);
+                        }
+                    }
+                }
+            }
+            Action::CopyUsername(id) => {
+                if let Some(u) = self
+                    .items
+                    .iter()
+                    .find(|i| i.id == id)
+                    .map(|i| i.username.clone())
+                {
+                    self.copy(&u, "Username");
+                }
+            }
+            Action::Open(id) => {
+                self.go(View::Items);
+                self.select(id);
+            }
+            Action::NewItem => {
+                self.go(View::Items);
+                self.selected = None;
+                self.open = None;
+                self.edit = Some(Edit::new());
+            }
+            Action::Generate => {
+                self.go(View::Generator);
+                let options = self.gen_options;
+                self.send(Op::Generate, Request::Generate { options });
+            }
+            Action::Go(v) => self.go(v),
+            Action::Lock => self.act("Locking…", Op::Lock, Request::Lock),
+        }
+    }
     fn edit_form(&mut self, ui: &mut Ui) {
         let Some(e) = &mut self.edit else { return };
         let mut generate = false;
@@ -1381,6 +1928,41 @@ fn secret_field(ui: &mut Ui, label: &str, text: &mut Secret) -> bool {
         )
         .labelled_by(l.id);
     r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter))
+}
+
+/// A full-width entry in the sidebar.
+fn nav_button(ui: &mut Ui, on: bool, name: &str) -> egui::Response {
+    ui.add(
+        egui::Button::selectable(on, name)
+            .right_text(egui::Atom::grow())
+            .min_size(Vec2::new(0.0, 32.0)),
+    )
+}
+
+/// A list row: the title, and under it the username in a quieter colour.
+/// Reads as "title\nusername" to screen readers.
+fn two_lines(title: &str, username: &str) -> egui::text::LayoutJob {
+    let mut job = egui::text::LayoutJob::default();
+    let font = |size| egui::FontId::proportional(size);
+    job.append(title, 0.0, egui::TextFormat::simple(font(14.5), theme::INK));
+    if !username.is_empty() {
+        job.append(
+            &format!("\n{username}"),
+            0.0,
+            egui::TextFormat::simple(font(12.5), theme::MUTED),
+        );
+    }
+    job
+}
+
+/// A one-time code with a space in the middle, as sites print them.
+fn spaced(code: &str) -> String {
+    let mid = code.len() / 2;
+    if code.len() >= 6 && code.is_char_boundary(mid) {
+        format!("{} {}", &code[..mid], &code[mid..])
+    } else {
+        code.to_owned()
+    }
 }
 
 fn text_field(ui: &mut Ui, label: &str, text: &mut String) {
