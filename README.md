@@ -21,3 +21,11 @@ Start with [`docs/vaultd.md`](docs/vaultd.md) to build and run it, then [`docs/b
 - [`docs/format.md`](docs/format.md): vault file format, version 1.
 - [`docs/items.md`](docs/items.md): item data, TOTP and autofill origin policy.
 - [`docs/architecture-review.md`](docs/architecture-review.md): the review that produced brief Revision 2.
+
+## Licence
+
+Licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE.md). You may
+use, change and share it for personal, research, educational and other
+noncommercial purposes; commercial use is not permitted.
+
+Required Notice: Copyright 2026 Nishant (https://github.com/nishantnkumar-cell)

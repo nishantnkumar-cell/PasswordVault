@@ -4,7 +4,7 @@ members = ["crates/vault-cli", "crates/vault-gui", "crates/vault-core", "crates/
 
 [workspace.package]
 edition = "2024"
-license = "UNLICENSED"
+license = "PolyForm-Noncommercial-1.0.0"
 publish = false
 
 # Argon2id at the format's minimum (64 MiB) is far too slow unoptimized.
