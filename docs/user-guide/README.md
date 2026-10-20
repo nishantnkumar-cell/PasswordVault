@@ -22,6 +22,7 @@ what it needs:
 | The desktop app (`vault-gui`) | Day-to-day use in a window |
 | The browser extension | Filling logins on websites |
 | `ssh`, `git`, `ssh-keygen` | Using SSH keys stored in the vault |
+| `vault-gpg` | Lets programs that run `gpg` (git, pass, NeoMutt) use OpenPGP keys stored in the vault |
 
 The vault is either **locked** (the keys are not in memory; nobody can read
 anything) or **unlocked** (clients can read and change items). `vaultd`
@@ -43,6 +44,8 @@ random program on your computer cannot just ask for your passwords.
 6. [SSH keys and git signing](06-ssh-and-git.md)
 7. [OpenPGP keys](07-openpgp.md): signing, encrypting and decrypting files and mail.
 8. [Troubleshooting, backups and safety tips](08-troubleshooting.md)
+9. [Programs that call gpg](09-gpg-programs.md): git signing with OpenPGP,
+   `pass`, and NeoMutt, through `vault-gpg`.
 
 ## What works where
 
@@ -56,6 +59,8 @@ random program on your computer cannot just ask for your passwords.
 | Windows Hello, Touch ID, phone passkey | Not yet | Not yet | Not yet |
 | SSH agent and git signing | Yes | Yes (untested on real hardware) | Not yet |
 | OpenPGP keys | Yes | Yes | Not yet |
+| `vault-gpg` for git and NeoMutt | Yes | git only (untested on real hardware) | Not yet |
+| `vault-gpg` for `pass` | Yes | Not applicable | Not yet |
 | Locks on screen lock and suspend | Yes | Yes | Not yet |
 | Keys kept out of swap and crash dumps | Yes | Not yet | Not yet |
 

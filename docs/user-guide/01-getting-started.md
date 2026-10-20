@@ -40,6 +40,7 @@ cargo install --path crates/vaultd
 cargo install --path crates/vault-cli
 cargo install --path crates/vault-gui            # the desktop app and vault-prompt
 cargo install --path crates/vault-native-host    # only if you want browser autofill
+cargo install --path crates/vault-gpg            # only for git, pass or mail through gpg (chapter 9)
 ```
 
 The programs land in `~/.cargo/bin`. `vault-prompt` (the small window that

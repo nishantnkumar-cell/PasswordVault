@@ -5450,6 +5450,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "vault-gpg"
+version = "0.1.0"
+dependencies = [
+ "pgp",
+ "tempfile",
+ "vault-core",
+ "vault-ipc",
+ "vaultd",
+ "zeroize",
+]
+
+[[package]]
 name = "vault-gui"
 version = "0.1.0"
 dependencies = [

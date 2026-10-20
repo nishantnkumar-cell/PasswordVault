@@ -937,6 +937,7 @@ fn pgp(args: &[String]) {
                 id,
                 data,
                 armor: !a.binary,
+                text: false,
             }) else {
                 die("unexpected response")
             };

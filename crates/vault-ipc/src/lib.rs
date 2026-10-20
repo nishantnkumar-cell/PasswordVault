@@ -204,6 +204,9 @@ pub enum Request {
         id: ItemId,
         data: Vec<u8>,
         armor: bool,
+        /// A text signature (gpg's `--textmode`): line endings (LF or
+        /// CRLF) do not change whether it verifies. Mail needs this.
+        text: bool,
     },
     /// Decrypt a message with whichever OpenPGP key in the vault it is for.
     PgpDecrypt { message: Vec<u8> },

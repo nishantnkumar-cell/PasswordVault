@@ -61,7 +61,9 @@ Send `me.asc` to people who should write to you or check your signatures,
 or upload it to a key server or your website. It contains no secret.
 
 Keep the public keys (*certificates*) other people send you as files, for
-example `friend.asc`. The vault does not store them yet.
+example `friend.asc`, or import them with `vault-gpg --import friend.asc`
+([chapter 9](09-gpg-programs.md#5-other-peoples-public-keys)). They are not
+secret, so the vault itself does not store them.
 
 ## 3. Encrypt
 
@@ -141,10 +143,13 @@ people whose software supports it.
 
 ## Using it for email
 
-- **Mail programs you can script** (NeoMutt, aerc, your own scripts): call
-  `vault pgp encrypt`, `decrypt`, `sign` and `verify` directly.
-- **Evolution, KMail and others that call `gpg`**: not connected yet. A
-  `gpg`-compatible front end is planned.
+- **NeoMutt and Mutt**: use `vault-gpg`, which answers mail programs the
+  way `gpg` does. See [chapter 9](09-gpg-programs.md#4-neomutt-and-mutt).
+- **Other mail programs you can script** (aerc, your own scripts): call
+  `vault-gpg` like `gpg`, or `vault pgp encrypt`, `decrypt`, `sign` and
+  `verify` directly.
+- **Evolution and KMail**: not connected yet. They use GnuPG's own services
+  (GPGME and `gpg-agent`) rather than the `gpg` command.
 - **Thunderbird** uses its own OpenPGP engine. You can give it a copy of the
   key with `vault pgp export me > me-secret.asc` and import that in
   Thunderbird's key manager, but that copy is then protected by
@@ -165,7 +170,8 @@ the file and delete it when done.
 - Messages and files up to 16 MiB.
 - Decrypting does not check a signature inside the message; verify detached
   signatures with `vault pgp verify`.
-- Certificates of other people are files, not vault items.
+- Certificates of other people are files, not vault items
+  (`vault-gpg --import` keeps them in one folder for you).
 - No key expiry, revocation certificates or subkey management yet.
 - The desktop app lists OpenPGP keys with their fingerprint but cannot
   create, import or use them.
