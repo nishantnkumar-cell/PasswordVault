@@ -229,8 +229,10 @@ impl Fido2 for WinFido2 {
         }
         // SAFETY: on success `a` is valid until freed; pHmacSecret exists from
         // assertion version 3 and is checked for null before use.
-        let out = unsafe {
+        let (out, flags) = unsafe {
             let r = &*a;
+            // authenticatorData: rpIdHash (32 bytes), then the flags byte.
+            let flags = (r.cbAuthenticatorData > 32).then(|| *r.pbAuthenticatorData.add(32));
             let out = if r.dwVersion >= WEBAUTHN_ASSERTION_VERSION_3
                 && !r.pHmacSecret.is_null()
                 && (*r.pHmacSecret).cbFirst == 32
@@ -242,8 +244,21 @@ impl Fido2 for WinFido2 {
                 None
             };
             WebAuthNFreeAssertion(a);
-            out
+            (out, flags)
         };
+        // The key picks CredRandomWithUV or WithoutUV by whether it verified
+        // the user, whatever was asked for. Windows may verify the PIN anyway,
+        // and then the secret is not this slot's.
+        let verified = flags.ok_or("security key returned no authenticator data")? & 0x04 != 0;
+        if verified != require_uv {
+            return Err(if verified {
+                "Windows checked the key's PIN for a touch-only slot, so the key gave a \
+                 different secret; use a slot that asks for the PIN (--uv) with this key"
+            } else {
+                "the security key did not check its PIN for a slot that requires it"
+            }
+            .into());
+        }
         let out = out.ok_or("security key returned no hmac-secret output")?;
         Ok(HwKey::new(out))
     }

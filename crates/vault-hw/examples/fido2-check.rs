@@ -40,7 +40,11 @@ fn check(dev: &dyn Fido2, pin: Option<&str>, uv: bool) -> Result<(), String> {
     println!("[{mode}] OK: same secret both times");
     if std::env::args().any(|a| a == "--compare") {
         println!("[{mode}] the same over USB HID: touch the key...");
-        let c = vault_hw::fido2::HidFido2.hmac_secret(RP, &cred, &input, pin, uv)?;
+        let c = vault_hw::fido2::HidFido2
+            .hmac_secret(RP, &cred, &input, pin, uv)
+            .map_err(|e| {
+                format!("[{mode}] USB HID: {e} (on Windows, run --compare as administrator)")
+            })?;
         if !a.ct_eq_key(&c) {
             return Err(format!(
                 "[{mode}] USB HID gave a different secret: a slot made here would not unlock on Linux"
