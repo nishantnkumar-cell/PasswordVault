@@ -8,11 +8,13 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+mod clock;
 mod crypto;
 mod error;
 mod format;
 pub mod generator;
 pub mod item;
+mod merge;
 pub mod origin;
 mod recovery;
 mod rng;
@@ -20,11 +22,13 @@ mod secret;
 pub mod totp;
 mod vault;
 
+pub use clock::DeviceId;
 pub use error::Error;
 pub use format::{
     Argon2Params, FORMAT_VERSION, Factor, KdfCost, KeyslotMeta, MAGIC, ParsedVault, PcrPolicy,
     SlotId,
 };
+pub use merge::{MergeReport, Resolve};
 pub use recovery::RecoveryCode;
 pub use rng::{OsRandom, SecureRandom};
 pub use secret::HwKey;

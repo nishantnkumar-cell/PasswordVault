@@ -120,7 +120,31 @@ fn golden_file_is_stable() {
 }
 
 const GOLDEN_LEN: usize = 4890;
-const GOLDEN_SHA256: &str = "f11dfe11ed1de2b1a7c294b6db5fa271db8b85b01dbc0346365cc213723a0732";
+const GOLDEN_SHA256: &str = "e47b59546c6f2bf3c90292f627a2d7fea8b111b4ecb093b84ed7d8490833750b";
+
+#[test]
+fn body_v1_files_still_open() {
+    // The golden file as written before body v2 (section 5.1), by the same
+    // fixture: slot and item IDs match.
+    let old = include_bytes!("testdata/body-v1.svault");
+    let f = fixture(&mut TestRng(0));
+    let mut v = unlock_pw(old, &f.pw_slot).unwrap();
+    assert_eq!(v.generation(), 1);
+    assert_eq!(&**v.get_item(&f.items[0]).unwrap(), b"item a");
+    assert_eq!(v.slot_label(&f.fido_slot), Some("blue key"));
+
+    let mut rng = TestRng(1);
+    v.set_device(7);
+    v.put_item(&mut rng, &f.items[0], b"item a2").unwrap();
+    let newer = v.to_bytes(&mut rng).unwrap();
+    let v = unlock_pw(&newer, &f.pw_slot).unwrap();
+    assert_eq!(v.generation(), 2);
+    assert_eq!(&**v.get_item(&f.items[0]).unwrap(), b"item a2");
+    assert_eq!(
+        v.clocks[&f.items[0]],
+        v.clocks[&f.items[0]].clone().normalized()
+    );
+}
 
 #[test]
 fn wrong_password_is_wrong_factor() {
@@ -509,6 +533,296 @@ mod props {
             b[i] ^= 1 << bit;
             // Must fail; a flip in a KDF parameter may also legitimately fail on bounds.
             prop_assert!(unlock_pw(&b, &f.pw_slot).is_err());
+        }
+    }
+}
+
+// ---- Merging (section 5.1) ----
+
+/// Ranks by length; keeps a losing edit with " (conflict)" appended.
+struct ByLength;
+
+impl Resolve for ByLength {
+    fn rank(&self, data: &[u8]) -> i64 {
+        data.len() as i64
+    }
+    fn conflict_copy(&self, data: &[u8]) -> zeroize::Zeroizing<Vec<u8>> {
+        zeroize::Zeroizing::new([data, b" (conflict)"].concat())
+    }
+}
+
+/// Two devices holding the fixture vault.
+fn two_devices(rng: &mut TestRng) -> (Fixture, Vault, Vault) {
+    let f = fixture(rng);
+    let mut a = unlock_pw(&f.bytes, &f.pw_slot).unwrap();
+    let mut b = unlock_pw(&f.bytes, &f.pw_slot).unwrap();
+    a.set_device(1);
+    b.set_device(2);
+    (f, a, b)
+}
+
+/// What a device would see after writing its copy and reopening the other's
+/// file, both ways round.
+fn sync(rng: &mut TestRng, a: &mut Vault, b: &mut Vault) -> (MergeReport, MergeReport) {
+    let b_file = b.to_bytes(rng).unwrap();
+    let theirs = ParsedVault::parse(&b_file).unwrap().open_with(a).unwrap();
+    let ra = a.merge(rng, &theirs, &ByLength).unwrap();
+    let a_file = a.to_bytes(rng).unwrap();
+    let theirs = ParsedVault::parse(&a_file).unwrap().open_with(b).unwrap();
+    let rb = b.merge(rng, &theirs, &ByLength).unwrap();
+    (ra, rb)
+}
+
+/// Every item's data, sorted, to compare two copies.
+fn contents(v: &Vault) -> Vec<(ItemId, Vec<u8>)> {
+    let mut out: Vec<_> = v
+        .item_ids()
+        .map(|id| (*id, v.get_item(id).unwrap().to_vec()))
+        .collect();
+    out.sort();
+    out
+}
+
+#[test]
+fn merge_takes_both_sides_edits() {
+    let mut rng = TestRng(0);
+    let (f, mut a, mut b) = two_devices(&mut rng);
+    let x = a.new_item_id(&mut rng).unwrap();
+    a.put_item(&mut rng, &x, b"new on a").unwrap();
+    b.put_item(&mut rng, &f.items[0], b"edited on b").unwrap();
+
+    let (ra, rb) = sync(&mut rng, &mut a, &mut b);
+    assert_eq!((ra.added, ra.updated, ra.conflicts), (0, 1, 0));
+    assert!(ra.other_behind);
+    assert_eq!((rb.added, rb.updated), (1, 0));
+    assert!(!rb.other_behind);
+    assert_eq!(contents(&a), contents(&b));
+    assert_eq!(&**a.get_item(&f.items[0]).unwrap(), b"edited on b");
+    assert_eq!(&**b.get_item(&x).unwrap(), b"new on a");
+
+    // Idempotent: nothing left to do.
+    let (ra, rb) = sync(&mut rng, &mut a, &mut b);
+    assert!(!ra.changed() && !ra.other_behind);
+    assert!(!rb.changed() && !rb.other_behind);
+}
+
+#[test]
+fn concurrent_edits_keep_both_and_converge() {
+    let mut rng = TestRng(0);
+    let (f, mut a, mut b) = two_devices(&mut rng);
+    a.put_item(&mut rng, &f.items[0], b"short").unwrap();
+    b.put_item(&mut rng, &f.items[0], b"much longer").unwrap();
+
+    let (ra, rb) = sync(&mut rng, &mut a, &mut b);
+    assert_eq!((ra.updated, ra.conflicts), (1, 1));
+    assert_eq!((rb.added, rb.conflicts), (1, 0));
+    assert_eq!(contents(&a), contents(&b));
+    let all = contents(&a);
+    assert_eq!(all.len(), 3);
+    assert_eq!(&**a.get_item(&f.items[0]).unwrap(), b"much longer");
+    assert!(all.iter().any(|(_, d)| d == b"short (conflict)"));
+
+    // Both devices resolving the same conflict on their own make the same copy.
+    let mut rng = TestRng(0);
+    let (f, mut a, mut b) = two_devices(&mut rng);
+    a.put_item(&mut rng, &f.items[0], b"short").unwrap();
+    b.put_item(&mut rng, &f.items[0], b"much longer").unwrap();
+    let a_file = a.to_bytes(&mut rng).unwrap();
+    let b_file = b.to_bytes(&mut rng).unwrap();
+    let from_b = ParsedVault::parse(&b_file).unwrap().open_with(&a).unwrap();
+    let from_a = ParsedVault::parse(&a_file).unwrap().open_with(&b).unwrap();
+    a.merge(&mut rng, &from_b, &ByLength).unwrap();
+    b.merge(&mut rng, &from_a, &ByLength).unwrap();
+    assert_eq!(contents(&a), contents(&b));
+    let (ra, _) = sync(&mut rng, &mut a, &mut b);
+    assert!(!ra.changed());
+}
+
+#[test]
+fn deletes_win_over_old_copies_and_lose_to_edits() {
+    let mut rng = TestRng(0);
+    let (f, mut a, mut b) = two_devices(&mut rng);
+    let stale = unlock_pw(&f.bytes, &f.pw_slot).unwrap();
+    a.remove_item(&f.items[0]).unwrap();
+    a.remove_item(&f.items[1]).unwrap();
+    b.put_item(&mut rng, &f.items[0], b"edited while deleted")
+        .unwrap();
+
+    let (ra, rb) = sync(&mut rng, &mut a, &mut b);
+    assert_eq!(ra.added, 1);
+    assert_eq!(rb.deleted, 1);
+    assert_eq!(contents(&a), contents(&b));
+    assert_eq!(a.item_ids().collect::<Vec<_>>(), vec![&f.items[0]]);
+
+    // A copy from before the delete cannot bring item b back.
+    let r = a.merge(&mut rng, &stale, &ByLength).unwrap();
+    assert!(!r.changed());
+    assert!(r.other_behind);
+    assert_eq!(a.item_ids().count(), 1);
+
+    // Deleting again after the edit was seen does delete it everywhere.
+    a.remove_item(&f.items[0]).unwrap();
+    let (_, rb) = sync(&mut rng, &mut a, &mut b);
+    assert_eq!(rb.deleted, 1);
+    assert_eq!(b.item_ids().count(), 0);
+}
+
+#[test]
+fn merge_carries_slot_changes() {
+    let mut rng = TestRng(0);
+    let (f, mut a, mut b) = two_devices(&mut rng);
+    let (new_slot, _) = a.add_recovery_slot(&mut rng, "second paper").unwrap();
+    b.remove_slot(&f.fido_slot).unwrap();
+
+    let (ra, rb) = sync(&mut rng, &mut a, &mut b);
+    assert_eq!((ra.slots_added, ra.slots_removed), (0, 1));
+    assert_eq!((rb.slots_added, rb.slots_removed), (1, 0));
+    for v in [&a, &b] {
+        let ids: Vec<_> = v.slots().map(|m| m.id).collect();
+        assert!(ids.contains(&new_slot) && !ids.contains(&f.fido_slot));
+        assert_eq!(v.slot_label(&new_slot), Some("second paper"));
+    }
+    // A stale copy cannot bring the removed slot back.
+    let stale = unlock_pw(&f.bytes, &f.pw_slot).unwrap();
+    a.merge(&mut rng, &stale, &ByLength).unwrap();
+    assert!(!a.slots().any(|m| m.id == f.fido_slot));
+}
+
+#[test]
+fn revoke_on_one_device_wins_the_key() {
+    let mut rng = TestRng(0);
+    let (f, mut a, mut b) = two_devices(&mut rng);
+    a.revoke(
+        &mut rng,
+        &[
+            (f.pw_slot, pw(PW)),
+            (f.rec_slot, Unlock::Recovery { code: &f.code }),
+        ],
+    )
+    .unwrap();
+    let y = b.new_item_id(&mut rng).unwrap();
+    b.put_item(&mut rng, &y, b"new on b").unwrap();
+
+    let a_file = a.to_bytes(&mut rng).unwrap();
+    let parsed = ParsedVault::parse(&a_file).unwrap();
+    assert_eq!(parsed.open_with(&b).err(), Some(Error::DifferentKey));
+    // b unlocks a's copy with the password instead.
+    let mut theirs = parsed.unlock(&f.pw_slot, &pw(PW)).unwrap();
+    theirs.set_device(2);
+    let r = b.merge(&mut rng, &theirs, &ByLength).unwrap();
+    assert!(r.rekeyed);
+    assert_eq!(r.slots_dropped, vec![f.fido_slot]);
+    assert!(r.other_behind);
+
+    // b's file now opens only with the kept factors, under a's key.
+    let b_file = b.to_bytes(&mut rng).unwrap();
+    let p = ParsedVault::parse(&b_file).unwrap();
+    assert_eq!(p.unlock(&f.fido_slot, &pw(PW)).err(), Some(Error::NotFound));
+    let mut back = p.open_with(&a).unwrap();
+    assert_eq!(&**back.get_item(&y).unwrap(), b"new on b");
+    // a merges b's file without changing its key.
+    let r = a.merge(&mut rng, &back, &ByLength).unwrap();
+    assert!(!r.rekeyed);
+    assert_eq!(r.added, 1);
+    assert_eq!(contents(&a), contents(&back));
+    // and the reverse direction is a no-op for b.
+    let r = back.merge(&mut rng, &a, &ByLength).unwrap();
+    assert!(!r.changed() && !r.other_behind);
+}
+
+#[test]
+fn merge_refuses_another_vault() {
+    let mut rng = TestRng(0);
+    let f = fixture(&mut rng);
+    let mut a = unlock_pw(&f.bytes, &f.pw_slot).unwrap();
+    let mut other = Vault::new(&mut rng).unwrap();
+    other
+        .add_password_slot(&mut rng, Factor::PasswordOnly, COST, PW, None, "")
+        .unwrap();
+    assert_eq!(
+        a.merge(&mut rng, &other, &ByLength).err(),
+        Some(Error::DifferentVault)
+    );
+    let bytes = other.to_bytes(&mut rng).unwrap();
+    assert_eq!(
+        ParsedVault::parse(&bytes).unwrap().open_with(&a).err(),
+        Some(Error::DifferentVault)
+    );
+}
+
+mod merge_props {
+    use super::*;
+    use proptest::prelude::*;
+
+    #[derive(Debug, Clone)]
+    enum Op {
+        Put(usize, usize, u8),
+        Delete(usize, usize),
+        Sync(usize, usize),
+    }
+
+    fn op() -> impl Strategy<Value = Op> {
+        prop_oneof![
+            (0..3usize, 0..4usize, any::<u8>()).prop_map(|(d, i, v)| Op::Put(d, i, v)),
+            (0..3usize, 0..4usize).prop_map(|(d, i)| Op::Delete(d, i)),
+            (0..3usize, 0..3usize).prop_map(|(a, b)| Op::Sync(a, b)),
+        ]
+    }
+
+    /// Reopen a device's own file: a cheap stand-in for cloning a vault.
+    fn copy(rng: &mut TestRng, v: &mut Vault) -> Vault {
+        let bytes = v.to_bytes(rng).unwrap();
+        ParsedVault::parse(&bytes).unwrap().open_with(v).unwrap()
+    }
+
+    fn pull(rng: &mut TestRng, devs: &mut [Vault], to: usize, from: usize) {
+        if to == from {
+            return;
+        }
+        let theirs = copy(rng, &mut devs[from]);
+        devs[to].merge(rng, &theirs, &ByLength).unwrap();
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(64))]
+
+        /// However edits, deletes and partial syncs interleave, devices that
+        /// finally exchange copies hold the same items.
+        #[test]
+        fn devices_converge(ops in proptest::collection::vec(op(), 0..24)) {
+            let mut rng = TestRng(0);
+            let mut base = Vault::new(&mut rng).unwrap();
+            base.add_password_slot(&mut rng, Factor::PasswordOnly, COST, PW, None, "").unwrap();
+            let ids: Vec<ItemId> = (0..4).map(|_| base.new_item_id(&mut rng).unwrap()).collect();
+            let mut devs: Vec<Vault> = (0..3)
+                .map(|d| {
+                    let mut v = copy(&mut rng, &mut base);
+                    v.set_device(d as u64 + 1);
+                    v
+                })
+                .collect();
+            for op in ops {
+                match op {
+                    Op::Put(d, i, v) => devs[d].put_item(&mut rng, &ids[i], &vec![v; 1 + v as usize % 5]).unwrap(),
+                    Op::Delete(d, i) => { let _ = devs[d].remove_item(&ids[i]); }
+                    Op::Sync(a, b) => pull(&mut rng, &mut devs, a, b),
+                }
+            }
+            for _ in 0..2 {
+                for a in 0..3 {
+                    for b in 0..3 {
+                        pull(&mut rng, &mut devs, a, b);
+                    }
+                }
+            }
+            let first = contents(&devs[0]);
+            for d in &devs[1..] {
+                prop_assert_eq!(&contents(d), &first);
+            }
+            // Nothing left to exchange.
+            let theirs = copy(&mut rng, &mut devs[1]);
+            let r = devs[0].merge(&mut rng, &theirs, &ByLength).unwrap();
+            prop_assert!(!r.changed() && !r.other_behind);
         }
     }
 }
