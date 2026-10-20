@@ -621,7 +621,9 @@ fn main() {
                 };
                 line(&f.name, v);
             }
-            line("notes", &it.notes);
+            // A secure note's text is its secret.
+            let secret_note = it.kind == ItemKind::Note;
+            line("notes", masked(&it.notes, reveal || !secret_note));
         }
         "add" => {
             let mut c = Client::connect();

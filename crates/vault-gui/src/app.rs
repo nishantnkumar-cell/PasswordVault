@@ -1170,7 +1170,24 @@ impl App {
         if !item.notes.is_empty() {
             ui.add_space(8.0);
             ui.label("Notes");
-            ui.label(&item.notes);
+            // A secure note's text is its secret: hidden until shown.
+            if item.kind == ItemKind::Note {
+                if reveal {
+                    ui.label(&item.notes);
+                } else {
+                    ui.label("••••••••••••");
+                }
+                ui.horizontal(|ui| {
+                    if ui.button("Copy note").clicked() {
+                        copy = Some((Zeroizing::new(item.notes.clone()), "Note".to_owned()));
+                    }
+                    if ui.button(if reveal { "Hide" } else { "Show" }).clicked() {
+                        toggle_reveal = true;
+                    }
+                });
+            } else {
+                ui.label(&item.notes);
+            }
         }
         ui.add_space(16.0);
         ui.horizontal(|ui| {
