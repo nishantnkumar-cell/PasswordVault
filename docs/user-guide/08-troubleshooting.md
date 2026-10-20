@@ -44,6 +44,12 @@ after `vault revoke`, replace your backups too.
 
 ## Common problems
 
+**The build fails with "requires rustc 1.xx or newer" or an edition error**
+
+Your Rust is older than the project's crates expect. Run `rustup update`
+(all systems) and build again. `rustc --version` shows what you have; the
+project is tested with the latest stable release.
+
 **"cannot reach vaultd ... Is it running?"**
 Start the daemon: `vaultd`, `systemctl --user start vaultd`, or
 `vaultw.exe` on Windows (or sign out and back in, if it starts at sign-in).

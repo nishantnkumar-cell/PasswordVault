@@ -12,6 +12,12 @@ source code. That takes one command once the tools are installed.
 - [macOS](#macos)
 - [Create your vault](#create-your-vault) (all systems)
 
+**Tool versions.** Secret Vault follows the latest stable Rust (tested with
+Rust 1.99). If you installed Rust a while ago, run `rustup update` before
+you build; an old compiler fails with errors such as "package requires
+rustc 1.xx or newer" or "feature `edition2024` is required". The same
+command works on Linux, Windows and macOS.
+
 ## Linux
 
 ### 1. Install the build tools
