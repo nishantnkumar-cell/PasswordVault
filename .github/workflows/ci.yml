@@ -54,7 +54,8 @@ jobs:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo build --release --locked
-      - name: Install Inno Setup 7
+      # Chocolatey has the newest Inno Setup 6 (6.7.1); the script also builds with 7.
+      - name: Install Inno Setup
         shell: pwsh
         run: |
           choco upgrade innosetup --no-progress -y
@@ -62,10 +63,11 @@ jobs:
       - name: Build the installer
         shell: pwsh
         run: |
-          $iscc = Get-ChildItem "$env:ProgramFiles\Inno Setup 7\ISCC.exe", "${env:ProgramFiles(x86)}\Inno Setup 7\ISCC.exe" -ErrorAction SilentlyContinue |
+          $iscc = Get-ChildItem "$env:ProgramFiles\Inno Setup 7\ISCC.exe", "${env:ProgramFiles(x86)}\Inno Setup 7\ISCC.exe",
+              "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" -ErrorAction SilentlyContinue |
             Select-Object -First 1 -ExpandProperty FullName
-          if (-not $iscc) { throw "Inno Setup 7 (ISCC.exe) not found" }
-          & $iscc --version
+          if (-not $iscc) { throw "Inno Setup (ISCC.exe) not found" }
+          Write-Host "Using $iscc"
           $version = (cargo metadata --no-deps --format-version 1 | ConvertFrom-Json).packages |
             Where-Object name -eq vaultd | Select-Object -ExpandProperty version
           & $iscc "/DAppVersion=$version" contrib\windows\vault.iss
