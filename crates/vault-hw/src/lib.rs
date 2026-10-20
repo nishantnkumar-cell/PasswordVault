@@ -11,8 +11,18 @@ pub mod soft;
 pub mod tpm;
 #[cfg(all(feature = "fido2", windows))]
 pub mod webauthn;
+#[cfg(all(feature = "tpm", windows))]
+pub mod wintpm;
 
 pub type HwResult<T> = Result<T, String>;
+
+/// Starts a TPM slot blob made on Windows (`wintpm`). Blobs made on Linux
+/// (`tpm`) start with a small length instead, so the two never collide.
+pub const WIN_TPM_MAGIC: &[u8] = b"VWTPM1";
+pub const LINUX_TPM_HINT: &str =
+    "this TPM slot was made on Linux; Windows cannot use it, even on the same computer";
+pub const WIN_TPM_HINT: &str =
+    "this TPM slot was made on Windows; Linux cannot use it, even on the same computer";
 
 /// A FIDO2 authenticator with the hmac-secret extension.
 pub trait Fido2: Send {
@@ -56,7 +66,9 @@ impl Hardware {
             fido2: None,
             #[cfg(all(feature = "tpm", target_os = "linux"))]
             tpm: Some(Box::new(tpm::SystemTpm)),
-            #[cfg(not(all(feature = "tpm", target_os = "linux")))]
+            #[cfg(all(feature = "tpm", windows))]
+            tpm: Some(Box::new(wintpm::WinTpm)),
+            #[cfg(not(all(feature = "tpm", any(target_os = "linux", windows))))]
             tpm: None,
         }
     }
