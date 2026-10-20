@@ -1,6 +1,6 @@
 ; Inno Setup script for the Windows installer (docs/user-guide/windows-install.md).
 ;
-; Build the programs, then compile this script with Inno Setup 6:
+; Build the programs, then compile this script with Inno Setup 7 (6.x also works):
 ;
 ;     cargo build --release --locked
 ;     iscc contrib\windows\vault.iss /DAppVersion=0.1.0
