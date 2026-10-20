@@ -43,8 +43,10 @@ A client asks with no factor. vaultd runs `vault-prompt` (found next to `vaultd`
 - The program path is informational: on Linux the PID could be reused between connecting and the lookup (pidfd-based identification is still open), and a same-user program can always pose as another one.
 - `--no-prompt` turns it off, and a daemon running as its own system user (`vaultd@.service`) never shows it, since it has no desktop: pairing there needs an unlock method.
 
+The same window confirms each card the browser asks to fill (docs/browser.md, Cards and addresses), with the same one-at-a-time rule and cooldown.
+
 `vault pair` and `vault-native-host --pair` use the prompt unless given a method (`--password`, `--fido2`, `--tpm`, `--recovery`; the host takes `--password`). The browser extension's Connect button and the desktop app's "Ask for approval" use it too.
-- Tokens have a scope. `Full` is for the CLI. `Autofill` is for the browser's native host: it may unlock, lock, look up items by origin, fetch one item or TOTP code only if that item may be filled on the given origin, and generate passwords. It cannot list, export, edit or manage slots.
+- Tokens have a scope. `Full` is for the CLI. `Autofill` is for the browser's native host: it may unlock, lock, look up logins by origin, fetch one login or TOTP code only if that login may be filled on the given origin, list cards and identities and fetch one for an `https` page (a card only after the user confirms in vaultd's window), and generate passwords. It cannot list, export, edit or manage slots.
 
 ## Behaviour
 

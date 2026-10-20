@@ -1,6 +1,7 @@
-//! Pairing by approval: the daemon asks the user itself, in a window it
-//! starts (`vault-prompt`), naming the program that asked. A client can
-//! request pairing but cannot answer its own request.
+//! Approval prompts: the daemon asks the user itself, in a window it starts
+//! (`vault-prompt`), naming the program that asked. Used for pairing a client
+//! and before releasing a card to the browser. A client can make the request
+//! but cannot answer it.
 
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -19,14 +20,36 @@ pub struct PairPrompt {
     pub program: Option<String>,
 }
 
+/// A card about to be filled into a page.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CardPrompt {
+    /// The paired client's name. Not verified.
+    pub client_name: String,
+    /// The card's title and network with its last four digits.
+    pub card: String,
+    /// The page the card would be filled into, as the browser reported it.
+    pub origin: String,
+    /// The connecting process's executable, as the OS reports it.
+    pub program: Option<String>,
+}
+
+/// What the user is asked.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Prompt {
+    /// Let a new client use the vault.
+    Pair(PairPrompt),
+    /// Release a card for filling.
+    FillCard(CardPrompt),
+}
+
 /// Something that can ask the user. `Ok(true)` means approved.
 pub trait Approver: Send + Sync {
-    fn approve(&self, prompt: &PairPrompt) -> Result<bool, String>;
+    fn approve(&self, prompt: &Prompt) -> Result<bool, String>;
 }
 
 /// Any closure can approve (tests, embedders).
-impl<F: Fn(&PairPrompt) -> Result<bool, String> + Send + Sync> Approver for F {
-    fn approve(&self, prompt: &PairPrompt) -> Result<bool, String> {
+impl<F: Fn(&Prompt) -> Result<bool, String> + Send + Sync> Approver for F {
+    fn approve(&self, prompt: &Prompt) -> Result<bool, String> {
         self(prompt)
     }
 }
@@ -55,19 +78,32 @@ impl Helper {
 }
 
 impl Approver for Helper {
-    fn approve(&self, p: &PairPrompt) -> Result<bool, String> {
-        let scope = match p.scope {
-            ClientScope::Full => "full",
-            ClientScope::Autofill => "autofill",
-        };
+    fn approve(&self, p: &Prompt) -> Result<bool, String> {
         let mut cmd = Command::new(&self.exe);
-        cmd.arg("--client")
-            .arg(&p.client_name)
-            .arg("--scope")
-            .arg(scope)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null());
-        if let Some(prog) = &p.program {
+        let program = match p {
+            Prompt::Pair(p) => {
+                let scope = match p.scope {
+                    ClientScope::Full => "full",
+                    ClientScope::Autofill => "autofill",
+                };
+                cmd.arg("--client")
+                    .arg(&p.client_name)
+                    .arg("--scope")
+                    .arg(scope);
+                &p.program
+            }
+            Prompt::FillCard(p) => {
+                cmd.arg("--client")
+                    .arg(&p.client_name)
+                    .arg("--fill-card")
+                    .arg(&p.card)
+                    .arg("--origin")
+                    .arg(&p.origin);
+                &p.program
+            }
+        };
+        cmd.stdin(Stdio::null()).stdout(Stdio::null());
+        if let Some(prog) = program {
             cmd.arg("--program").arg(prog);
         }
         let mut child = cmd
@@ -151,11 +187,11 @@ mod tests {
                 timeout: Duration::from_millis(500),
             }
         };
-        let p = PairPrompt {
+        let p = Prompt::Pair(PairPrompt {
             client_name: "x".into(),
             scope: ClientScope::Autofill,
             program: None,
-        };
+        });
         assert_eq!(script("yes", "exit 0").approve(&p), Ok(true));
         assert_eq!(script("no", "exit 1").approve(&p), Ok(false));
         assert!(script("broken", "exit 2").approve(&p).is_err());
@@ -166,5 +202,16 @@ mod tests {
             r#"[ "$*" = "--client x --scope autofill" ] || exit 2"#,
         );
         assert_eq!(echo.approve(&p), Ok(true));
+        let card = Prompt::FillCard(CardPrompt {
+            client_name: "browser".into(),
+            card: "Visa 1111".into(),
+            origin: "https://shop.example".into(),
+            program: None,
+        });
+        let echo = script(
+            "echo-card",
+            r#"[ "$*" = "--client browser --fill-card Visa 1111 --origin https://shop.example" ] || exit 2"#,
+        );
+        assert_eq!(echo.approve(&card), Ok(true));
     }
 }

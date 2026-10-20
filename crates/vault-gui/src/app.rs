@@ -7,7 +7,7 @@
 use std::time::{Duration, Instant};
 
 use eframe::egui::{self, Key, RichText, TextEdit, Ui};
-use vault_core::item::{ItemData, UrlEntry};
+use vault_core::item::{Card, CustomField, FieldKind, Identity, ItemData, ItemKind, UrlEntry};
 use vault_core::origin::MatchMode;
 use vault_core::totp::TotpConfig;
 use vault_ipc::{
@@ -176,6 +176,7 @@ struct SlotForm {
 /// An item being created or edited.
 struct Edit {
     id: Option<ItemId>,
+    kind: ItemKind,
     title: String,
     username: String,
     password: Secret,
@@ -183,13 +184,28 @@ struct Edit {
     urls: Vec<UrlEntry>,
     totp: Option<TotpConfig>,
     totp_input: Secret,
+    holder: String,
+    number: Secret,
+    expiry: String,
+    cvv: Secret,
+    pin: Secret,
+    identity: Identity,
+    fields: Vec<FieldEdit>,
     notes: Secret,
 }
 
+/// A custom field in the edit form.
+struct FieldEdit {
+    name: String,
+    value: Secret,
+    hidden: bool,
+}
+
 impl Edit {
-    fn new() -> Edit {
+    fn new(kind: ItemKind) -> Edit {
         Edit {
             id: None,
+            kind,
             title: String::new(),
             username: String::new(),
             password: Secret::default(),
@@ -197,13 +213,22 @@ impl Edit {
             urls: vec![blank_url()],
             totp: None,
             totp_input: Secret::default(),
+            holder: String::new(),
+            number: Secret::default(),
+            expiry: String::new(),
+            cvv: Secret::default(),
+            pin: Secret::default(),
+            identity: Identity::default(),
+            fields: Vec::new(),
             notes: Secret::default(),
         }
     }
 
     fn from_item(id: ItemId, item: &ItemData) -> Edit {
+        let card = item.card.clone().unwrap_or_default();
         Edit {
             id: Some(id),
+            kind: item.kind,
             title: item.title.clone(),
             username: item.username.clone(),
             password: Zeroizing::new(item.password.clone()),
@@ -211,6 +236,21 @@ impl Edit {
             urls: item.urls.clone(),
             totp: item.totp.clone(),
             totp_input: Secret::default(),
+            holder: card.holder.clone(),
+            number: Zeroizing::new(card.number.clone()),
+            expiry: card.expiry(),
+            cvv: Zeroizing::new(card.cvv.clone()),
+            pin: Zeroizing::new(card.pin.clone()),
+            identity: item.identity.clone().unwrap_or_default(),
+            fields: item
+                .fields
+                .iter()
+                .map(|f| FieldEdit {
+                    name: f.name.clone(),
+                    value: Zeroizing::new(f.value.clone()),
+                    hidden: f.kind == FieldKind::Hidden,
+                })
+                .collect(),
             notes: Zeroizing::new(item.notes.clone()),
         }
     }
@@ -219,25 +259,59 @@ impl Edit {
         if self.title.trim().is_empty() {
             return Err("Give the item a title.".into());
         }
-        let totp = if self.totp_input.trim().is_empty() {
-            self.totp.clone()
-        } else {
-            Some(TotpConfig::parse(&self.totp_input).map_err(|e| format!("TOTP: {e}"))?)
-        };
-        let mut item = ItemData::default();
-        item.title = self.title.trim().to_owned();
-        item.username = self.username.clone();
-        item.password = self.password.to_string();
-        item.urls = self
-            .urls
+        let mut item = ItemData::new(self.kind, self.title.trim());
+        match self.kind {
+            ItemKind::Login => {
+                item.totp = if self.totp_input.trim().is_empty() {
+                    self.totp.clone()
+                } else {
+                    Some(TotpConfig::parse(&self.totp_input).map_err(|e| format!("TOTP: {e}"))?)
+                };
+                item.username = self.username.clone();
+                item.password = self.password.to_string();
+                item.urls = self
+                    .urls
+                    .iter()
+                    .filter(|u| !u.url.trim().is_empty())
+                    .map(|u| UrlEntry {
+                        url: u.url.trim().to_owned(),
+                        ..u.clone()
+                    })
+                    .collect();
+            }
+            ItemKind::Note => {}
+            ItemKind::Card => {
+                let (exp_month, exp_year) = if self.expiry.trim().is_empty() {
+                    (0, 0)
+                } else {
+                    Card::parse_expiry(&self.expiry)
+                        .ok_or("Type the expiry as MM/YY, for example 07/31.")?
+                };
+                item.card = Some(Card {
+                    holder: self.holder.trim().to_owned(),
+                    number: Card::clean_number(&self.number),
+                    exp_month,
+                    exp_year,
+                    cvv: self.cvv.trim().to_owned(),
+                    pin: self.pin.trim().to_owned(),
+                });
+            }
+            ItemKind::Identity => item.identity = Some(self.identity.clone()),
+        }
+        item.fields = self
+            .fields
             .iter()
-            .filter(|u| !u.url.trim().is_empty())
-            .map(|u| UrlEntry {
-                url: u.url.trim().to_owned(),
-                ..u.clone()
+            .filter(|f| !f.name.trim().is_empty() || !f.value.is_empty())
+            .map(|f| CustomField {
+                name: f.name.trim().to_owned(),
+                value: f.value.to_string(),
+                kind: if f.hidden {
+                    FieldKind::Hidden
+                } else {
+                    FieldKind::Text
+                },
             })
             .collect();
-        item.totp = totp;
         item.notes = self.notes.to_string();
         Ok(item)
     }
@@ -272,6 +346,7 @@ pub struct App {
 
     view: View,
     search: String,
+    kind_filter: Option<ItemKind>,
     items: Vec<ItemSummary>,
     selected: Option<ItemId>,
     open: Option<(ItemId, ItemData)>,
@@ -318,6 +393,7 @@ impl App {
             recovery_code: None,
             view: View::Items,
             search: String::new(),
+            kind_filter: None,
             items: Vec::new(),
             selected: None,
             open: None,
@@ -885,28 +961,62 @@ impl App {
             ui.add(TextEdit::singleline(&mut self.search).desired_width(f32::INFINITY))
                 .labelled_by(l.id);
         });
-        if ui.button("New item").clicked() {
-            self.selected = None;
-            self.open = None;
-            self.edit = Some(Edit::new());
-        }
+        ui.horizontal_wrapped(|ui| {
+            if ui
+                .selectable_label(self.kind_filter.is_none(), "All")
+                .clicked()
+            {
+                self.kind_filter = None;
+            }
+            for (k, name) in [
+                (ItemKind::Login, "Logins"),
+                (ItemKind::Note, "Notes"),
+                (ItemKind::Card, "Cards"),
+                (ItemKind::Identity, "Identities"),
+            ] {
+                if ui
+                    .selectable_label(self.kind_filter == Some(k), name)
+                    .clicked()
+                {
+                    self.kind_filter = Some(k);
+                }
+            }
+        });
+        ui.horizontal(|ui| {
+            let mut new = None;
+            ui.menu_button("New item", |ui| {
+                for k in ItemKind::ALL {
+                    if ui.button(k.label()).clicked() {
+                        new = Some(k);
+                    }
+                }
+            });
+            if let Some(k) = new {
+                self.selected = None;
+                self.open = None;
+                self.edit = Some(Edit::new(k));
+            }
+        });
         ui.separator();
         let q = self.search.to_lowercase();
         let mut pick = None;
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
                 for i in &self.items {
+                    if self.kind_filter.is_some_and(|k| k != i.kind) {
+                        continue;
+                    }
                     let hit = q.is_empty()
                         || i.title.to_lowercase().contains(&q)
-                        || i.username.to_lowercase().contains(&q)
+                        || i.subtitle.to_lowercase().contains(&q)
                         || i.urls.iter().any(|u| u.to_lowercase().contains(&q));
                     if !hit {
                         continue;
                     }
-                    let text = if i.username.is_empty() {
+                    let text = if i.subtitle.is_empty() {
                         i.title.clone()
                     } else {
-                        format!("{}\n{}", i.title, i.username)
+                        format!("{}\n{}", i.title, i.subtitle)
                     };
                     if ui
                         .selectable_label(self.selected == Some(i.id), text)
@@ -935,71 +1045,126 @@ impl App {
             return;
         };
         let id = *id;
-        let mut copy: Option<(Secret, &'static str)> = None;
+        let reveal = self.reveal;
+        let mut copy: Option<(Secret, String)> = None;
+        let mut copy_code: Option<Secret> = None;
+        let mut toggle_reveal = false;
         let mut edit = false;
         let mut delete = false;
         ui.heading(&item.title);
+        ui.label(RichText::new(item.kind.label()).small());
         ui.add_space(8.0);
+        // A row: label, value, and a Copy button when the value is not empty.
+        let mut row = |ui: &mut Ui, label: &str, value: &str, secret: bool| {
+            if value.is_empty() {
+                return;
+            }
+            ui.label(label);
+            if secret && !reveal {
+                ui.label("••••••••••••");
+            } else {
+                ui.label(RichText::new(value).monospace());
+            }
+            ui.horizontal(|ui| {
+                if ui
+                    .button(format!("Copy {}", label.to_lowercase()))
+                    .clicked()
+                {
+                    copy = Some((Zeroizing::new(value.to_owned()), label.to_owned()));
+                }
+                if secret && ui.button(if reveal { "Hide" } else { "Show" }).clicked() {
+                    toggle_reveal = true;
+                }
+            });
+            ui.end_row();
+        };
         egui::Grid::new("detail")
             .num_columns(3)
             .spacing([12.0, 8.0])
             .show(ui, |ui| {
-                ui.label("Username");
-                ui.label(&item.username);
-                if ui.button("Copy username").clicked() {
-                    copy = Some((Zeroizing::new(item.username.clone()), "Username"));
-                }
-                ui.end_row();
-
-                ui.label("Password");
-                if self.reveal {
-                    ui.label(RichText::new(&item.password).monospace());
-                } else {
-                    ui.label("••••••••••••");
-                }
-                ui.horizontal(|ui| {
-                    if ui.button("Copy password").clicked() {
-                        copy = Some((Zeroizing::new(item.password.clone()), "Password"));
-                    }
-                    let t = if self.reveal { "Hide" } else { "Show" };
-                    if ui.button(t).clicked() {
-                        self.reveal = !self.reveal;
-                    }
-                });
-                ui.end_row();
-
-                if item.totp.is_some() {
-                    ui.label("One-time code");
-                    match &self.totp {
-                        Some((tid, code, until)) if *tid == id => {
-                            let left = until.saturating_duration_since(Instant::now()).as_secs();
-                            ui.label(
-                                RichText::new(format!("{}  ({left}s)", code.as_str())).monospace(),
-                            );
-                            if ui.button("Copy code").clicked() {
-                                copy = Some((code.clone(), "Code"));
+                match item.kind {
+                    ItemKind::Login => {
+                        row(ui, "Username", &item.username, false);
+                        row(ui, "Password", &item.password, true);
+                        if item.totp.is_some() {
+                            ui.label("One-time code");
+                            match &self.totp {
+                                Some((tid, code, until)) if *tid == id => {
+                                    let left =
+                                        until.saturating_duration_since(Instant::now()).as_secs();
+                                    ui.label(
+                                        RichText::new(format!("{}  ({left}s)", code.as_str()))
+                                            .monospace(),
+                                    );
+                                    if ui.button("Copy code").clicked() {
+                                        copy_code = Some(code.clone());
+                                    }
+                                }
+                                _ => {
+                                    ui.spinner();
+                                    ui.label("");
+                                }
                             }
+                            ui.end_row();
                         }
-                        _ => {
-                            ui.spinner();
-                            ui.label("");
+                        for (n, u) in item.urls.iter().enumerate() {
+                            ui.label(if n == 0 { "Websites" } else { "" });
+                            ui.label(&u.url);
+                            let mut how = match u.mode {
+                                MatchMode::Origin => "this site only".to_owned(),
+                                MatchMode::RegistrableDomain => "whole domain".to_owned(),
+                            };
+                            if u.allow_http {
+                                how += ", http allowed";
+                            }
+                            ui.label(how);
+                            ui.end_row();
                         }
                     }
-                    ui.end_row();
+                    ItemKind::Note => {}
+                    ItemKind::Card => {
+                        let c = item.card.clone().unwrap_or_default();
+                        row(ui, "Name on card", &c.holder, false);
+                        ui.label("Card");
+                        ui.label(c.describe());
+                        ui.label("");
+                        ui.end_row();
+                        row(ui, "Number", &c.number, true);
+                        row(ui, "Expires", &c.expiry(), false);
+                        row(ui, "Security code", &c.cvv, true);
+                        row(ui, "PIN", &c.pin, true);
+                    }
+                    ItemKind::Identity => {
+                        let i = item.identity.clone().unwrap_or_default();
+                        let name = [i.honorific.as_str(), &i.full_name()]
+                            .iter()
+                            .filter(|s| !s.is_empty())
+                            .copied()
+                            .collect::<Vec<_>>()
+                            .join(" ");
+                        row(ui, "Name", &name, false);
+                        row(ui, "Company", &i.company, false);
+                        row(ui, "Email", &i.email, false);
+                        row(ui, "Phone", &i.phone, false);
+                        let address = [
+                            &i.address1,
+                            &i.address2,
+                            &i.address3,
+                            &i.city,
+                            &i.region,
+                            &i.postcode,
+                            &i.country,
+                        ]
+                        .into_iter()
+                        .map(String::as_str)
+                        .filter(|s| !s.is_empty())
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                        row(ui, "Address", &address, false);
+                    }
                 }
-
-                for (n, u) in item.urls.iter().enumerate() {
-                    ui.label(if n == 0 { "Websites" } else { "" });
-                    ui.label(&u.url);
-                    let mut how = match u.mode {
-                        MatchMode::Origin => "this site only".to_owned(),
-                        MatchMode::RegistrableDomain => "whole domain".to_owned(),
-                    };
-                    if u.allow_http {
-                        how += ", http allowed";
-                    }
-                    ui.label(how);
-                    ui.end_row();
+                for f in &item.fields {
+                    row(ui, &f.name, &f.value, f.kind == FieldKind::Hidden);
                 }
             });
         if !item.notes.is_empty() {
@@ -1024,24 +1189,29 @@ impl App {
                 self.confirm_delete = true;
             }
         });
+        if toggle_reveal {
+            self.reveal = !self.reveal;
+        }
         if edit {
             self.edit = self.open.as_ref().map(|(id, i)| Edit::from_item(*id, i));
         }
         if delete {
             self.act("Deleting…", Op::Delete(id), Request::DeleteItem { id });
         }
+        if let Some(code) = copy_code {
+            copy = Some((code, "Code".into()));
+        }
         if let Some((text, what)) = copy {
-            self.copy(&text, what);
+            self.copy(&text, &what);
         }
     }
 
     fn edit_form(&mut self, ui: &mut Ui) {
         let Some(e) = &mut self.edit else { return };
         let mut generate = false;
-        ui.heading(if e.id.is_some() {
-            "Edit item"
-        } else {
-            "New item"
+        ui.heading(match (e.id.is_some(), e.kind) {
+            (true, _) => "Edit item".to_owned(),
+            (false, k) => format!("New {}", k.label().to_lowercase()),
         });
         ui.add_space(8.0);
         egui::Grid::new("edit")
@@ -1050,49 +1220,90 @@ impl App {
             .show(ui, |ui| {
                 text_field(ui, "Title", &mut e.title);
                 ui.end_row();
-                text_field(ui, "Username", &mut e.username);
-                ui.end_row();
-                let l = ui.label("Password");
-                ui.horizontal(|ui| {
-                    ui.add(
-                        TextEdit::singleline(&mut *e.password)
-                            .password(!e.reveal)
-                            .desired_width(240.0),
-                    )
-                    .labelled_by(l.id);
-                    ui.checkbox(&mut e.reveal, "Show");
-                    generate = ui.button("Generate").clicked();
-                });
-                ui.end_row();
-
-                let mut remove = None;
-                for (n, u) in e.urls.iter_mut().enumerate() {
-                    let l = ui.label(if n == 0 { "Websites" } else { "" });
-                    ui.horizontal(|ui| {
+                match e.kind {
+                    ItemKind::Login => generate = login_fields(ui, e),
+                    ItemKind::Note => {}
+                    ItemKind::Card => {
+                        text_field(ui, "Name on card", &mut e.holder);
+                        ui.end_row();
+                        let l = ui.label("Card number");
+                        ui.horizontal(|ui| {
+                            ui.add(
+                                TextEdit::singleline(&mut *e.number)
+                                    .password(!e.reveal)
+                                    .desired_width(240.0),
+                            )
+                            .labelled_by(l.id);
+                            ui.checkbox(&mut e.reveal, "Show");
+                        });
+                        ui.end_row();
+                        let typed = Card {
+                            number: Card::clean_number(&e.number),
+                            ..Card::default()
+                        };
+                        if typed.number.len() >= 12 {
+                            ui.label("");
+                            ui.label(if typed.luhn_ok() {
+                                typed.describe()
+                            } else {
+                                "This number fails the card checksum; check it for typos."
+                                    .to_owned()
+                            });
+                            ui.end_row();
+                        }
+                        let l = ui.label("Expires");
                         ui.add(
-                            TextEdit::singleline(&mut u.url)
-                                .hint_text("https://example.com")
-                                .desired_width(240.0),
+                            TextEdit::singleline(&mut e.expiry)
+                                .hint_text("MM/YY")
+                                .desired_width(80.0),
                         )
                         .labelled_by(l.id);
-                        egui::ComboBox::from_id_salt(("mode", n))
-                            .selected_text(match u.mode {
-                                MatchMode::Origin => "This site only",
-                                MatchMode::RegistrableDomain => "Whole domain",
-                            })
-                            .show_ui(ui, |ui| {
-                                ui.selectable_value(
-                                    &mut u.mode,
-                                    MatchMode::Origin,
-                                    "This site only",
-                                );
-                                ui.selectable_value(
-                                    &mut u.mode,
-                                    MatchMode::RegistrableDomain,
-                                    "Whole domain",
-                                );
-                            });
-                        ui.checkbox(&mut u.allow_http, "Allow http");
+                        ui.end_row();
+                        secret_field(ui, "Security code", &mut e.cvv);
+                        ui.end_row();
+                        secret_field(ui, "PIN", &mut e.pin);
+                        ui.end_row();
+                    }
+                    ItemKind::Identity => {
+                        let i = &mut e.identity;
+                        for (label, field) in [
+                            ("Title (Mr, Ms, Dr…)", &mut i.honorific),
+                            ("First name", &mut i.given_name),
+                            ("Middle name", &mut i.middle_name),
+                            ("Last name", &mut i.family_name),
+                            ("Company", &mut i.company),
+                            ("Email", &mut i.email),
+                            ("Phone", &mut i.phone),
+                            ("Address line 1", &mut i.address1),
+                            ("Address line 2", &mut i.address2),
+                            ("Address line 3", &mut i.address3),
+                            ("City", &mut i.city),
+                            ("State / region", &mut i.region),
+                            ("Postcode", &mut i.postcode),
+                            ("Country", &mut i.country),
+                        ] {
+                            text_field(ui, label, field);
+                            ui.end_row();
+                        }
+                    }
+                }
+
+                let mut remove = None;
+                for (n, f) in e.fields.iter_mut().enumerate() {
+                    ui.label(if n == 0 { "Custom fields" } else { "" });
+                    ui.horizontal(|ui| {
+                        ui.add(
+                            TextEdit::singleline(&mut f.name)
+                                .hint_text("Name")
+                                .desired_width(120.0),
+                        );
+                        ui.add(
+                            TextEdit::singleline(&mut *f.value)
+                                .hint_text("Value")
+                                .password(f.hidden && !e.reveal)
+                                .desired_width(180.0),
+                        );
+                        ui.checkbox(&mut f.hidden, "Hidden");
                         if ui.button("Remove").clicked() {
                             remove = Some(n);
                         }
@@ -1100,31 +1311,20 @@ impl App {
                     ui.end_row();
                 }
                 if let Some(n) = remove {
-                    e.urls.remove(n);
+                    e.fields.remove(n);
                 }
-                ui.label("");
-                if ui.button("Add website").clicked() {
-                    e.urls.push(blank_url());
-                }
-                ui.end_row();
-
-                let l = ui.label("One-time codes");
-                ui.vertical(|ui| {
-                    if e.totp.is_some() {
-                        ui.horizontal(|ui| {
-                            ui.label("Set up.");
-                            if ui.button("Remove").clicked() {
-                                e.totp = None;
-                            }
-                        });
-                    }
-                    ui.add(
-                        TextEdit::singleline(&mut *e.totp_input)
-                            .password(true)
-                            .hint_text("secret or otpauth:// link"),
-                    )
-                    .labelled_by(l.id);
+                ui.label(if e.fields.is_empty() {
+                    "Custom fields"
+                } else {
+                    ""
                 });
+                if ui.button("Add field").clicked() {
+                    e.fields.push(FieldEdit {
+                        name: String::new(),
+                        value: Secret::default(),
+                        hidden: false,
+                    });
+                }
                 ui.end_row();
 
                 let l = ui.label("Notes");
@@ -1381,6 +1581,80 @@ fn secret_field(ui: &mut Ui, label: &str, text: &mut Secret) -> bool {
         )
         .labelled_by(l.id);
     r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter))
+}
+
+/// The login part of the edit form. True when Generate was clicked.
+fn login_fields(ui: &mut Ui, e: &mut Edit) -> bool {
+    let mut generate = false;
+    text_field(ui, "Username", &mut e.username);
+    ui.end_row();
+    let l = ui.label("Password");
+    ui.horizontal(|ui| {
+        ui.add(
+            TextEdit::singleline(&mut *e.password)
+                .password(!e.reveal)
+                .desired_width(240.0),
+        )
+        .labelled_by(l.id);
+        ui.checkbox(&mut e.reveal, "Show");
+        generate = ui.button("Generate").clicked();
+    });
+    ui.end_row();
+
+    let mut remove = None;
+    for (n, u) in e.urls.iter_mut().enumerate() {
+        let l = ui.label(if n == 0 { "Websites" } else { "" });
+        ui.horizontal(|ui| {
+            ui.add(
+                TextEdit::singleline(&mut u.url)
+                    .hint_text("https://example.com")
+                    .desired_width(240.0),
+            )
+            .labelled_by(l.id);
+            egui::ComboBox::from_id_salt(("mode", n))
+                .selected_text(match u.mode {
+                    MatchMode::Origin => "This site only",
+                    MatchMode::RegistrableDomain => "Whole domain",
+                })
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut u.mode, MatchMode::Origin, "This site only");
+                    ui.selectable_value(&mut u.mode, MatchMode::RegistrableDomain, "Whole domain");
+                });
+            ui.checkbox(&mut u.allow_http, "Allow http");
+            if ui.button("Remove").clicked() {
+                remove = Some(n);
+            }
+        });
+        ui.end_row();
+    }
+    if let Some(n) = remove {
+        e.urls.remove(n);
+    }
+    ui.label("");
+    if ui.button("Add website").clicked() {
+        e.urls.push(blank_url());
+    }
+    ui.end_row();
+
+    let l = ui.label("One-time codes");
+    ui.vertical(|ui| {
+        if e.totp.is_some() {
+            ui.horizontal(|ui| {
+                ui.label("Set up.");
+                if ui.button("Remove").clicked() {
+                    e.totp = None;
+                }
+            });
+        }
+        ui.add(
+            TextEdit::singleline(&mut *e.totp_input)
+                .password(true)
+                .hint_text("secret or otpauth:// link"),
+        )
+        .labelled_by(l.id);
+    });
+    ui.end_row();
+    generate
 }
 
 fn text_field(ui: &mut Ui, label: &str, text: &mut String) {

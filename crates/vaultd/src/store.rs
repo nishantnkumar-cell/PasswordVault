@@ -83,13 +83,18 @@ impl Store {
 
     /// The scope of a paired client's token, if it is known.
     pub fn client_scope(&self, token: &[u8; 32]) -> Option<ClientScope> {
+        self.client(token).map(|(_, s)| s)
+    }
+
+    /// The name and scope of a paired client's token, if it is known.
+    pub fn client(&self, token: &[u8; 32]) -> Option<(String, ClientScope)> {
         let h: [u8; 32] = Sha256::digest(token).into();
         // Comparing hashes hides timing on the token itself.
         self.load::<Clients>("clients")
             .0
-            .iter()
+            .into_iter()
             .find(|(_, _, t)| *t == h)
-            .map(|(_, s, _)| *s)
+            .map(|(n, s, _)| (n, s))
     }
 
     pub fn forget_clients(&self) -> io::Result<()> {

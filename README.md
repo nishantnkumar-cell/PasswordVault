@@ -6,18 +6,18 @@ Status: v1 feature-complete on Linux, not yet audited. Do not trust it with real
 
 | Crate | What |
 | --- | --- |
-| `vault-core` | File format, key hierarchy, keyslots, items, TOTP, generator, origin policy. Pure, no I/O. |
-| `vault-import` | Bitwarden JSON and browser CSV import. |
+| `vault-core` | File format, key hierarchy, keyslots, items (logins, secure notes, cards, identities, custom fields), TOTP, generator, origin policy. Pure, no I/O. |
+| `vault-import` | Bitwarden JSON (all four item types) and browser CSV import. |
 | `vault-ipc` | Wire protocol between the daemon and clients. |
 | `vaultd` | The daemon: storage, unlock, FIDO2 and TPM factors, socket server. |
 | `vault-cli` | The `vault` command. |
 | `vault-native-host` | Native messaging host for the browser extension. |
-| `extension/` | Browser autofill extension (Manifest V3). |
+| `extension/` | Browser autofill extension (Manifest V3): logins, cards and addresses. |
 
 Start with [`docs/vaultd.md`](docs/vaultd.md) to build and run it, then [`docs/browser.md`](docs/browser.md) for autofill.
 
 - [`docs/brief.md`](docs/brief.md): project brief, the source of truth for scope and design.
 - [`docs/threat-model.md`](docs/threat-model.md): v1 threat model.
 - [`docs/format.md`](docs/format.md): vault file format, version 1.
-- [`docs/items.md`](docs/items.md): item data, TOTP and autofill origin policy.
+- [`docs/items.md`](docs/items.md): item types, TOTP and autofill origin policy.
 - [`docs/architecture-review.md`](docs/architecture-review.md): the review that produced brief Revision 2.

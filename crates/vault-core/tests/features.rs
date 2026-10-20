@@ -1,5 +1,5 @@
 use vault_core::generator::{Charset, generate_passphrase, generate_password};
-use vault_core::item::{ItemData, UrlEntry};
+use vault_core::item::{ItemData, ItemKind, UrlEntry};
 use vault_core::origin::{MatchMode, Origin, may_fill};
 use vault_core::totp::{TotpAlgorithm, TotpConfig};
 use vault_core::*;
@@ -178,17 +178,15 @@ fn items_round_trip_through_a_vault() {
             "",
         )
         .unwrap();
-    let item = ItemData {
-        title: "Example".into(),
-        username: "test-user".into(),
-        // Built at runtime: a dummy, not a credential.
-        password: "x".repeat(16),
-        urls: vec![entry("https://example.com", MatchMode::Origin)],
-        totp: Some(TotpConfig::from_base32("JBSWY3DPEHPK3PXP").unwrap()),
-        notes: "note".into(),
-        created: 1,
-        modified: 2,
-    };
+    let mut item = ItemData::new(ItemKind::Login, "Example");
+    item.username = "test-user".into();
+    // Built at runtime: a dummy, not a credential.
+    item.password = "x".repeat(16);
+    item.urls = vec![entry("https://example.com", MatchMode::Origin)];
+    item.totp = Some(TotpConfig::from_base32("JBSWY3DPEHPK3PXP").unwrap());
+    item.notes = "note".into();
+    item.created = 1;
+    item.modified = 2;
     let id = v.new_item_id(&mut rng).unwrap();
     v.put_item(&mut rng, &id, &item.to_bytes()).unwrap();
     let bytes = v.to_bytes(&mut rng).unwrap();

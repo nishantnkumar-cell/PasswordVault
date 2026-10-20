@@ -7,9 +7,11 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use vault_ipc::{ClientScope, Envelope, Request, Response, read_frame, write_frame};
+use vault_ipc::{
+    ClientScope, ClientToken, Envelope, ItemId, Request, Response, read_frame, write_frame,
+};
 
-use crate::approve::{self, PairPrompt};
+use crate::approve::{self, CardPrompt, PairPrompt, Prompt};
 
 use crate::daemon::Daemon;
 
@@ -44,8 +46,34 @@ fn pair_by_prompt(
         scope,
         program: pid.and_then(approve::program_of),
     };
-    let answer = approver.approve(&prompt);
+    let answer = approver.approve(&Prompt::Pair(prompt.clone()));
     lock().end_prompt(&prompt, answer)
+}
+
+/// Confirm with the user before a card leaves the daemon, again without
+/// holding the daemon lock while the window is open.
+fn card_by_prompt(
+    daemon: &Shared,
+    token: Option<&ClientToken>,
+    id: ItemId,
+    origin: String,
+    pid: Option<u32>,
+) -> Response {
+    let lock = || daemon.lock().unwrap_or_else(|p| p.into_inner());
+    let (approver, client_name, item) = match lock().begin_card_fill(token, &id, &origin) {
+        Ok(x) => x,
+        Err(m) => return Response::Error(m),
+    };
+    let card = item.card.as_ref().map(|c| c.describe()).unwrap_or_default();
+    let prompt = Prompt::FillCard(CardPrompt {
+        client_name: approve::clean_name(&client_name),
+        card: approve::clean_name(&format!("{} ({card})", item.title)),
+        // Never shortened: the end of a host name is the part that matters.
+        origin: origin.chars().filter(|c| !c.is_control()).collect(),
+        program: pid.and_then(approve::program_of),
+    });
+    let answer = approver.approve(&prompt);
+    lock().end_card_fill(id, item, answer)
 }
 
 /// Serve one client. `pid` is the peer process, for the pairing prompt.
@@ -65,6 +93,9 @@ fn connection(mut s: impl Read + Write, daemon: &Shared, pid: Option<u32>) -> io
                 scope,
                 method: None,
             } => pair_by_prompt(daemon, &client_name, scope, pid),
+            Request::CardForFill { id, origin } => {
+                card_by_prompt(daemon, env.token.as_ref(), id, origin, pid)
+            }
             request => daemon
                 .lock()
                 .unwrap_or_else(|p| p.into_inner())

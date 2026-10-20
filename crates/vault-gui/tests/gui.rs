@@ -10,6 +10,7 @@ use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use vault_core::KdfCost;
 use vault_gui::{App, Clip, Paths, Screen};
+use vault_ipc::ItemKind;
 use vaultd::daemon::Daemon;
 use vaultd::hw::Hardware;
 use vaultd::server;
@@ -77,7 +78,7 @@ fn window(sock: PathBuf, token: PathBuf, clip: FakeClip) -> Harness<'static, App
         || {},
     );
     Harness::builder()
-        .with_size([920.0, 640.0])
+        .with_size([920.0, 1000.0])
         .build_ui_state(|ui, app: &mut App| app.show(ui), app)
 }
 
@@ -154,6 +155,7 @@ fn create_add_copy_lock_unlock() {
     wait_for(&mut h, Screen::Unlocked);
 
     click(&mut h, "New item");
+    click(&mut h, "Login");
     type_into(&mut h, Role::TextInput, "Title", "Example");
     type_into(&mut h, Role::TextInput, "Username", "alice");
     click(&mut h, "Generate");
@@ -352,6 +354,81 @@ fn import_totp_edit_delete_and_slots() {
 }
 
 #[test]
+fn cards_identities_and_notes() {
+    let dir = tempdir();
+    let clip = FakeClip::default();
+    let mut h = created(&dir, Duration::from_secs(300), clip.clone());
+
+    // A card: the number is cleaned up, checked, and hidden until Show.
+    click(&mut h, "New item");
+    click(&mut h, "Card");
+    type_into(&mut h, Role::TextInput, "Title", "Travel");
+    type_into(&mut h, Role::TextInput, "Name on card", "A Person");
+    type_into(
+        &mut h,
+        Role::PasswordInput,
+        "Card number",
+        "4111 1111 1111 1111",
+    );
+    type_into(&mut h, Role::TextInput, "Expires", "13/31");
+    click(&mut h, "Save");
+    assert!(h.state().error().unwrap().contains("MM/YY"));
+    h.get_by_role_and_label(Role::TextInput, "Expires").focus();
+    h.step();
+    for _ in 0..5 {
+        h.key_press(eframe::egui::Key::Backspace);
+    }
+    type_into(&mut h, Role::TextInput, "Expires", "07/31");
+    type_into(&mut h, Role::PasswordInput, "Security code", "123");
+    click(&mut h, "Save");
+    settle(&mut h);
+    assert_eq!(h.state().error(), None);
+    let card = &h.state().items()[0];
+    assert_eq!(card.kind, ItemKind::Card);
+    assert_eq!(card.subtitle, "Visa \u{2022}\u{2022}\u{2022}\u{2022} 1111");
+    assert!(h.query_by_label("4111111111111111").is_none());
+    assert!(h.query_by_label("07/2031").is_some());
+    click(&mut h, "Copy number");
+    assert_eq!(clip.0.lock().unwrap().as_deref(), Some("4111111111111111"));
+
+    // An identity, listed by name.
+    click(&mut h, "New item");
+    click(&mut h, "Identity");
+    type_into(&mut h, Role::TextInput, "Title", "Home");
+    type_into(&mut h, Role::TextInput, "First name", "Ada");
+    type_into(&mut h, Role::TextInput, "Last name", "Lovelace");
+    type_into(&mut h, Role::TextInput, "City", "London");
+    click(&mut h, "Save");
+    settle(&mut h);
+    assert_eq!(h.state().error(), None);
+    assert!(h.query_by_label_contains("Home\nAda Lovelace").is_some());
+    assert!(h.query_by_label_contains("London").is_some());
+
+    // A secure note shows no subtitle.
+    click(&mut h, "New item");
+    click(&mut h, "Secure note");
+    type_into(&mut h, Role::TextInput, "Title", "Wifi");
+    type_into(&mut h, Role::MultilineTextInput, "Notes", "door code");
+    click(&mut h, "Save");
+    settle(&mut h);
+    assert_eq!(h.state().items().len(), 3);
+    let note = h
+        .state()
+        .items()
+        .iter()
+        .find(|i| i.title == "Wifi")
+        .unwrap();
+    assert_eq!((note.kind, note.subtitle.as_str()), (ItemKind::Note, ""));
+
+    // The type filter.
+    h.get_by_role_and_label(Role::Button, "Cards").click();
+    h.step();
+    h.step();
+    assert!(h.query_by_label_contains("Home\nAda").is_none());
+    assert!(h.query_by_label_contains("Travel\nVisa").is_some());
+}
+
+#[test]
 fn forgets_a_token_the_daemon_does_not_know() {
     let dir = tempdir();
     let first = created(&dir, Duration::from_secs(300), FakeClip::default());
@@ -378,7 +455,10 @@ fn pairs_by_approval_in_the_daemons_window() {
     let asked = Arc::new(Mutex::new(Vec::new()));
     let log = asked.clone();
     d.lock().unwrap().set_approver(Arc::new(
-        move |p: &vaultd::approve::PairPrompt| -> Result<bool, String> {
+        move |p: &vaultd::approve::Prompt| -> Result<bool, String> {
+            let vaultd::approve::Prompt::Pair(p) = p else {
+                return Ok(false);
+            };
             log.lock().unwrap().push((p.client_name.clone(), p.scope));
             Ok(true)
         },

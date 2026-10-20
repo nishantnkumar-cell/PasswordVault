@@ -18,3 +18,4 @@ li button.fill { border-color: var(--accent); color: var(--accent); }
 #frames { padding: 8px 12px; border-top: 1px solid var(--line); display: grid; gap: 6px; }
 #frames p { margin: 0; color: var(--muted); }
 #frames[hidden] { display: none; }
+#forms h2 { margin: 0; padding: 8px 12px 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }

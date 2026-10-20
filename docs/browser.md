@@ -30,6 +30,14 @@ If the page itself has no visible login form but contains https frames from othe
 
 TOTP codes and generated passwords are copied to the clipboard from the popup.
 
+## Cards and addresses
+
+On an `https` page the popup also offers cards and addresses, but only when the page has fields for them: a card number field for cards, a name or address field for addresses. The extension finds fields by their `autocomplete` attribute (`cc-number`, `cc-exp`, `given-name`, `postal-code` and so on) and otherwise guesses from the field's name, id, placeholder and label (`lib/form-inject.js`).
+
+- **Cards** are not bound to sites, so the origin check that protects logins cannot protect them. Instead `vaultd` opens its confirmation window (the same `vault-prompt` used for pairing) naming the card, the page's origin and the program asking, and releases the card only on Allow. The browser's token therefore cannot read cards without you seeing it. The window may close the popup; the fill still completes. Without a desktop (`--no-prompt`, or a daemon running as its own user) cards cannot be filled.
+- **Addresses** fill without a window, and only into empty fields, so they never overwrite what you typed.
+- Both are released only for `https` origins, without the item's notes or custom fields, and filled only into the page's top frame after the frame's origin is checked again. Card fields inside a payment provider's own frames (common with Stripe and similar checkouts) are not filled yet.
+
 ## Limits
 
 - The master password typed into the popup passes through the extension and the host. Unlocking with `vault unlock` in a terminal avoids that.
@@ -37,4 +45,4 @@ TOTP codes and generated passwords are copied to the clipboard from the popup.
 
 ## Tests
 
-`npm test` in `extension/` runs the policy tests. `test/fill.browser.mjs` loads the extension in Chromium and checks that the fill function fills the real form and none of four decoy fields; it needs `playwright-core` and a full Chromium (see the file header).
+`npm test` in `extension/` runs the policy and form-matching tests. `test/fill.browser.mjs` loads the extension in Chromium and checks that the login fill fills the real form and none of four decoy fields, and that card and address fills hit the right fields of a checkout form; it needs `playwright-core` and a full Chromium (see the file header).

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Secret Vault",
   "version": "0.1.0",
-  "description": "Fills logins from your local Secret Vault.",
+  "description": "Fills logins, cards and addresses from your local Secret Vault.",
   "permissions": ["nativeMessaging", "activeTab", "scripting", "webNavigation"],
   "optional_host_permissions": ["https://*/*"],
   "background": { "service_worker": "background.js", "scripts": ["background.js"], "type": "module" },
