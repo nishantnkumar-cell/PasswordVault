@@ -34,8 +34,10 @@ if you build Secret Vault yourself or run its tests.
 - **Node.js for the extension tests** is now Node.js 24, the current LTS
   (it was 22). `extension/package.json` declares it. The extension
   itself runs in the browser and does not use Node.js.
-- **Windows installer** is now built with Inno Setup 7. The script still
-  compiles with Inno Setup 6.x. The installer it produces behaves the same.
+- **Windows installer.** The script compiles with Inno Setup 7 (the newest
+  release) and with Inno Setup 6. CI builds it with the newest Inno Setup
+  that Chocolatey offers, which is 6.7.1 today, and moves to 7 when
+  Chocolatey does. The installer behaves the same either way.
 - **CI** uses the current `actions/checkout`, `actions/setup-node` and
   `actions/upload-artifact` (v7), which run on Node.js 24. This removes the
   GitHub warning that Node.js 20 actions are deprecated.
