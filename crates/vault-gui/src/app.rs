@@ -11,7 +11,7 @@ use vault_core::item::{Card, CustomField, FieldKind, Identity, ItemData, ItemKin
 use vault_core::origin::MatchMode;
 use vault_core::totp::TotpConfig;
 use vault_ipc::{
-    ClientScope, ClientToken, GenerateOptions, ImportFormat, ItemId, ItemSummary, Request,
+    ClientScope, ClientToken, GenerateOptions, ImportFormat, ItemId, ItemSummary, KeyKind, Request,
     Response, Secret, SlotId, SlotInfo, StatusInfo, UnlockMethod,
 };
 use zeroize::Zeroizing;
@@ -91,6 +91,7 @@ enum Op {
     RemoveSlot(SlotId),
     PublicKey(ItemId),
     KeyConfirm,
+    NewKey,
     Sync,
     QuickUnlock,
 }
@@ -160,6 +161,8 @@ enum Action {
     CopyUsername(ItemId),
     Open(ItemId),
     NewItem,
+    /// Make an SSH key (`false`) or an OpenPGP key (`true`).
+    NewKey(bool),
     Generate,
     Go(View),
     Lock,
@@ -371,6 +374,92 @@ impl Edit {
     }
 }
 
+/// The form for making a new SSH or OpenPGP key inside `vaultd`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct KeyForm {
+    pgp: bool,
+    title: String,
+    /// SSH: ECDSA P-256 instead of Ed25519.
+    ecdsa: bool,
+    /// OpenPGP: the name and email the key is made for.
+    name: String,
+    email: String,
+    /// OpenPGP: v6 ML-DSA/ML-KEM instead of v4 Ed25519/Curve25519.
+    post_quantum: bool,
+    confirm: bool,
+}
+
+impl KeyForm {
+    fn new(pgp: bool) -> KeyForm {
+        KeyForm {
+            pgp,
+            title: String::new(),
+            ecdsa: false,
+            name: String::new(),
+            email: String::new(),
+            post_quantum: false,
+            confirm: true,
+        }
+    }
+
+    /// The OpenPGP user ID, "Name <mail@example.com>" or just "Name".
+    fn user_id(&self) -> Result<String, String> {
+        let name = self.name.trim();
+        let email = self.email.trim();
+        if name.is_empty() {
+            return Err("Type the name the key is for.".into());
+        }
+        if name.contains(['<', '>']) {
+            return Err("The name can't contain < or >.".into());
+        }
+        if email.is_empty() {
+            return Ok(name.to_owned());
+        }
+        let ok = email.split_once('@').is_some_and(|(user, host)| {
+            !user.is_empty() && host.contains('.') && !host.ends_with('.')
+        }) && !email.contains(['<', '>', ' ']);
+        if !ok {
+            return Err("That email address doesn't look right.".into());
+        }
+        Ok(format!("{name} <{email}>"))
+    }
+
+    fn to_request(&self) -> Result<Request, String> {
+        let title = self.title.trim().to_owned();
+        let confirm = self.confirm;
+        if self.pgp {
+            let user_id = self.user_id()?;
+            let title = if title.is_empty() {
+                self.name.trim().to_owned()
+            } else {
+                title
+            };
+            Ok(Request::GeneratePgpKey {
+                title,
+                user_id,
+                post_quantum: self.post_quantum,
+                confirm,
+            })
+        } else {
+            if title.is_empty() {
+                return Err(
+                    "Give the key a title, such as the computer or service it is for.".into(),
+                );
+            }
+            let kind = if self.ecdsa {
+                KeyKind::SshEcdsaP256
+            } else {
+                KeyKind::SshEd25519
+            };
+            Ok(Request::GenerateKey {
+                title,
+                kind,
+                confirm,
+            })
+        }
+    }
+}
+
 fn blank_url() -> UrlEntry {
     UrlEntry {
         url: String::new(),
@@ -407,6 +496,7 @@ pub struct App {
     totp: Option<(ItemId, Secret, Instant)>,
     totp_pending: bool,
     edit: Option<Edit>,
+    new_key: Option<KeyForm>,
     confirm_delete: bool,
     /// The open key item's public half, to show and copy.
     public_key: Option<(ItemId, String)>,
@@ -464,6 +554,7 @@ impl App {
             totp: None,
             totp_pending: false,
             edit: None,
+            new_key: None,
             confirm_delete: false,
             public_key: None,
             gen_options: GenerateOptions {
@@ -739,6 +830,21 @@ impl App {
             (Op::PublicKey(id), Response::PublicKey(text)) => {
                 self.public_key = Some((id, text));
             }
+            (Op::NewKey, Response::ItemSaved { id }) => {
+                self.new_key = None;
+                self.notice = Some(
+                    "Key made. Copy its public key below and give it to the server, git host \
+                     or people who need it."
+                        .into(),
+                );
+                if !matches!(self.filter, Filter::All | Filter::Keys) {
+                    self.filter = Filter::Keys;
+                }
+                // Answers come back in order, so the list knows it is a key
+                // by the time the item opens and fetches its public half.
+                self.send(Op::ListItems, Request::ListItems);
+                self.select(id);
+            }
             (Op::KeyConfirm, Response::Ok) => {
                 self.send(Op::ListItems, Request::ListItems);
             }
@@ -777,6 +883,7 @@ impl App {
         self.open = None;
         self.totp = None;
         self.edit = None;
+        self.new_key = None;
         self.send(Op::OpenItem(id), Request::GetItem { id });
     }
 
@@ -1247,7 +1354,9 @@ impl App {
                 egui::CentralPanel::default().frame(page).show(ui, |ui| {
                     self.messages(ui);
                     egui::ScrollArea::vertical().show(ui, |ui| {
-                        if self.edit.is_some() {
+                        if self.new_key.is_some() {
+                            theme::card().show(ui, |ui| self.key_form(ui));
+                        } else if self.edit.is_some() {
                             theme::card().show(ui, |ui| self.edit_form(ui));
                         } else {
                             self.item_detail(ui);
@@ -1434,6 +1543,7 @@ impl App {
             .filter(|i| self.filter.admits(i) && Self::matches(i, &q))
             .collect();
         let mut new = None;
+        let mut new_key = None;
         ui.horizontal(|ui| {
             ui.label(
                 RichText::new(format!("{} of {} items", shown.len(), self.items.len()))
@@ -1446,6 +1556,13 @@ impl App {
                         if ui.button(k.label()).clicked() {
                             new = Some(k);
                         }
+                    }
+                    ui.separator();
+                    if ui.button("SSH key").clicked() {
+                        new_key = Some(false);
+                    }
+                    if ui.button("OpenPGP key").clicked() {
+                        new_key = Some(true);
                     }
                 });
             });
@@ -1483,7 +1600,11 @@ impl App {
         if let Some(k) = new {
             self.selected = None;
             self.open = None;
+            self.new_key = None;
             self.edit = Some(Edit::new(k));
+        }
+        if let Some(pgp) = new_key {
+            self.start_key(pgp);
         }
         if let Some(id) = pick {
             self.select(id);
@@ -1897,6 +2018,8 @@ impl App {
         }
         for (label, action) in [
             ("New item", Action::NewItem),
+            ("New SSH key", Action::NewKey(false)),
+            ("New OpenPGP key", Action::NewKey(true)),
             ("Generate a password", Action::Generate),
             ("Import items", Action::Go(View::Import)),
             ("Unlock methods", Action::Go(View::Slots)),
@@ -2059,7 +2182,12 @@ impl App {
                 self.go(View::Items);
                 self.selected = None;
                 self.open = None;
+                self.new_key = None;
                 self.edit = Some(Edit::new(ItemKind::Login));
+            }
+            Action::NewKey(pgp) => {
+                self.go(View::Items);
+                self.start_key(pgp);
             }
             Action::Generate => {
                 self.go(View::Generator);
@@ -2217,6 +2345,146 @@ impl App {
                     let id = e.id;
                     self.act("Saving…", Op::Save, Request::PutItem { id, item });
                 }
+                Err(m) => self.error = Some(m),
+            }
+        }
+    }
+
+    /// Open the new key form in place of the item details.
+    fn start_key(&mut self, pgp: bool) {
+        self.selected = None;
+        self.open = None;
+        self.edit = None;
+        self.error = None;
+        self.notice = None;
+        self.new_key = Some(KeyForm::new(pgp));
+    }
+
+    fn key_form(&mut self, ui: &mut Ui) {
+        let Some(f) = &mut self.new_key else { return };
+        ui.heading(if f.pgp {
+            "New OpenPGP key"
+        } else {
+            "New SSH key"
+        });
+        ui.label(
+            RichText::new(if f.pgp {
+                "For encrypting and signing files and email, and signing git commits. \
+                 The key is made inside the vault and its secret half never leaves it."
+            } else {
+                "For logging in to servers and git hosts, and signing git commits. \
+                 The key is made inside the vault and its private half never leaves it."
+            })
+            .color(theme::MUTED),
+        );
+        ui.add_space(10.0);
+        egui::Grid::new("new-key")
+            .num_columns(2)
+            .spacing([12.0, 8.0])
+            .show(ui, |ui| {
+                if f.pgp {
+                    let l = ui.label("Name");
+                    ui.add(
+                        TextEdit::singleline(&mut f.name)
+                            .hint_text("Alex Example")
+                            .desired_width(280.0),
+                    )
+                    .labelled_by(l.id);
+                    ui.end_row();
+                    let l = ui.label("Email");
+                    ui.add(
+                        TextEdit::singleline(&mut f.email)
+                            .hint_text("alex@example.com")
+                            .desired_width(280.0),
+                    )
+                    .labelled_by(l.id);
+                    ui.end_row();
+                    let l = ui.label("Title");
+                    ui.add(
+                        TextEdit::singleline(&mut f.title)
+                            .hint_text("The name, if left empty")
+                            .desired_width(280.0),
+                    )
+                    .labelled_by(l.id);
+                    ui.end_row();
+                } else {
+                    let l = ui.label("Title");
+                    ui.add(
+                        TextEdit::singleline(&mut f.title)
+                            .hint_text("Laptop, GitHub, deploy key…")
+                            .desired_width(280.0),
+                    )
+                    .labelled_by(l.id);
+                    ui.end_row();
+                }
+            });
+        ui.add_space(10.0);
+        theme::caption(ui, "Kind of key");
+        let choices: [(bool, &str, &str); 2] = if f.pgp {
+            [
+                (
+                    false,
+                    "Classic (recommended)",
+                    "Ed25519 and Curve25519 (OpenPGP v4). Works with GnuPG, Thunderbird \
+                     and every current OpenPGP program.",
+                ),
+                (
+                    true,
+                    "Post-quantum",
+                    "ML-DSA-65 + Ed25519 and ML-KEM-768 + X25519 (OpenPGP v6). Protects \
+                     secrets against future quantum computers, but GnuPG 2.4 and most \
+                     mail programs can't use it yet.",
+                ),
+            ]
+        } else {
+            [
+                (
+                    false,
+                    "Ed25519 (recommended)",
+                    "Short, fast and accepted by GitHub, GitLab and any OpenSSH \
+                     server from the last ten years.",
+                ),
+                (
+                    true,
+                    "ECDSA P-256",
+                    "Only for a server or device that refuses Ed25519.",
+                ),
+            ]
+        };
+        let picked = if f.pgp {
+            &mut f.post_quantum
+        } else {
+            &mut f.ecdsa
+        };
+        for (value, name, about) in choices {
+            ui.radio_value(picked, value, name);
+            ui.indent(name, |ui| {
+                ui.label(RichText::new(about).small().color(theme::MUTED));
+            });
+        }
+        ui.add_space(10.0);
+        ui.checkbox(&mut f.confirm, "Ask before each use");
+        ui.label(
+            RichText::new(
+                "vaultd opens a window to approve every signature or decryption. Untick \
+                 it only for a key a program must use unattended. You can change this later.",
+            )
+            .small()
+            .color(theme::MUTED),
+        );
+        ui.add_space(12.0);
+        let ok = self.busy.is_none();
+        let (mut make, mut cancel) = (false, false);
+        ui.horizontal(|ui| {
+            make = theme::primary(ui, ok, "Make key").clicked();
+            cancel = ui.button("Cancel").clicked();
+        });
+        if cancel {
+            self.new_key = None;
+            self.error = None;
+        } else if make && ok {
+            match self.new_key.as_ref().expect("checked above").to_request() {
+                Ok(request) => self.act("Making the key…", Op::NewKey, request),
                 Err(m) => self.error = Some(m),
             }
         }
@@ -2763,5 +3031,50 @@ fn slot_text(kind: &str) -> (&'static str, &'static str) {
             "The code on your printed recovery sheet; keep it somewhere safe and offline",
         ),
         _ => ("Other", "A method this app doesn't know yet"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn key_form_builds_the_request() {
+        let mut f = KeyForm::new(false);
+        assert!(f.to_request().is_err(), "an SSH key needs a title");
+        f.title = " Laptop ".into();
+        f.ecdsa = true;
+        assert!(matches!(
+            f.to_request(),
+            Ok(Request::GenerateKey { title, kind: KeyKind::SshEcdsaP256, confirm: true })
+                if title == "Laptop"
+        ));
+
+        let mut f = KeyForm::new(true);
+        assert!(f.to_request().is_err(), "an OpenPGP key needs a name");
+        f.name = "Alex Example".into();
+        assert_eq!(f.user_id().unwrap(), "Alex Example");
+        f.email = "alex@example.com".into();
+        f.post_quantum = true;
+        f.confirm = false;
+        assert!(matches!(
+            f.to_request(),
+            Ok(Request::GeneratePgpKey { title, user_id, post_quantum: true, confirm: false })
+                if title == "Alex Example" && user_id == "Alex Example <alex@example.com>"
+        ));
+        for bad in [
+            "alex",
+            "alex@",
+            "@example.com",
+            "alex@example",
+            "a b@example.com",
+            "a@x.com>",
+        ] {
+            f.email = bad.into();
+            assert!(f.user_id().is_err(), "{bad}");
+        }
+        f.email.clear();
+        f.name = "Alex <x>".into();
+        assert!(f.user_id().is_err());
     }
 }

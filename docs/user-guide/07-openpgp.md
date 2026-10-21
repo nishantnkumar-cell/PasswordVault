@@ -23,7 +23,16 @@ command takes a `FILE`, leaving it out reads standard input; leaving out
 
 ## 1. Make or import a key
 
-**A classic key**, which works with GnuPG, Thunderbird and every current
+**In the desktop app:** press **New item**, then **OpenPGP key**. Type
+your **Name** and **Email** (for example "Alex Example" and
+alex@example.com; the email is optional but mail programs and git match
+keys by it). **Title** is the name the key has in your vault and defaults
+to the name you typed. Pick **Classic** unless you know the people you
+exchange files with can read post-quantum keys (see
+[Which kind of key](#which-kind-of-key)), then press **Make key**. See
+[Make a new key](05-desktop-app.md#make-a-new-key).
+
+**Or on the command line. A classic key**, which works with GnuPG, Thunderbird and every current
 OpenPGP program:
 
 ```sh
@@ -176,5 +185,6 @@ the file and delete it when done.
 - Certificates of other people are files, not vault items
   (`vault-gpg --import` keeps them in one folder for you).
 - No key expiry, revocation certificates or subkey management yet.
-- The desktop app lists OpenPGP keys with their fingerprint but cannot
-  create, import or use them.
+- The desktop app can make OpenPGP keys and copy their public key, but
+  importing, exporting, encrypting, decrypting and signing still use
+  `vault pgp` (or `vault-gpg`, [chapter 9](09-gpg-programs.md)).

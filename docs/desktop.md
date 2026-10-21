@@ -34,6 +34,13 @@ Like vaultd, it runs on Linux and Windows; macOS follows the daemon port.
 - Items: search, view, copy username, password or one-time code, show the
   password, add, edit (websites with match mode and http opt-in, TOTP secret
   or `otpauth://` link, notes), delete after a confirmation.
+- Keys: **New item → SSH key / OpenPGP key** (or the palette's "New SSH
+  key" / "New OpenPGP key") opens a form that sends `GenerateKey` or
+  `GeneratePgpKey`, so the key is made inside `vaultd` and only its public
+  half ever reaches the app. SSH: title, Ed25519 or ECDSA P-256. OpenPGP:
+  name, optional email (user ID `Name <email>`), optional title (defaults to
+  the name), classic v4 or post-quantum v6. "Ask before each use" is ticked
+  by default. Importing and exporting keys stay in the CLI.
 - Password generator, import (Bitwarden JSON, browser CSV) and unlock
   methods (list, add any kind, remove with a confirmation). Revoking with key
   rotation stays in the CLI: `vault revoke`.
@@ -65,4 +72,5 @@ second window, unlock with a wrong then right password, add with a generated
 password, copy, show, search, sidebar filters, the command palette (copy by
 Enter, arrow keys, Escape, lock), lock (clipboard cleared, items dropped),
 import, add a TOTP seed, reject a bad seed, delete, add a recovery slot, a
-stale token, idle lock and a missing daemon.
+stale token, idle lock, a missing daemon, and making an SSH and an OpenPGP
+key from the New item menu.

@@ -61,7 +61,8 @@ Once unlocked, the window has three columns.
    name or website. Each row shows the title and, under it, the user name,
    the card's network and last four digits, or the identity's name. A
    **2FA** tag means the item has one-time codes; **Key** means it is an
-   SSH or PGP key. **New item** asks which kind of item to start.
+   SSH or PGP key. **New item** asks which kind of item to start, including
+   a new **SSH key** or **OpenPGP key**.
 3. **Details (right).** The item you picked.
 
 ### Item details
@@ -101,8 +102,8 @@ the window. It is the fastest way to work without the mouse.
    it instead).
 3. **Actions** offers more for the best match: copy the user name, copy the
    one-time code, or show the item.
-4. **Vault** actions are always there: *New item* (a new login), *Generate a password*,
-   *Import items*, *Unlock methods* and *Lock now*. Type `lock` and press
+4. **Vault** actions are always there: *New item* (a new login), *New SSH key*,
+   *New OpenPGP key*, *Generate a password*, *Import items*, *Unlock methods* and *Lock now*. Type `lock` and press
    Enter to lock.
 
 Use the **Up** and **Down** arrow keys to move, **Enter** to run, and **Esc**

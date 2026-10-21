@@ -680,3 +680,64 @@ fn key_shows_its_public_half_and_asks_before_use() {
     assert_eq!(h.state().error(), None);
     assert!(h.state().items()[0].key_confirm);
 }
+
+#[test]
+fn makes_ssh_and_openpgp_keys() {
+    let dir = tempdir();
+    let clip = FakeClip::default();
+    let mut h = created(&dir, Duration::from_secs(300), clip.clone());
+
+    // An SSH key from the New item menu.
+    click(&mut h, "New item");
+    click(&mut h, "SSH key");
+    assert!(h.query_by_label("New SSH key").is_some());
+    click(&mut h, "Make key");
+    assert!(h.state().error().unwrap().contains("title"));
+    type_into(&mut h, Role::TextInput, "Title", "Laptop");
+    click(&mut h, "Make key");
+    settle(&mut h);
+    assert_eq!(h.state().error(), None);
+    assert!(h.query_by_label_contains("Key made.").is_some());
+    let items = h.state().items();
+    assert_eq!(items.len(), 1);
+    assert!(
+        items[0].key.as_deref().unwrap().starts_with("ssh-ed25519 "),
+        "{:?}",
+        items[0].key
+    );
+    assert!(items[0].key_confirm, "asks before each use by default");
+    click(&mut h, "Copy public key");
+    let copied = clip.0.lock().unwrap().clone().expect("copied");
+    assert!(copied.starts_with("ssh-ed25519 "), "{copied}");
+
+    // A classic OpenPGP key from the same menu, without asking before use.
+    click(&mut h, "New item");
+    click(&mut h, "OpenPGP key");
+    type_into(&mut h, Role::TextInput, "Name", "Alex Example");
+    type_into(&mut h, Role::TextInput, "Email", "alex@example.com");
+    h.get_by_role_and_label(Role::CheckBox, "Ask before each use")
+        .click();
+    h.step();
+    click(&mut h, "Make key");
+    settle(&mut h);
+    assert_eq!(h.state().error(), None);
+    let items = h.state().items();
+    assert_eq!(items.len(), 2);
+    let pgp = items
+        .iter()
+        .find(|i| i.title == "Alex Example")
+        .expect("listed");
+    assert!(
+        pgp.key.as_deref().unwrap().starts_with("OpenPGP"),
+        "{:?}",
+        pgp.key
+    );
+    assert!(!pgp.key_confirm);
+    assert!(h.query_by_label("OpenPGP key").is_some());
+    click(&mut h, "Copy public key");
+    let copied = clip.0.lock().unwrap().clone().expect("copied");
+    assert!(
+        copied.starts_with("-----BEGIN PGP PUBLIC KEY BLOCK-----"),
+        "{copied}"
+    );
+}
