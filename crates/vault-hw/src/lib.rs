@@ -6,13 +6,26 @@ use vault_core::HwKey;
 
 #[cfg(feature = "fido2")]
 pub mod fido2;
+#[cfg(windows)]
+pub mod hello;
+pub mod protect;
 pub mod soft;
 #[cfg(all(feature = "tpm", target_os = "linux"))]
 pub mod tpm;
 #[cfg(all(feature = "fido2", windows))]
 pub mod webauthn;
+#[cfg(all(feature = "tpm", windows))]
+pub mod wintpm;
 
 pub type HwResult<T> = Result<T, String>;
+
+/// Starts a TPM slot blob made on Windows (`wintpm`). Blobs made on Linux
+/// (`tpm`) start with a small length instead, so the two never collide.
+pub const WIN_TPM_MAGIC: &[u8] = b"VWTPM1";
+pub const LINUX_TPM_HINT: &str =
+    "this TPM slot was made on Linux; Windows cannot use it, even on the same computer";
+pub const WIN_TPM_HINT: &str =
+    "this TPM slot was made on Windows; Linux cannot use it, even on the same computer";
 
 /// A FIDO2 authenticator with the hmac-secret extension.
 pub trait Fido2: Send {
@@ -40,10 +53,21 @@ pub trait Tpm: Send {
     fn unseal(&self, blob: &[u8], pin: Option<&str>, bind_pcr7: bool) -> HwResult<HwKey>;
 }
 
+/// The operating system's own check that the user is at the computer
+/// (Windows Hello). It yields no secret, so it only approves a quick unlock
+/// of a key the daemon still holds; it never opens a vault on its own.
+pub trait Presence: Send {
+    /// Whether the check is set up and usable for this user.
+    fn check_available(&self) -> HwResult<()>;
+    /// Ask the user, showing `message`. Ok only if the OS verified them.
+    fn verify(&self, message: &str) -> HwResult<()>;
+}
+
 /// The factors this daemon can use.
 pub struct Hardware {
     pub fido2: Option<Box<dyn Fido2>>,
     pub tpm: Option<Box<dyn Tpm>>,
+    pub presence: Option<Box<dyn Presence>>,
 }
 
 impl Hardware {
@@ -56,8 +80,14 @@ impl Hardware {
             fido2: None,
             #[cfg(all(feature = "tpm", target_os = "linux"))]
             tpm: Some(Box::new(tpm::SystemTpm)),
-            #[cfg(not(all(feature = "tpm", target_os = "linux")))]
+            #[cfg(all(feature = "tpm", windows))]
+            tpm: Some(Box::new(wintpm::WinTpm)),
+            #[cfg(not(all(feature = "tpm", any(target_os = "linux", windows))))]
             tpm: None,
+            #[cfg(windows)]
+            presence: Some(Box::new(hello::WinHello)),
+            #[cfg(not(windows))]
+            presence: None,
         }
     }
 }

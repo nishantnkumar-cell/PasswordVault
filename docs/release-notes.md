@@ -14,6 +14,51 @@ to work yet.
 
 ## Unreleased
 
+### TPM unlock and Windows Hello quick unlock on Windows
+
+- **TPM slots on Windows.** `vault add-slot tpm` (or **Unlock methods**,
+  then **TPM**, in the desktop app) now works on Windows too, with the same
+  options as on Linux: an optional TPM PIN, which the TPM protects against
+  guessing, and `--pcr7` to tie the slot to the Secure Boot state. It needs
+  no administrator rights. Like every TPM slot, it opens only on the
+  computer that made it, so a stolen copy of the vault file is useless even
+  with your password.
+- **Quick unlock with Windows Hello.** After you unlock with your password
+  (or a security key, TPM or recovery code), Windows Hello can open the
+  vault again each time it locks, for 1 to 24 hours that you choose. Turn
+  it on with `vault quick-unlock 8`, or under **Unlock methods** in the
+  desktop app. Then `vault unlock --hello`, or **Unlock with Windows
+  Hello** on the app's lock screen, asks for your face, fingerprint or
+  Windows PIN. It is off by default.
+- **Limits that keep the password in charge.** Quick unlock ends when its
+  time is up, when the computer restarts or `vaultd` stops, after three
+  failed or cancelled Windows Hello checks, and with `vault lock --full`.
+  Windows Hello never pairs an app, exports a key or revokes a slot.
+- **Check your hardware first** from the source folder with
+  `cargo run -p vault-hw --example tpm-check` and
+  `cargo run -p vault-hw --example hello-check`. Neither stores anything.
+
+Platform notes: Windows: both new features, no administrator rights. The
+Windows TPM is used through Windows' own TPM service, so a TPM slot made
+under Windows doesn't open under Linux on the same dual-boot computer, or
+the other way round; add one from each. Linux: TPM slots work as before;
+there is no Windows Hello equivalent yet. macOS: not yet, because `vaultd`
+does not run there yet; Touch ID and the Secure Enclave are planned to
+work the same way. Security keys on Windows were already supported without
+administrator rights (through Windows' own security key service) and are
+unchanged.
+
+Known gaps: while quick unlock is available, the vault key stays in
+`vaultd`'s memory (encrypted, with the key to it protected by Windows), so
+malware running as you could still reach it, as it could while the vault
+is unlocked. The quick unlock time counts in wall-clock time, so time
+asleep counts too. CI runners have no TPM or Windows Hello. The TPM slot
+was checked on a real Windows 11 PC; Windows Hello was checked as far as
+its prompt opening, not yet with a confirmed face, fingerprint or PIN.
+
+How to use it: [Add the TPM](user-guide/02-unlocking.md#add-the-tpm) and
+[Quick unlock with Windows Hello](user-guide/02-unlocking.md#quick-unlock-with-windows-hello-windows).
+
 ### Sync one vault across your devices
 
 - **Sync through a folder you already have.** Point Secret Vault at a file

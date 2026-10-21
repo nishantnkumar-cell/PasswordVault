@@ -201,4 +201,5 @@ you no longer need the vault or have a copy of it.
 | vaultd log | `%LOCALAPPDATA%\vault\state\vaultd.log` | `journalctl --user -u vaultd` | |
 | Security key PIN | Asked by Windows in its own window | Asked by the `vault` command or the app | |
 | Security keys need admin | No (Windows 11 or current Windows 10) | No (needs the udev rule in `contrib/udev`) | |
-| TPM unlock | Not yet | Yes | |
+| TPM unlock | Yes, no administrator rights needed | Yes | |
+| Quick unlock (Windows Hello) | Yes | Not yet | |

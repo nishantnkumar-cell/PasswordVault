@@ -71,6 +71,7 @@ fn setup() -> Env {
     let hw = Hardware {
         fido2: None,
         tpm: None,
+        presence: None,
     };
     let d = Arc::new(Mutex::new(Daemon::new(
         store,

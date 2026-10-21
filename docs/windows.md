@@ -112,6 +112,40 @@ agree, run in an administrator terminal:
 
     cargo run -p vault-hw --example fido2-check -- --compare
 
+## TPM
+
+`vault-hw/src/wintpm.rs` uses the Microsoft Platform Crypto Provider
+(CNG, `ncrypt.dll`), which any user may call. Windows does not offer user
+programs TPM sealing, so the slot's random secret is wrapped instead: the
+TPM creates an ephemeral RSA-2048 decryption key (no name, so Windows does
+not save it), the secret is encrypted to it with RSA-OAEP (SHA-256), and
+the slot keeps the ciphertext and the key's opaque blob. The blob is the
+TPM's own wrapped private key: only this TPM can load it. The PIN is the
+key's usage authorization (`NCRYPT_PIN_PROPERTY`), so the TPM's
+dictionary-attack lockout applies, and `--pcr7` sets
+`PCP_PLATFORM_BINDING_PCRMASK` to bind the key to the current PCR 7. Every
+call that can show UI passes `NCRYPT_SILENT_FLAG`, except export and import
+of the opaque blob, which the provider refuses with it (`NTE_BAD_FLAGS`)
+and which show no UI.
+
+The slot blob starts with `VWTPM1`, so the Linux and Windows backends can
+tell each other's slots apart and say so instead of failing obscurely.
+Checked on a real TPM (Windows 11) with
+`cargo run -p vault-hw --example tpm-check -- 1234`; CI runners have no TPM.
+
+## Windows Hello quick unlock
+
+`vault-hw/src/hello.rs` calls `UserConsentVerifier` through
+`IUserConsentVerifierInterop::RequestVerificationForWindowAsync`, owned by
+the foreground window like the security key prompt. It returns no secret,
+so it is an approval gate for a key vaultd still holds, never a keyslot.
+On lock, with quick unlock on and within its window, vaultd keeps the
+vault key sealed under a random wrap key (`Vault::park`, format.md 4.6), and
+keeps the wrap key under `CryptProtectMemory(SAME_PROCESS)`, so a crash
+dump, the page file or a scan of the process from outside does not show
+it. `UnlockMethod::Hello` unwraps it after Windows Hello says `Verified`.
+Check with `cargo run -p vault-hw --example hello-check`.
+
 ## Locking
 
 The vault locks when idle, when you lock the screen (Win+L) and when the
@@ -120,8 +154,5 @@ window.
 
 ## Not on Windows yet
 
-- **TPM and Windows Hello unlock.** The TPM slot uses the Linux TPM stack;
-  Windows needs its own backend (TBS or the Platform Crypto Provider) and a
-  Windows Hello slot. Password, security key and recovery code work.
 - **Memory hardening.** On Linux the daemon locks its memory and disables core
   dumps. On Windows keys can reach the page file and crash dumps for now.

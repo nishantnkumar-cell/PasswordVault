@@ -212,6 +212,18 @@ pub(crate) fn unwrap_slot(vault_id: &[u8; 16], kek: &Key, slot: &Keyslot) -> Res
     to_key(&pt).ok_or(Error::CorruptSlot)
 }
 
+/// The vault key of a locked vault, wrapped under a random key that lives
+/// only in `vaultd`'s memory, so that the vault can be opened again without
+/// a factor (quick unlock, format.md section 4.6). Never written to disk.
+pub struct ParkedKey {
+    vault_id: [u8; 16],
+    sealed: crypto::Sealed,
+}
+
+fn parked_aad(vault_id: &[u8; 16]) -> Vec<u8> {
+    [b"vault/parked-key/v1".as_slice(), vault_id].concat()
+}
+
 pub(crate) fn to_key(bytes: &[u8]) -> Option<Key> {
     let arr: [u8; 32] = bytes.try_into().ok()?;
     Some(Key::from_bytes(arr))
@@ -251,6 +263,29 @@ impl ParsedVault {
                 v.device = vault.device;
                 v
             }),
+        }
+    }
+
+    /// Open the vault again with a key from [`Vault::park`] and the wrap key
+    /// it was parked under (quick unlock). Like [`ParsedVault::open_with`],
+    /// fails with [`Error::DifferentKey`] if the key was rotated meanwhile.
+    pub fn resume(&self, parked: &ParkedKey, wrap: &HwKey) -> Result<Vault, Error> {
+        if self.header.vault_id != parked.vault_id {
+            return Err(Error::DifferentVault);
+        }
+        let key = Key::from_bytes(*wrap.as_bytes());
+        let pt = crypto::open(
+            &key,
+            &parked.sealed.nonce,
+            &parked.sealed.commit,
+            &parked.sealed.ciphertext,
+            &parked_aad(&parked.vault_id),
+        )
+        .map_err(|_| Error::WrongFactor)?;
+        let vault_key = to_key(&pt).ok_or(Error::WrongFactor)?;
+        match self.open_body(vault_key) {
+            Err(Error::HeaderTampered) => Err(Error::DifferentKey),
+            r => r,
         }
     }
 
@@ -347,6 +382,21 @@ impl Vault {
             removed_slots: Vec::new(),
             key_epoch: 0,
             device: 0,
+        })
+    }
+
+    /// Wrap this vault's key under `wrap`, for [`ParsedVault::resume`].
+    pub fn park(&self, wrap: &HwKey, rng: &mut dyn SecureRandom) -> Result<ParkedKey, Error> {
+        let key = Key::from_bytes(*wrap.as_bytes());
+        let sealed = crypto::seal(
+            rng,
+            &key,
+            &parked_aad(&self.vault_id),
+            self.vault_key.as_bytes(),
+        )?;
+        Ok(ParkedKey {
+            vault_id: self.vault_id,
+            sealed,
         })
     }
 

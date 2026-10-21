@@ -32,7 +32,7 @@ pub use merge::{MergeReport, Resolve};
 pub use recovery::RecoveryCode;
 pub use rng::{OsRandom, SecureRandom};
 pub use secret::HwKey;
-pub use vault::{ItemId, Unlock, Vault};
+pub use vault::{ItemId, ParkedKey, Unlock, Vault};
 
 #[cfg(test)]
 mod tests;

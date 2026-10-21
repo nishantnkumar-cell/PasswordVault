@@ -31,7 +31,7 @@ use tss_esapi::{Context, Error as TssError};
 use vault_core::HwKey;
 use zeroize::Zeroizing;
 
-use super::{HwResult, Tpm};
+use super::{HwResult, Tpm, WIN_TPM_HINT, WIN_TPM_MAGIC};
 
 /// The machine's TPM, via `TPM2TOOLS_TCTI` / `TCTI` if set, else `/dev/tpmrm0`.
 pub struct SystemTpm;
@@ -242,6 +242,9 @@ impl Tpm for SystemTpm {
     }
 
     fn unseal(&self, blob: &[u8], pin: Option<&str>, bind_pcr7: bool) -> HwResult<HwKey> {
+        if blob.starts_with(WIN_TPM_MAGIC) {
+            return Err(WIN_TPM_HINT.into());
+        }
         let (len, rest) = blob.split_at_checked(2).ok_or("TPM blob truncated")?;
         let len = u16::from_le_bytes([len[0], len[1]]) as usize;
         let (public, private) = rest.split_at_checked(len).ok_or("TPM blob truncated")?;
@@ -301,6 +304,12 @@ mod tests {
         }
         let blob = t.seal(&secret, None, false).unwrap();
         assert!(t.unseal(&blob, None, false).unwrap().ct_eq(&secret));
+
+        // A slot made on Windows is named as such, not reported as damaged.
+        let mut win = WIN_TPM_MAGIC.to_vec();
+        win.extend_from_slice(&[1, 0, 0]);
+        let msg = t.unseal(&win, None, false).err().unwrap();
+        assert!(msg.contains("made on Windows"), "{msg}");
 
         // Changing PCR 7 (as a Secure Boot change would) breaks the PCR-bound blob only.
         let bound = t.seal(&secret, None, true).unwrap();

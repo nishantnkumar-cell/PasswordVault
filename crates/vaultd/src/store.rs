@@ -24,6 +24,9 @@ struct Clients(Vec<(String, ClientScope, [u8; 32])>);
 #[derive(Serialize, Deserialize, Default)]
 struct SyncPath(Option<String>);
 
+#[derive(Serialize, Deserialize, Default)]
+struct QuickUnlock(u32);
+
 impl Store {
     /// Open the store, taking an exclusive lock so only one daemon writes.
     pub fn open(vault: PathBuf, state_dir: PathBuf) -> io::Result<Store> {
@@ -123,6 +126,15 @@ impl Store {
     pub fn set_sync_path(&self, path: Option<&Path>) -> io::Result<()> {
         let p = path.map(|p| p.to_string_lossy().into_owned());
         self.save("sync", &SyncPath(p))
+    }
+
+    /// Hours quick unlock lasts after a full unlock; 0 is off.
+    pub fn quick_unlock_hours(&self) -> u32 {
+        self.load::<QuickUnlock>("quick-unlock").0
+    }
+
+    pub fn set_quick_unlock_hours(&self, hours: u32) -> io::Result<()> {
+        self.save("quick-unlock", &QuickUnlock(hours))
     }
 
     /// The local vault file.
