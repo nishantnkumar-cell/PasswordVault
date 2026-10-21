@@ -1060,6 +1060,7 @@ impl Daemon {
                     urls: it.urls.iter().map(|u| u.url.clone()).collect(),
                     has_totp: it.totp.is_some(),
                     key: it.key.as_ref().map(describe_key),
+                    key_confirm: it.key.as_ref().is_some_and(KeyData::confirm),
                 });
             }
         }

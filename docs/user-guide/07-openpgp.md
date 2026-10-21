@@ -58,7 +58,9 @@ vault pgp pub me > me.asc
 ```
 
 Send `me.asc` to people who should write to you or check your signatures,
-or upload it to a key server or your website. It contains no secret.
+or upload it to a key server or your website. It contains no secret. In
+the desktop app, select the key under **SSH and PGP keys** and press
+**Copy public key** to copy the same armored block.
 
 Keep the public keys (*certificates*) other people send you as files, for
 example `friend.asc`, or import them with `vault-gpg --import friend.asc`
@@ -123,7 +125,8 @@ never ask.
 vault pgp confirm me off     # stop asking for this key; `on` turns it back on
 ```
 
-or create the key with `--no-confirm`. When several keys could decrypt a
+or untick **Ask before each use** on the key in the desktop app, or create
+the key with `--no-confirm`. When several keys could decrypt a
 message, keys that need no confirmation are tried first.
 
 ## Which kind of key

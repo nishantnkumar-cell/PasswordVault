@@ -118,6 +118,31 @@ Select an item to see it on the right.
 - **Edit** opens the form. **Delete** asks **Yes, delete** to confirm;
   there is no undo.
 
+### SSH and PGP keys
+
+![An SSH key's details](images/desktop-5-key.png)
+
+Keys you made or imported with `vault ssh` or `vault pgp`
+([chapter 6](06-ssh-and-git.md), [chapter 7](07-openpgp.md)) are listed with
+a **Key** tag. Selecting one shows:
+
+- **Key**: the type and fingerprint (for OpenPGP, also the name and email
+  it was made for). Compare the fingerprint with what a server or a friend
+  shows you.
+- **Public key**: the line to paste into a server's `authorized_keys` or
+  GitHub. **Copy public key** copies it. For an OpenPGP key it copies the
+  armored block (`-----BEGIN PGP PUBLIC KEY BLOCK-----`) to send to people
+  or upload to a key server. The public key is not secret.
+- **Ask before each use**: when ticked (the default), `vaultd` opens a
+  window to approve every signature or decryption with this key. Untick it
+  only for a key a program must use unattended, such as a deploy key;
+  then any program you run can use it while the vault is unlocked.
+
+The private key itself is never shown in the app. To move it elsewhere,
+use `vault ssh export` or `vault pgp export`, which ask you to prove an
+unlock method again. Keys have no websites, so there is no autofill box.
+Making a new key is done with the command line for now.
+
 **New item** asks which kind to make (**Login**, **Secure note**,
 **Card** or **Identity**) and opens an empty form for it. A login's form:
 
@@ -170,13 +195,24 @@ password** copies the result. New items use these settings when you press
 
 ## Unlock methods
 
-**Unlock methods**, under Tools in the sidebar, lists the vault's slots. **Remove** deletes one
-after a confirmation (this does not rotate the vault key; for a lost or
-stolen factor use `vault revoke`, see
+![The Unlock methods page](images/desktop-6-unlock-methods.png)
+
+**Unlock methods**, under Tools in the sidebar, lists every way the vault
+can be opened, one row each, with what it needs and the name you gave it.
+Any one of them unlocks the vault on its own.
+
+Under the list, a line counts them. With two or more it is green: losing
+one won't lock you out. With only one it turns orange as a reminder to add
+a recovery code or a second method, because if that one is lost, nothing
+can open the vault.
+
+**Remove** deletes a method after you press **Yes, remove** (this does not
+rotate the vault key; for a lost or stolen factor use `vault revoke`, see
 [chapter 2](02-unlocking.md#revoke-a-lost-or-stolen-factor)).
 
-Under **Add a method**, pick Password, Security key, TPM or Recovery code,
-give it a **Name**, and fill in what it asks:
+Under **Add a method**, pick Password, Security key, TPM or Recovery code.
+A line under the choices says what each one is for. Give it a **Name**,
+and fill in what it asks:
 
 - **Password:** the new password, twice.
 - **Security key:** your master password; tick **Also ask for the key's PIN
@@ -187,9 +223,25 @@ give it a **Name**, and fill in what it asks:
 
 Each new method is test-unlocked before the app reports success.
 
-On Windows the page also has **Quick unlock with Windows Hello**. Pick how
+On Windows the page also has a **Quick unlock with Windows Hello** box. Pick how
 long Windows Hello may unlock after each full unlock (Off, or 1 to 24
 hours) and press **Apply**; turning it on asks for Windows Hello once.
+
+## Sync
+
+**Sync**, under Tools in the sidebar, keeps the vault in step with your
+other devices through a folder that OneDrive, Google Drive, Dropbox or
+Syncthing keeps up to date. The page shows whether sync is on (green dot),
+which file it uses and when it last synced. See
+[chapter 10](10-sync.md) for setting it up, joining from a second device
+and what to do about conflicts.
+
+| | Linux | Windows | macOS |
+|---|---|---|---|
+| Key details, **Copy public key**, **Ask before each use** | Yes | Yes | Not yet (the app does not run on macOS yet) |
+| Security key and TPM rows under **Unlock methods** | Yes | Yes (Windows shows its own window for the security key's touch and PIN) | Not yet |
+| **Quick unlock with Windows Hello** box | Not shown | Yes | Not yet |
+| **Sync** page | Yes | Yes | Not yet |
 
 ## Good to know
 

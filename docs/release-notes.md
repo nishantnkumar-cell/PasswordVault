@@ -14,6 +14,38 @@ to work yet.
 
 ## Unreleased
 
+### Desktop app: key details, Unlock methods and Sync pages
+
+- **SSH and PGP keys show what you need.** Selecting a key now shows its
+  type and fingerprint, its public key with a **Copy public key** button
+  (the line for `authorized_keys` or GitHub, or the armored block for an
+  OpenPGP key), and an **Ask before each use** tick box that does the same
+  as `vault ssh confirm` and `vault pgp confirm`. The empty box and the
+  autofill box that keys used to show are gone. The private key is still
+  never shown. How to use it:
+  [SSH and PGP keys](user-guide/05-desktop-app.md#ssh-and-pgp-keys).
+- **Unlock methods page, redone.** Each method has its own row that says
+  what it needs (password, security key, this computer's TPM, recovery
+  code) instead of a raw slot ID. A line under the list says how many ways
+  you have to unlock, and turns orange when there is only one. Each choice
+  under **Add a method** explains itself before you fill it in. See
+  [Unlock methods](user-guide/05-desktop-app.md#unlock-methods).
+- **Sync page, redone.** A green or red dot shows at a glance whether sync
+  is on and working, "Last synced" reads like "3 seconds ago", and
+  conflicts and leftover copies are grouped in a **Needs a look** box. See
+  [chapter 10](user-guide/10-sync.md#turn-it-on-on-the-first-device).
+- **Steadier item details.** Only secrets (passwords, card numbers,
+  security codes, one-time codes) and keys use the code font; names,
+  usernames and dates use the normal font.
+- **Platforms.** Everything here works the same on Linux and Windows. The
+  Windows Hello box on the Unlock methods page shows only on Windows. The
+  app does not run on macOS yet.
+- **Not yet.** Making a new SSH or OpenPGP key still needs the command line
+  (`vault ssh new`, `vault pgp new`).
+- **For developers.** `ItemSummary` gains `key_confirm`, so clients can show
+  whether a key asks before each use. Clients and `vaultd` must be updated
+  together.
+
 ### TPM unlock and Windows Hello quick unlock on Windows
 
 - **TPM slots on Windows.** `vault add-slot tpm` (or **Unlock methods**,

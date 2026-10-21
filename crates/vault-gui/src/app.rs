@@ -12,7 +12,7 @@ use vault_core::origin::MatchMode;
 use vault_core::totp::TotpConfig;
 use vault_ipc::{
     ClientScope, ClientToken, GenerateOptions, ImportFormat, ItemId, ItemSummary, Request,
-    Response, Secret, SlotId, SlotInfo, StatusInfo, UnlockMethod, hex,
+    Response, Secret, SlotId, SlotInfo, StatusInfo, UnlockMethod,
 };
 use zeroize::Zeroizing;
 
@@ -89,6 +89,8 @@ enum Op {
     ListSlots,
     AddSlot,
     RemoveSlot(SlotId),
+    PublicKey(ItemId),
+    KeyConfirm,
     Sync,
     QuickUnlock,
 }
@@ -406,6 +408,8 @@ pub struct App {
     totp_pending: bool,
     edit: Option<Edit>,
     confirm_delete: bool,
+    /// The open key item's public half, to show and copy.
+    public_key: Option<(ItemId, String)>,
 
     gen_options: GenerateOptions,
     generated: Option<Secret>,
@@ -461,6 +465,7 @@ impl App {
             totp_pending: false,
             edit: None,
             confirm_delete: false,
+            public_key: None,
             gen_options: GenerateOptions {
                 length: 24,
                 symbols: true,
@@ -530,6 +535,7 @@ impl App {
         self.totp = None;
         self.edit = None;
         self.confirm_delete = false;
+        self.public_key = None;
         self.generated = None;
         self.slots.clear();
         self.slot_form = SlotForm::default();
@@ -679,6 +685,11 @@ impl App {
                         let pw = Zeroizing::new(item.password.clone());
                         self.copy(&pw, "Password");
                     }
+                    if self.items.iter().any(|i| i.id == id && i.key.is_some())
+                        && self.public_key.as_ref().is_none_or(|(k, _)| *k != id)
+                    {
+                        self.send(Op::PublicKey(id), Request::PublicKey { id });
+                    }
                     self.open = Some((id, item));
                     self.reveal = false;
                     self.confirm_delete = false;
@@ -724,6 +735,12 @@ impl App {
                 self.new_recovery = recovery_code;
                 self.notice = Some("Unlock method added.".into());
                 self.send(Op::ListSlots, Request::ListSlots);
+            }
+            (Op::PublicKey(id), Response::PublicKey(text)) => {
+                self.public_key = Some((id, text));
+            }
+            (Op::KeyConfirm, Response::Ok) => {
+                self.send(Op::ListItems, Request::ListItems);
             }
             (Op::RemoveSlot(_), Response::Ok) => {
                 self.confirm_remove = None;
@@ -947,51 +964,105 @@ impl App {
             text_field(ui, "File in the synced folder", &mut self.sync_path);
             ui.end_row();
         });
-        ui.label(
-            RichText::new(if cfg!(windows) {
-                r"For example C:\Users\you\OneDrive\vault.svault"
-            } else {
-                "For example /home/you/Dropbox/vault.svault"
-            })
-            .weak(),
-        );
+        ui.label(RichText::new(sync_example()).weak());
         let ok = self.busy.is_none() && !self.sync_path.trim().is_empty();
         ui.add_enabled(ok, egui::Button::new(button)).clicked() && ok
     }
 
     fn sync_page(&mut self, ui: &mut Ui) {
-        ui.heading("Sync");
-        ui.add_space(8.0);
-        ui.label(
+        page_header(
+            ui,
+            "Sync",
             "Keep this vault in step with your other devices through a folder that \
              OneDrive, Google Drive or Dropbox syncs. The file there is encrypted like \
              this one, and changes from each device are merged.",
         );
-        ui.add_space(8.0);
         let sync = self.status.as_ref().and_then(|(s, _)| s.sync.clone());
         let ok = self.busy.is_none();
-        match sync {
-            Some(sync) => {
-                egui::Grid::new("sync").num_columns(2).show(ui, |ui| {
-                    ui.label("File");
-                    ui.label(RichText::new(&sync.path).monospace());
-                    ui.end_row();
-                    ui.label("Last synced");
-                    ui.label(match sync.last_sync {
-                        Some(t) => {
-                            let ago = SystemTime::now()
-                                .duration_since(UNIX_EPOCH)
-                                .map_or(0, |d| d.as_secs())
-                                .saturating_sub(t);
-                            format!("{ago} s ago")
-                        }
-                        None => "not yet".into(),
-                    });
+        let Some(sync) = sync else {
+            theme::card().show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.horizontal(|ui| {
+                    status_dot(ui, theme::MUTED);
+                    ui.label(RichText::new("Sync is off").strong().color(theme::INK));
+                });
+                ui.add_space(8.0);
+                ui.label(
+                    RichText::new(
+                        "Pick a file inside the folder your sync app keeps up to date. If it \
+                         doesn't exist yet, the vault is copied there.",
+                    )
+                    .color(theme::MUTED),
+                );
+                ui.add_space(8.0);
+                egui::Grid::new("sync-path").num_columns(2).show(ui, |ui| {
+                    text_field(ui, "File in the synced folder", &mut self.sync_path);
                     ui.end_row();
                 });
-                if let Some(e) = &sync.error {
-                    ui.colored_label(ui.visuals().error_fg_color, format!("Problem: {e}"));
+                ui.label(RichText::new(sync_example()).small().color(theme::MUTED));
+                ui.add_space(8.0);
+                let ready = ok && !self.sync_path.trim().is_empty();
+                if theme::primary(ui, ready, "Turn on").clicked() && ready {
+                    let path = self.sync_path.trim().to_owned();
+                    self.act("Syncing…", Op::Sync, Request::SetSync { path: Some(path) });
                 }
+            });
+            return;
+        };
+        theme::card().show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            let (colour, state) = if sync.error.is_some() {
+                (theme::ERROR, "Sync is on, with a problem")
+            } else {
+                (theme::OK, "Sync is on")
+            };
+            ui.horizontal(|ui| {
+                status_dot(ui, colour);
+                ui.label(RichText::new(state).strong().color(theme::INK));
+            });
+            ui.add_space(10.0);
+            egui::Grid::new("sync")
+                .num_columns(2)
+                .spacing([16.0, 8.0])
+                .show(ui, |ui| {
+                    ui.label(RichText::new("File").color(theme::MUTED));
+                    ui.add(
+                        egui::Label::new(RichText::new(&sync.path).monospace().color(theme::INK))
+                            .wrap(),
+                    );
+                    ui.end_row();
+                    ui.label(RichText::new("Last synced").color(theme::MUTED));
+                    ui.label(
+                        RichText::new(match sync.last_sync {
+                            Some(t) => ago(SystemTime::now()
+                                .duration_since(UNIX_EPOCH)
+                                .map_or(0, |d| d.as_secs())
+                                .saturating_sub(t)),
+                            None => "not yet".into(),
+                        })
+                        .color(theme::INK),
+                    );
+                    ui.end_row();
+                });
+            if let Some(e) = &sync.error {
+                ui.add_space(8.0);
+                ui.colored_label(theme::ERROR, format!("Problem: {e}"));
+            }
+            ui.add_space(10.0);
+            ui.horizontal(|ui| {
+                if theme::primary(ui, ok, "Sync now").clicked() && ok {
+                    self.act("Syncing…", Op::Sync, Request::SyncNow);
+                }
+                if ui.add_enabled(ok, egui::Button::new("Turn off")).clicked() {
+                    self.act("Turning off…", Op::Sync, Request::SetSync { path: None });
+                }
+            });
+        });
+        if sync.conflicts > 0 || !sync.other_copies.is_empty() {
+            ui.add_space(12.0);
+            theme::card().show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                theme::caption(ui, "Needs a look");
                 if sync.conflicts > 0 {
                     ui.label(format!(
                         "{} item(s) were changed on two devices at once. Both versions are \
@@ -1006,21 +1077,7 @@ impl App {
                         sync.other_copies.join(", ")
                     ));
                 }
-                ui.horizontal(|ui| {
-                    if ui.add_enabled(ok, egui::Button::new("Sync now")).clicked() {
-                        self.act("Syncing…", Op::Sync, Request::SyncNow);
-                    }
-                    if ui.add_enabled(ok, egui::Button::new("Turn off")).clicked() {
-                        self.act("Turning off…", Op::Sync, Request::SetSync { path: None });
-                    }
-                });
-            }
-            None => {
-                if self.sync_form(ui, "Turn on") {
-                    let path = self.sync_path.trim().to_owned();
-                    self.act("Syncing…", Op::Sync, Request::SetSync { path: Some(path) });
-                }
-            }
+            });
         }
     }
 
@@ -1214,7 +1271,7 @@ impl App {
                 egui::CentralPanel::default().frame(page).show(ui, |ui| {
                     self.messages(ui);
                     egui::ScrollArea::vertical().show(ui, |ui| {
-                        theme::card().show(ui, |ui| self.slots_page(ui));
+                        self.slots_page(ui);
                     });
                 });
             }
@@ -1222,7 +1279,7 @@ impl App {
                 egui::CentralPanel::default().frame(page).show(ui, |ui| {
                     self.messages(ui);
                     egui::ScrollArea::vertical().show(ui, |ui| {
-                        theme::card().show(ui, |ui| self.sync_page(ui));
+                        self.sync_page(ui);
                     });
                 });
             }
@@ -1449,24 +1506,34 @@ impl App {
             return;
         };
         let id = *id;
-        let key = self
+        let (key, key_confirm) = self
             .items
             .iter()
             .find(|i| i.id == id)
-            .and_then(|i| i.key.clone());
+            .map_or((None, false), |i| (i.key.clone(), i.key_confirm));
+        let public_key = self
+            .public_key
+            .as_ref()
+            .filter(|(k, _)| *k == id)
+            .map(|(_, text)| text.clone());
         let reveal = self.reveal;
         let mut copy: Option<(Secret, String)> = None;
         let mut copy_code: Option<Secret> = None;
         let mut toggle_reveal = false;
         let mut edit = false;
         let mut delete = false;
+        let mut set_confirm = None;
 
         ui.horizontal(|ui| {
             theme::monogram(ui, &item.title, 52.0);
             ui.vertical(|ui| {
                 ui.heading(RichText::new(&item.title).strong().color(theme::INK));
-                let kind = if key.is_some() {
-                    "Key"
+                let kind = if let Some(k) = &key {
+                    if k.starts_with("OpenPGP") {
+                        "OpenPGP key"
+                    } else {
+                        "SSH key"
+                    }
                 } else {
                     item.kind.label()
                 };
@@ -1508,10 +1575,13 @@ impl App {
                 return;
             }
             ui.label(RichText::new(label).color(theme::MUTED));
+            // Code font only for secrets, where telling 0 from O matters.
             if secret && !reveal {
                 ui.label(RichText::new("••••••••••••").monospace());
-            } else {
+            } else if secret {
                 ui.label(RichText::new(value).monospace().color(theme::INK));
+            } else {
+                ui.label(RichText::new(value).color(theme::INK));
             }
             ui.horizontal(|ui| {
                 if secret && ui.button(if reveal { "Hide" } else { "Show" }).clicked() {
@@ -1529,7 +1599,9 @@ impl App {
             });
             ui.end_row();
         };
+        // Keys and secure notes keep their content in cards of their own.
         let has_rows = match item.kind {
+            _ if key.is_some() => !item.fields.is_empty(),
             ItemKind::Note => !item.fields.is_empty(),
             _ => true,
         };
@@ -1629,7 +1701,7 @@ impl App {
             });
         }
 
-        if item.kind == ItemKind::Login {
+        if item.kind == ItemKind::Login && key.is_none() {
             ui.add_space(12.0);
             theme::card().show(ui, |ui| {
                 ui.set_width(ui.available_width());
@@ -1657,14 +1729,66 @@ impl App {
         }
 
         if let Some(k) = &key {
-            ui.add_space(12.0);
+            if has_rows {
+                ui.add_space(12.0);
+            }
             theme::card().show(ui, |ui| {
                 ui.set_width(ui.available_width());
-                theme::caption(ui, "Private key");
-                ui.label(RichText::new(k).monospace().color(theme::INK));
+                theme::caption(ui, "Key");
+                ui.add(egui::Label::new(RichText::new(k).monospace().color(theme::INK)).wrap());
+                ui.add_space(10.0);
+                theme::caption(ui, "Public key");
+                match &public_key {
+                    Some(text) => {
+                        // An SSH key is one line; an OpenPGP one is a block
+                        // of base64 that tells a reader nothing.
+                        if text.starts_with("-----BEGIN") {
+                            ui.label(
+                                RichText::new(
+                                    "An armored OpenPGP public key, ready to send to others \
+                                     or publish.",
+                                )
+                                .color(theme::TEXT),
+                            );
+                        } else {
+                            ui.add(
+                                egui::Label::new(
+                                    RichText::new(text.trim()).monospace().color(theme::TEXT),
+                                )
+                                .truncate(),
+                            );
+                        }
+                        ui.add_space(4.0);
+                        if theme::primary(ui, true, "Copy public key").clicked() {
+                            copy = Some((Zeroizing::new(text.clone()), "Public key".to_owned()));
+                        }
+                    }
+                    None => {
+                        ui.spinner();
+                    }
+                }
+                ui.add_space(10.0);
+                let mut ask = key_confirm;
+                let enabled = self.busy.is_none();
+                if ui
+                    .add_enabled(enabled, egui::Checkbox::new(&mut ask, "Ask before each use"))
+                    .changed()
+                {
+                    set_confirm = Some(ask);
+                }
+                ui.label(
+                    RichText::new(if key_confirm {
+                        "vaultd opens a window to approve every signature or decryption."
+                    } else {
+                        "Programs you run can use this key without asking while the vault is unlocked."
+                    })
+                    .small()
+                    .color(theme::MUTED),
+                );
+                ui.add_space(6.0);
                 ui.label(
                     RichText::new(
-                        "The private key never leaves the vault: vaultd signs and decrypts for you.",
+                        "The private key is never shown: vaultd signs and decrypts for you.",
                     )
                     .color(theme::MUTED),
                 );
@@ -1699,6 +1823,13 @@ impl App {
 
         if toggle_reveal {
             self.reveal = !self.reveal;
+        }
+        if let Some(confirm) = set_confirm {
+            self.act(
+                "Saving…",
+                Op::KeyConfirm,
+                Request::SetKeyConfirm { id, confirm },
+            );
         }
         if edit {
             self.edit = self.open.as_ref().map(|(id, i)| Edit::from_item(*id, i));
@@ -2156,38 +2287,56 @@ impl App {
     }
 
     fn slots_page(&mut self, ui: &mut Ui) {
-        ui.heading("Unlock methods");
-        ui.add_space(8.0);
+        page_header(
+            ui,
+            "Unlock methods",
+            "Each method holds its own locked copy of the vault key, so any one of them \
+             opens the vault. Removing one never touches your items.",
+        );
         let mut remove = None;
-        egui::Grid::new("slots")
-            .num_columns(4)
-            .spacing([12.0, 8.0])
-            .show(ui, |ui| {
-                for s in &self.slots {
-                    ui.label(match s.kind.as_str() {
-                        "password" => "Password",
-                        "fido2" => "Password + security key",
-                        "tpm" => "Password + TPM",
-                        "recovery" => "Recovery code",
-                        k => k,
-                    });
-                    ui.label(&s.label);
-                    ui.label(RichText::new(&hex(&s.id)[..8]).monospace());
-                    if self.confirm_remove == Some(s.id) {
+        theme::card().show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            for (n, s) in self.slots.iter().enumerate() {
+                if n > 0 {
+                    ui.separator();
+                }
+                let (name, about) = slot_text(&s.kind);
+                ui.horizontal(|ui| {
+                    theme::monogram(ui, name, 36.0);
+                    ui.vertical(|ui| {
+                        ui.spacing_mut().item_spacing.y = 2.0;
+                        ui.spacing_mut().interact_size.y = 0.0;
                         ui.horizontal(|ui| {
-                            if ui.button("Yes, remove").clicked() {
-                                remove = Some(s.id);
+                            ui.label(RichText::new(name).strong().color(theme::INK));
+                            if !s.label.is_empty() && !s.label.eq_ignore_ascii_case(name) {
+                                ui.label(RichText::new(&s.label).color(theme::MUTED));
                             }
+                        });
+                        ui.label(RichText::new(about).small().color(theme::MUTED));
+                    });
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if self.confirm_remove == Some(s.id) {
                             if ui.button("Cancel").clicked() {
                                 self.confirm_remove = None;
                             }
-                        });
-                    } else if ui.button("Remove").clicked() {
-                        self.confirm_remove = Some(s.id);
-                    }
-                    ui.end_row();
-                }
-            });
+                            if ui
+                                .add(
+                                    egui::Button::new(
+                                        RichText::new("Yes, remove").color(egui::Color32::WHITE),
+                                    )
+                                    .fill(theme::ERROR),
+                                )
+                                .clicked()
+                            {
+                                remove = Some(s.id);
+                            }
+                        } else if ui.button("Remove").clicked() {
+                            self.confirm_remove = Some(s.id);
+                        }
+                    });
+                });
+            }
+        });
         if let Some(slot) = remove {
             self.act(
                 "Removing…",
@@ -2195,21 +2344,65 @@ impl App {
                 Request::RemoveSlot { slot },
             );
         }
+        ui.add_space(8.0);
+        match self.slots.len() {
+            0 => {}
+            1 => {
+                ui.colored_label(
+                    theme::WARN,
+                    "You have only one way to unlock. If you lose it, nothing can open the \
+                     vault: add a recovery code or a second method below.",
+                );
+            }
+            n => {
+                ui.colored_label(
+                    theme::OK,
+                    format!("You have {n} ways to unlock, so losing one won't lock you out."),
+                );
+            }
+        }
         ui.label(
-            "Removing a method doesn't change the vault key. To shut out a lost key or a \
-             leaked password, use `vault revoke` as well.",
+            RichText::new(
+                "Removing a method doesn't change the vault key. To shut out a lost key or a \
+                 leaked password, also run vault revoke.",
+            )
+            .small()
+            .color(theme::MUTED),
         );
         if let Some(code) = &self.new_recovery {
-            ui.add_space(8.0);
-            ui.label("New recovery code, shown only once. Write it down and keep it offline:");
-            ui.label(RichText::new(code.as_str()).monospace().size(18.0));
-            if ui.button("I've written it down").clicked() {
+            ui.add_space(12.0);
+            let mut done = false;
+            theme::card().fill(theme::ACCENT_WEAK).show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.label(
+                    RichText::new(
+                        "New recovery code, shown only once. Write it down and keep it offline:",
+                    )
+                    .color(theme::INK),
+                );
+                ui.label(RichText::new(code.as_str()).monospace().size(18.0));
+                done = theme::primary(ui, true, "I've written it down").clicked();
+            });
+            if done {
                 self.new_recovery = None;
             }
         }
         self.quick_unlock_form(ui);
-        ui.separator();
-        ui.heading("Add a method");
+        ui.add_space(12.0);
+        theme::card().show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            self.add_slot_form(ui);
+        });
+    }
+
+    fn add_slot_form(&mut self, ui: &mut Ui) {
+        ui.label(
+            RichText::new("Add a method")
+                .strong()
+                .size(16.0)
+                .color(theme::INK),
+        );
+        ui.add_space(6.0);
         let f = &mut self.slot_form;
         ui.horizontal_wrapped(|ui| {
             ui.selectable_value(&mut f.kind, SlotKind::Password, "Password");
@@ -2217,6 +2410,28 @@ impl App {
             ui.selectable_value(&mut f.kind, SlotKind::Tpm, "TPM");
             ui.selectable_value(&mut f.kind, SlotKind::Recovery, "Recovery code");
         });
+        ui.label(
+            RichText::new(match f.kind {
+                SlotKind::Password => {
+                    "Another master password, for example one to give a family member."
+                }
+                SlotKind::SecurityKey => {
+                    "A FIDO2 security key (YubiKey, Nitrokey, Titan and others) that you touch \
+                     after typing the password. Plug it in before you press Add."
+                }
+                SlotKind::Tpm => {
+                    "The TPM chip in this computer, together with the password. It works only \
+                     on this computer and this operating system."
+                }
+                SlotKind::Recovery => {
+                    "A code to print and keep offline. It opens the vault on its own if you \
+                     lose everything else."
+                }
+            })
+            .small()
+            .color(theme::MUTED),
+        );
+        ui.add_space(6.0);
         let mut submit = false;
         egui::Grid::new("add-slot").num_columns(2).show(ui, |ui| {
             text_field(ui, "Name", &mut f.label);
@@ -2249,8 +2464,9 @@ impl App {
             }
             _ => {}
         }
+        ui.add_space(6.0);
         let ok = self.busy.is_none();
-        submit |= ui.add_enabled(ok, egui::Button::new("Add")).clicked();
+        submit |= theme::primary(ui, ok, "Add").clicked();
         if !(submit && ok) {
             return;
         }
@@ -2307,44 +2523,52 @@ impl App {
         if !q.supported {
             return;
         }
-        ui.separator();
-        ui.heading("Quick unlock with Windows Hello");
-        ui.label(
-            "After you unlock with your password (or another method), Windows Hello can \
+        ui.add_space(12.0);
+        theme::card().show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.label(
+                RichText::new("Quick unlock with Windows Hello")
+                    .strong()
+                    .size(16.0)
+                    .color(theme::INK),
+            );
+            ui.label(
+                "After you unlock with your password (or another method), Windows Hello can \
              unlock the vault again when it locks, until the time below runs out or the \
              computer restarts. Then the password is needed again.",
-        );
-        let hours = self
-            .quick_hours
-            .get_or_insert(if q.hours == 0 { 8 } else { q.hours });
-        let name = |h: u32| match h {
-            0 => "Off".to_string(),
-            1 => "1 hour".to_string(),
-            h => format!("{h} hours"),
-        };
-        ui.horizontal(|ui| {
-            egui::ComboBox::from_id_salt("quick-hours")
-                .selected_text(name(*hours))
-                .show_ui(ui, |ui| {
-                    for h in [0, 1, 2, 4, 8, 12, 24] {
-                        ui.selectable_value(hours, h, name(h));
-                    }
-                });
-        });
-        let picked = *hours;
-        let ok = self.busy.is_none() && picked != q.hours;
-        if ui.add_enabled(ok, egui::Button::new("Apply")).clicked() {
-            let busy = if picked == 0 {
-                "Turning quick unlock off…"
-            } else {
-                "Confirm it's you in the Windows Security window…"
-            };
-            self.act(
-                busy,
-                Op::QuickUnlock,
-                Request::SetQuickUnlock { hours: picked },
             );
-        }
+            let hours = self
+                .quick_hours
+                .get_or_insert(if q.hours == 0 { 8 } else { q.hours });
+            let name = |h: u32| match h {
+                0 => "Off".to_string(),
+                1 => "1 hour".to_string(),
+                h => format!("{h} hours"),
+            };
+            ui.horizontal(|ui| {
+                egui::ComboBox::from_id_salt("quick-hours")
+                    .selected_text(name(*hours))
+                    .show_ui(ui, |ui| {
+                        for h in [0, 1, 2, 4, 8, 12, 24] {
+                            ui.selectable_value(hours, h, name(h));
+                        }
+                    });
+            });
+            let picked = *hours;
+            let ok = self.busy.is_none() && picked != q.hours;
+            if theme::primary(ui, ok, "Apply").clicked() && ok {
+                let busy = if picked == 0 {
+                    "Turning quick unlock off…"
+                } else {
+                    "Confirm it's you in the Windows Security window…"
+                };
+                self.act(
+                    busy,
+                    Op::QuickUnlock,
+                    Request::SetQuickUnlock { hours: picked },
+                );
+            }
+        });
     }
 }
 
@@ -2480,4 +2704,64 @@ fn text_field(ui: &mut Ui, label: &str, text: &mut String) {
     let l = ui.label(label);
     ui.add(TextEdit::singleline(text).desired_width(240.0))
         .labelled_by(l.id);
+}
+
+/// A page's title and what the page is for.
+fn page_header(ui: &mut Ui, title: &str, about: &str) {
+    ui.label(RichText::new(title).strong().size(22.0).color(theme::INK));
+    ui.add_space(2.0);
+    ui.label(RichText::new(about).color(theme::MUTED));
+    ui.add_space(14.0);
+}
+
+/// A small filled circle, as in the sidebar's lock status.
+fn status_dot(ui: &mut Ui, colour: egui::Color32) {
+    let (rect, _) = ui.allocate_exact_size(Vec2::splat(10.0), egui::Sense::hover());
+    ui.painter().circle_filled(rect.center(), 4.0, colour);
+}
+
+/// An example path for the synced file on this system.
+fn sync_example() -> &'static str {
+    if cfg!(windows) {
+        r"For example C:\Users\you\OneDrive\vault.svault"
+    } else if cfg!(target_os = "macos") {
+        "For example /Users/you/Dropbox/vault.svault"
+    } else {
+        "For example /home/you/Dropbox/vault.svault"
+    }
+}
+
+/// "12 seconds ago", "5 minutes ago", "3 hours ago".
+fn ago(secs: u64) -> String {
+    let (n, unit) = match secs {
+        0..60 => (secs, "second"),
+        60..3600 => (secs / 60, "minute"),
+        3600..86400 => (secs / 3600, "hour"),
+        _ => (secs / 86400, "day"),
+    };
+    if n == 1 {
+        format!("1 {unit} ago")
+    } else {
+        format!("{n} {unit}s ago")
+    }
+}
+
+/// A slot kind's name and what it needs.
+fn slot_text(kind: &str) -> (&'static str, &'static str) {
+    match kind {
+        "password" => ("Password", "Your master password"),
+        "fido2" => (
+            "Security key",
+            "Your master password, then a touch on the key (and its PIN if set)",
+        ),
+        "tpm" => (
+            "This device (TPM)",
+            "Your master password and this computer's TPM chip; works only on this computer",
+        ),
+        "recovery" => (
+            "Recovery code",
+            "The code on your printed recovery sheet; keep it somewhere safe and offline",
+        ),
+        _ => ("Other", "A method this app doesn't know yet"),
+    }
 }
