@@ -290,6 +290,8 @@ pub struct ItemSummary {
     pub has_totp: bool,
     /// The item's key, if any: algorithm and fingerprint.
     pub key: Option<String>,
+    /// Whether each use of the item's key needs the user's approval.
+    pub key_confirm: bool,
 }
 
 /// Daemon state.

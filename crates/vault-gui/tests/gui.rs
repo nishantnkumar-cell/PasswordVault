@@ -260,7 +260,10 @@ fn says_when_the_daemon_is_not_running() {
 
 /// Create a vault through the window and land on the unlocked screen.
 fn created(dir: &Path, idle: Duration, clip: FakeClip) -> Harness<'static, App> {
-    let sock = start(dir, idle);
+    created_on(start(dir, idle), dir, clip)
+}
+
+fn created_on(sock: PathBuf, dir: &Path, clip: FakeClip) -> Harness<'static, App> {
     let pw = password();
     let mut h = window(sock, dir.join("token"), clip);
     wait_for(&mut h, Screen::Create);
@@ -624,4 +627,56 @@ fn turns_on_sync_and_a_second_device_joins() {
     click(&mut g, "Pair");
     wait_for(&mut g, Screen::Unlocked);
     assert!(other.join("data/vault.svault").exists());
+}
+
+#[test]
+fn key_shows_its_public_half_and_asks_before_use() {
+    use vault_ipc::{Envelope, KeyKind, Request, Response};
+    let dir = tempdir();
+    let (sock, d) = start_daemon(&dir, Duration::from_secs(300));
+    let clip = FakeClip::default();
+    let mut h = created_on(sock, &dir, clip.clone());
+
+    // A key made outside the window, as `vault key generate` would.
+    let token: [u8; 32] = std::fs::read(dir.join("token"))
+        .unwrap()
+        .try_into()
+        .unwrap();
+    let r = d.lock().unwrap().handle(Envelope {
+        token: Some(zeroize::Zeroizing::new(token)),
+        request: Request::GenerateKey {
+            title: "Deploy key".into(),
+            kind: KeyKind::SshEd25519,
+            confirm: false,
+        },
+    });
+    assert!(matches!(r, Response::ItemSaved { .. }));
+
+    // The window notices the change on its next status check.
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while h.state().items().is_empty() {
+        assert!(Instant::now() < deadline, "key never listed");
+        h.step();
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    settle(&mut h);
+    h.get_by_role_and_label(Role::Button, "Deploy key Key")
+        .click();
+    h.step();
+    settle(&mut h);
+    assert!(h.query_by_label("SSH key").is_some());
+    // Keys don't fill websites, so there is no autofill card.
+    assert!(h.query_by_label_contains("AUTOFILL").is_none());
+
+    click(&mut h, "Copy public key");
+    let copied = clip.0.lock().unwrap().clone().expect("copied");
+    assert!(copied.starts_with("ssh-ed25519 "), "{copied}");
+
+    assert!(!h.state().items()[0].key_confirm);
+    h.get_by_role_and_label(Role::CheckBox, "Ask before each use")
+        .click();
+    h.step();
+    settle(&mut h);
+    assert_eq!(h.state().error(), None);
+    assert!(h.state().items()[0].key_confirm);
 }

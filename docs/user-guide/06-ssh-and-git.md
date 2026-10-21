@@ -57,6 +57,10 @@ You can name a key by its title or its ID. Paste the line into:
 - GitHub: Settings, **SSH and GPG keys**, **New SSH key**, type
   **Authentication Key**. GitLab: Preferences, **SSH Keys**.
 
+In the desktop app, choose **SSH and PGP keys** in the sidebar, select the
+key and press **Copy public key**
+([chapter 5](05-desktop-app.md#ssh-and-pgp-keys)).
+
 ## 3. Point your shell at the vault's agent
 
 **Linux:**
@@ -115,7 +119,8 @@ To stop being asked for one key:
 vault ssh confirm laptop off       # and `on` to turn it back on
 ```
 
-or create it with `--no-confirm`. Without confirmation, any program running
+or untick **Ask before each use** on the key in the desktop app, or create
+it with `--no-confirm`. Without confirmation, any program running
 as you can use the key while the vault is unlocked, just as with a key
 loaded into the usual `ssh-agent`.
 

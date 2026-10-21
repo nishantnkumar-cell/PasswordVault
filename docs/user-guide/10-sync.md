@@ -49,6 +49,14 @@ vault sync on ~/Dropbox/vault.svault
 or in the desktop app choose **Sync** under *Tools* in the sidebar, type
 the path in **File in the synced folder** and press **Turn on**.
 
+![The Sync page with sync turned on](images/desktop-7-sync.png)
+
+The page then shows a green **Sync is on**, the file, and when the vault
+last synced, with **Sync now** and **Turn off**. If something goes wrong
+(the folder is missing, say) the dot turns red and the problem is spelled
+out under it. Items changed on two devices at once, and leftover copies
+your sync app made, are listed in a **Needs a look** box below.
+
 Secret Vault writes your vault to that file at once. The status box at the
 top of the sidebar now says **Synced**.
 

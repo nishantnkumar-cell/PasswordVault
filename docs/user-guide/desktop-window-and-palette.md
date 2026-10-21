@@ -53,8 +53,9 @@ Once unlocked, the window has three columns.
      item list. *One-time codes* shows only items with a two-factor code
      set up; *SSH and PGP keys* shows only keys.
    - **Tools**: **Generator** (make a strong password), **Import** (bring
-     items in from Bitwarden or a browser export) and **Unlock methods**
-     (add or remove ways to unlock).
+     items in from Bitwarden or a browser export), **Unlock methods**
+     (add or remove ways to unlock) and **Sync** (keep the vault in step
+     with your other devices).
    - **Lock** at the bottom locks the vault straight away.
 2. **Item list (middle).** Type in **Search** to filter by title, user
    name or website. Each row shows the title and, under it, the user name,
@@ -80,9 +81,11 @@ Once unlocked, the window has three columns.
   fill this item on. *This site only* means exactly that address; *the
   whole domain* also covers its subdomains. An item with no websites is
   never offered for autofill.
-- For SSH and PGP keys, the **Private key** card shows the key type and
-  fingerprint. The private key itself is never shown: vaultd signs and
-  decrypts for you.
+- For SSH and PGP keys, the **Key** card shows the key type and
+  fingerprint, the public key with a **Copy public key** button, and an
+  **Ask before each use** tick box. The private key itself is never shown:
+  vaultd signs and decrypts for you. See
+  [SSH and PGP keys](05-desktop-app.md#ssh-and-pgp-keys).
 - **Edit** and **Delete** sit at the top right. Delete asks you to confirm.
 
 ## The command palette (Ctrl K)
