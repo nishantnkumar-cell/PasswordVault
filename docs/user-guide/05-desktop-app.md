@@ -122,9 +122,9 @@ Select an item to see it on the right.
 
 ![An SSH key's details](images/desktop-5-key.png)
 
-Keys you made or imported with `vault ssh` or `vault pgp`
-([chapter 6](06-ssh-and-git.md), [chapter 7](07-openpgp.md)) are listed with
-a **Key** tag. Selecting one shows:
+Keys you made in the app, or made or imported with `vault ssh` or
+`vault pgp` ([chapter 6](06-ssh-and-git.md), [chapter 7](07-openpgp.md)),
+are listed with a **Key** tag. Selecting one shows:
 
 - **Key**: the type and fingerprint (for OpenPGP, also the name and email
   it was made for). Compare the fingerprint with what a server or a friend
@@ -141,7 +141,68 @@ a **Key** tag. Selecting one shows:
 The private key itself is never shown in the app. To move it elsewhere,
 use `vault ssh export` or `vault pgp export`, which ask you to prove an
 unlock method again. Keys have no websites, so there is no autofill box.
-Making a new key is done with the command line for now.
+
+### Make a new key
+
+The key is made inside `vaultd`, the vault's background service. Its
+private half goes straight into the vault and never reaches the app, the
+screen or a file. You need the vault unlocked.
+
+**An SSH key**, to log in to servers and git hosts or to sign git commits:
+
+![The New SSH key form](images/desktop-8-new-ssh-key.png)
+
+1. Press **New item** at the top of the item list and choose **SSH key**
+   (or press Ctrl K and run **New SSH key**).
+2. **Title**: what the key is for, such as "Laptop", "GitHub" or "Backup
+   server". Use one key per computer or service, so you can remove one
+   without touching the others.
+3. **Kind of key**: keep **Ed25519**. Choose **ECDSA P-256** only for an
+   old server or a device that refuses Ed25519. RSA keys can't be made or
+   imported.
+4. **Ask before each use** is ticked: each time a program wants to use the
+   key, a window asks you first. Untick it only for a key that a script or
+   service must use with nobody at the screen. You can change it later on
+   the key's page.
+5. Press **Make key**. The new key opens. Press **Copy public key** and
+   paste the line into the server's `~/.ssh/authorized_keys` or GitHub's
+   **Settings → SSH and GPG keys**. Then point `ssh` at the vault
+   ([chapter 6, step 3](06-ssh-and-git.md#3-point-your-shell-at-the-vaults-agent)).
+
+**An OpenPGP key**, to encrypt and sign files and email, or sign git
+commits:
+
+![The New OpenPGP key form](images/desktop-9-new-pgp-key.png)
+
+1. Press **New item** and choose **OpenPGP key** (or Ctrl K, **New
+   OpenPGP key**).
+2. **Name**: the name people will see on the key, such as "Alex Example".
+3. **Email**: the address the key is for, such as alex@example.com.
+   Optional, but mail programs and git find your key by it.
+4. **Title**: the key's name in your vault and in `vault pgp` commands.
+   Leave it empty to use the name.
+5. **Kind of key**:
+   - **Classic** (recommended): works with GnuPG, Thunderbird and every
+     current OpenPGP program.
+   - **Post-quantum**: also safe against future quantum computers, for
+     secrets that must stay secret for many years. GnuPG 2.4 and most mail
+     programs can't read it yet, so only use it with people whose software
+     can. See [Which kind of key](07-openpgp.md#which-kind-of-key).
+6. **Ask before each use**, as for SSH keys.
+7. Press **Make key**, then **Copy public key** and send the block to the
+   people who will write to you, or publish it.
+
+If something is missing, the form says so in red at the top (for
+example "Type the name the key is for." or "That email address doesn't
+look right.") and nothing is made. **Cancel** closes the form.
+
+Importing an existing key and exporting a key's private half still use the
+command line (`vault ssh import`/`export`, `vault pgp import`/`export`), as
+do encrypting, decrypting and signing.
+
+Platforms: making keys works the same on Linux and Windows. On Windows the
+vault's SSH agent is a named pipe, which the built-in OpenSSH client uses
+([chapter 6](06-ssh-and-git.md)). The app does not run on macOS yet.
 
 **New item** asks which kind to make (**Login**, **Secure note**,
 **Card** or **Identity**) and opens an empty form for it. A login's form:

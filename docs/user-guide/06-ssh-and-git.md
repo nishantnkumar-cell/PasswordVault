@@ -24,7 +24,14 @@ RSA keys are not supported, for creating or for importing.
 
 The vault must be unlocked.
 
-**Make a new key** (Ed25519, the modern default):
+**Make a new key in the desktop app:** press **New item**, then **SSH
+key**. Type a **Title** (the computer or service the key is for, such as
+"Laptop" or "GitHub"), keep **Ed25519** unless a server refuses it (then
+pick **ECDSA P-256**), and press **Make key**. The new key opens with its
+public key ready to copy. See
+[Make a new key](05-desktop-app.md#make-a-new-key).
+
+**Or on the command line** (Ed25519, the modern default):
 
 ```sh
 vault ssh new laptop
@@ -174,8 +181,9 @@ protect the file.
 - No RSA keys.
 - `ssh-add` cannot add keys to the vault's agent or remove them; manage
   keys with `vault ssh`.
-- The desktop app lists key items with their type and fingerprint but
-  cannot create, import or export keys. `vault show` and the app never see
-  the private key, and editing the item keeps it.
+- The desktop app can make new keys and copy their public half, but
+  importing and exporting keys still needs `vault ssh import` and
+  `vault ssh export`. `vault show` and the app never see the private key,
+  and editing the item keeps it.
 - Change the agent's address with `vaultd --ssh-agent PATH`, or turn it off
   with `vaultd --no-ssh-agent`.

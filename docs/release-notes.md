@@ -14,6 +14,30 @@ to work yet.
 
 ## Unreleased
 
+### Make SSH and OpenPGP keys in the desktop app
+
+- **New keys without the command line.** **New item** now also offers
+  **SSH key** and **OpenPGP key** (the Ctrl K palette has **New SSH key**
+  and **New OpenPGP key** too). A short form asks for a title (and, for
+  OpenPGP, your name and email), the kind of key and whether to ask before
+  each use; **Make key** makes it and opens it with **Copy public key**
+  ready. The key is made inside `vaultd`, so its private half never reaches
+  the app, the screen or a file.
+- **The same choices as the command line.** SSH: Ed25519 (recommended) or
+  ECDSA P-256, like `vault ssh new [--ecdsa]`. OpenPGP: classic (v4
+  Ed25519/Curve25519, works with GnuPG and Thunderbird) or post-quantum (v6
+  ML-DSA-65 + Ed25519 and ML-KEM-768 + X25519, which GnuPG 2.4 cannot
+  read), like `vault pgp new [--pq]`. Each choice explains itself on the
+  form. **Ask before each use** is ticked by default, as on the command
+  line.
+- **How to use it:**
+  [Make a new key](user-guide/05-desktop-app.md#make-a-new-key).
+- **Platforms.** Works the same on Linux and Windows. The app does not run
+  on macOS yet.
+- **Not yet.** Importing existing keys, exporting a private key, and
+  encrypting, decrypting or signing with OpenPGP still use `vault ssh` and
+  `vault pgp`.
+
 ### Desktop app: key details, Unlock methods and Sync pages
 
 - **SSH and PGP keys show what you need.** Selecting a key now shows its
@@ -40,8 +64,6 @@ to work yet.
 - **Platforms.** Everything here works the same on Linux and Windows. The
   Windows Hello box on the Unlock methods page shows only on Windows. The
   app does not run on macOS yet.
-- **Not yet.** Making a new SSH or OpenPGP key still needs the command line
-  (`vault ssh new`, `vault pgp new`).
 - **For developers.** `ItemSummary` gains `key_confirm`, so clients can show
   whether a key asks before each use. Clients and `vaultd` must be updated
   together.
@@ -84,9 +106,9 @@ Known gaps: while quick unlock is available, the vault key stays in
 `vaultd`'s memory (encrypted, with the key to it protected by Windows), so
 malware running as you could still reach it, as it could while the vault
 is unlocked. The quick unlock time counts in wall-clock time, so time
-asleep counts too. CI runners have no TPM or Windows Hello. The TPM slot
-was checked on a real Windows 11 PC; Windows Hello was checked as far as
-its prompt opening, not yet with a confirmed face, fingerprint or PIN.
+asleep counts too. CI runners have no TPM or Windows Hello. Both the TPM
+slot and Windows Hello quick unlock were checked on a real Windows 11 PC,
+including a quick unlock confirmed with a real Windows Hello check.
 
 How to use it: [Add the TPM](user-guide/02-unlocking.md#add-the-tpm) and
 [Quick unlock with Windows Hello](user-guide/02-unlocking.md#quick-unlock-with-windows-hello-windows).
