@@ -100,7 +100,18 @@ Out of scope for v1. Root can read `vaultd` memory while unlocked. The vault is 
 
 ### A6, quantum adversary
 
-v1 uses only symmetric primitives with 256-bit keys (XChaCha20-Poly1305, HKDF-SHA256, HMAC-SHA256, Argon2id). FIDO2 and TPM use classical ECC internally, but their outputs are mixed with the password into symmetric KEKs. No public-key cryptography protects stored data in v1. Status: M. Public-key flows (pairing, sharing, sync, release signing) are post-v1 and must use hybrid PQ (brief section 11).
+The attacker copies the vault file today (for example from a sync folder or a backup) and waits for a quantum computer.
+
+| What | Protection | Status |
+| --- | --- | --- |
+| Vault file, items, keyslots, recovery code, sync copies | Symmetric only, 256-bit keys: XChaCha20-Poly1305, HKDF-SHA256, HMAC-SHA256, Argon2id | M |
+| FIDO2 slot | hmac-secret: the key's secret is symmetric and never in the file. CTAP's PIN protocol uses ECDH P-256 on the USB link, so a recorded USB trace could be opened later | M at rest; bus accepted (CTAP spec) |
+| TPM slot, Linux and Windows (`VWTPM2`) | Sealed object, private part under the TPM's own AES key. The session salt uses the storage key's ECC or RSA, so a recorded TPM bus trace could be opened later (discrete TPMs only; firmware TPMs have no bus) | M at rest; bus accepted |
+| Windows TPM slot made by earlier versions (`VWTPM1`) | RSA-2048 wrap with the public key in the file: breaking it leaves only the password | Accepted for old slots; flagged in `vault slots` and the app, replaced by enrolling again and revoking |
+| OpenPGP keys | `vault pgp new --pq`: ML-DSA-65 + Ed25519, ML-KEM-768 + X25519 (RFC 9980). Classic keys, and messages encrypted to them, are not post-quantum | M with `--pq` |
+| SSH keys | Ed25519, ECDSA P-256 signatures. A signature cannot be harvested; a quantum attacker with your public key could later forge logins. Key exchange is the ssh client's (OpenSSH 10 uses ML-KEM hybrid by default) | Accepted until OpenSSH has a post-quantum key type |
+| Pairing, browser host, IPC | Random tokens over local sockets, no public keys | M |
+| Sharing, device enrollment, phone pairing, release signing | Not built. Must use hybrid PQ when built: X-Wing (ML-KEM-768 + X25519) for the reserved `RecipientHybrid` slot, ML-DSA-65 + Ed25519 for signatures (brief section 11) | Open |
 
 ## 6. Memory and process hygiene
 
