@@ -13,7 +13,9 @@ path = "src/main.rs"
 [dependencies]
 arboard = { version = "3.7", default-features = false }
 eframe = { version = "0.37", default-features = false, features = ["accesskit", "default_fonts", "glow", "wayland", "x11"] }
+qrcode = { version = "0.14.1", default-features = false }
 vault-core = { path = "../vault-core" }
+vault-hw = { path = "../vault-hw", default-features = false, features = ["phone"] }
 vault-ipc = { path = "../vault-ipc" }
 zeroize = "1.9.1"
 

@@ -58,7 +58,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
-      - run: sudo apt-get update && sudo apt-get install -y libtss2-dev libudev-dev libhidapi-dev pkg-config dpkg-dev
+      - run: sudo apt-get update && sudo apt-get install -y libtss2-dev libudev-dev libhidapi-dev libdbus-1-dev pkg-config dpkg-dev
       - name: Version
         run: |
           export VAULT_COMMIT=${VAULT_COMMIT_SHA::7}

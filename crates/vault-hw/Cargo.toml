@@ -1,7 +1,7 @@
 [package]
 name = "vault-hw"
 version.workspace = true
-description = "Hardware unlock factors: FIDO2 hmac-secret, TPM 2.0, Windows Hello and Touch ID."
+description = "Hardware unlock factors: FIDO2 hmac-secret, phone passkeys, TPM 2.0, Windows Hello and Touch ID."
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
@@ -9,6 +9,10 @@ publish.workspace = true
 [features]
 default = ["fido2", "tpm"]
 fido2 = ["dep:ctap-hid-fido2"]
+# Phone passkeys over the hybrid transport (QR code + Bluetooth), used by the
+# clients, not the daemon: libwebauthn's caBLE client on Linux (needs
+# libdbus-1-dev to build), webauthn.dll on Windows.
+phone = ["fido2", "dep:libwebauthn", "dep:tokio", "dep:serde_bytes", "dep:base64-url"]
 # TPM 2.0: tss-esapi on Linux, the Platform Crypto Provider on Windows;
 # a no-op on macOS, which has no TPM.
 tpm = ["dep:tss-esapi", "dep:aes", "dep:hmac", "dep:subtle"]
@@ -23,6 +27,10 @@ vault-core = { path = "../vault-core" }
 zeroize = "1.9.1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
+base64-url = { version = "3", optional = true }
+libwebauthn = { version = "=0.10.0", optional = true }
+serde_bytes = { version = "0.11", optional = true }
+tokio = { version = "1.45", optional = true, features = ["rt-multi-thread", "macros"] }
 tss-esapi = { version = "=7.7.0", optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]

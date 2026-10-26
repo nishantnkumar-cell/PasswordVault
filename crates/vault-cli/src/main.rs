@@ -7,9 +7,11 @@ use std::path::PathBuf;
 use std::process::exit;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use vault_core::SecureRandom;
 use vault_core::item::{Card, CustomField, FieldKind, Identity, ItemData, ItemKind, UrlEntry};
 use vault_core::origin::MatchMode;
 use vault_core::totp::TotpConfig;
+use vault_hw::phone::{self, PasskeyCred, PhoneEvent};
 use vault_ipc::{
     ClientScope, ClientToken, Envelope, GenerateOptions, ImportFormat, ItemSummary, KeyKind,
     QuickUnlockInfo, Request, Response, Secret, SecretBytes, SlotInfo, SyncInfo, UnlockMethod, hex,
@@ -28,7 +30,8 @@ SETUP
   status                       daemon and vault state
   version                      this program's version (also --version)
 
-UNLOCKING                      METHOD is one of --password (default), --fido2, --tpm, --recovery
+UNLOCKING                      METHOD is one of --password (default), --fido2, --phone, --tpm,
+                               --recovery
   unlock [METHOD]              unlock the vault
   unlock --hello               quick unlock with Windows Hello or Touch ID (after a full
                                unlock, see below); --touch-id is the same
@@ -75,6 +78,7 @@ KEYSLOTS
   slots                        list keyslots
   add-slot password [--label L]
   add-slot fido2 [--uv] [--label L]       touch the key when it blinks
+  add-slot phone [--label L]              a passkey on your phone: scan the QR code with it
   add-slot tpm [--pin] [--pcr7] [--label L]
   add-slot recovery [--label L]
   rm-slot SLOT                 remove a slot (no key rotation)
@@ -299,6 +303,8 @@ fn method(args: &[String]) -> UnlockMethod {
         };
         eprintln!("Touch your security key...");
         UnlockMethod::Fido2 { password, pin }
+    } else if args.iter().any(|a| a == "--phone") {
+        phone_method()
     } else if args.iter().any(|a| a == "--tpm") {
         let password = secret("Password: ");
         let pin = optional(secret("TPM PIN (Enter if none): "));
@@ -307,6 +313,85 @@ fn method(args: &[String]) -> UnlockMethod {
         UnlockMethod::Password {
             password: secret("Password: "),
         }
+    }
+}
+
+/// Show what the phone ceremony needs: the QR code (Linux) and progress.
+fn phone_event(e: PhoneEvent) {
+    match e {
+        PhoneEvent::Qr(uri) => {
+            let code = qrcode::QrCode::new(uri.as_bytes()).unwrap_or_else(|e| die(e));
+            // Light modules on dark, as terminals usually are; phones read both.
+            let img = code
+                .render::<qrcode::render::unicode::Dense1x2>()
+                .dark_color(qrcode::render::unicode::Dense1x2::Light)
+                .light_color(qrcode::render::unicode::Dense1x2::Dark)
+                .build();
+            eprintln!("\n{img}\n");
+            eprintln!(
+                "Scan this with your phone's camera, keep Bluetooth on on both, and confirm on the phone."
+            );
+        }
+        PhoneEvent::Status(s) => eprintln!("{s}..."),
+    }
+}
+
+fn phone_method() -> UnlockMethod {
+    let password = secret("Password: ");
+    // Every slot's password has 8 or more characters: don't bother the phone.
+    if password.chars().count() < 8 {
+        die("wrong password or factor");
+    }
+    let Response::PasskeySlots(slots) = Client::connect().call(Request::PasskeySlots) else {
+        die("unexpected response")
+    };
+    let creds: Vec<PasskeyCred> = slots
+        .iter()
+        .filter(|s| s.rp_id == vault_hw::RP_ID)
+        .map(|s| PasskeyCred {
+            credential_id: s.credential_id.clone(),
+            prf_input: s.prf_input,
+        })
+        .collect();
+    let (credential_id, out) =
+        phone::prf(vault_hw::RP_ID, &creds, &phone_event).unwrap_or_else(|e| die(e));
+    UnlockMethod::Passkey {
+        password,
+        credential_id,
+        prf_output: Zeroizing::new(out.expose().to_vec()),
+    }
+}
+
+fn add_phone_slot(c: &mut Client, label: String) -> Request {
+    let password = secret("Master password: ");
+    phone::check_available().unwrap_or_else(|e| die(e));
+    let mut prf_input = [0u8; 32];
+    vault_core::OsRandom
+        .fill(&mut prf_input)
+        .unwrap_or_else(|e| die(e));
+    // Make sure the vault is open before the phone is asked.
+    c.call(Request::ListSlots);
+    eprintln!("Creating a passkey on your phone...");
+    let made = phone::enroll(vault_hw::RP_ID, &prf_input, &phone_event).unwrap_or_else(|e| die(e));
+    let out = match made.prf {
+        Some(out) => out,
+        None => {
+            eprintln!("Passkey created. Now confirm it once more, so the vault can test it...");
+            let cred = PasskeyCred {
+                credential_id: made.credential_id.clone(),
+                prf_input,
+            };
+            phone::prf(vault_hw::RP_ID, &[cred], &phone_event)
+                .unwrap_or_else(|e| die(e))
+                .1
+        }
+    };
+    Request::AddPasskeySlot {
+        password,
+        credential_id: made.credential_id,
+        prf_input,
+        prf_output: Zeroizing::new(out.expose().to_vec()),
+        label,
     }
 }
 
@@ -597,7 +682,7 @@ fn main() {
             } else {
                 ClientScope::Full
             };
-            let by_method = ["--password", "--fido2", "--tpm", "--recovery"]
+            let by_method = ["--password", "--fido2", "--phone", "--tpm", "--recovery"]
                 .iter()
                 .any(|m| rest.iter().any(|a| a == m));
             let Response::Status(s) = c.call(Request::Status) else {
@@ -937,6 +1022,7 @@ fn main() {
                         label,
                     }
                 }
+                "phone" => add_phone_slot(&mut c, label),
                 "tpm" => {
                     let password = secret("Master password: ");
                     let pin = if rest.iter().any(|a| a == "--pin") {
@@ -985,6 +1071,10 @@ fn main() {
                 eprintln!("Prove slot {} ({}, {}):", short(&id), info.kind, info.label);
                 let m = match info.kind.as_str() {
                     "recovery" => vec!["--recovery".to_string()],
+                    // Phone passkeys are FIDO2 slots too.
+                    "fido2" if ask("Security key or phone? [K/p]: ").trim() == "p" => {
+                        vec!["--phone".to_string()]
+                    }
                     "fido2" => vec!["--fido2".to_string()],
                     "tpm" => vec!["--tpm".to_string()],
                     _ => vec![],
@@ -1161,7 +1251,7 @@ fn pgp_args(args: &[String]) -> PgpArgs {
             "--pq" => a.pq = true,
             "--no-confirm" => a.confirm = false,
             // Unlock methods for `export`.
-            "--password" | "--fido2" | "--tpm" | "--recovery" => {}
+            "--password" | "--fido2" | "--phone" | "--tpm" | "--recovery" => {}
             f if f.starts_with('-') && f.len() > 1 => die(format!("unknown option {f}")),
             _ => a.pos.push(x.clone()),
         }

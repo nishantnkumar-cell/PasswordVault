@@ -72,7 +72,8 @@ random program on your computer cannot just ask for your passwords.
 | Unlock: password + FIDO2 security key | Yes | Yes (Windows 11, or Windows 10 with current updates) | Yes |
 | Unlock: password + TPM | Yes | Yes | Not applicable |
 | Quick unlock with Windows Hello or Touch ID (after a full unlock) | Not yet | Yes (Windows Hello) | Yes (Touch ID) |
-| Face or fingerprint quick unlock on Linux, phone passkey | Not yet | Not applicable | Not yet |
+| Unlock: password + phone passkey | Yes (Bluetooth) | Yes (Windows 11 23H2 or later) | Not yet |
+| Face or fingerprint quick unlock on Linux | Not yet | Not applicable | Not applicable |
 | SSH agent and git signing | Yes | Yes (untested on real hardware) | Yes |
 | OpenPGP keys | Yes | Yes | Yes |
 | `vault-gpg` for git and NeoMutt | Yes | git only (untested on real hardware) | Yes (untested on real hardware) |

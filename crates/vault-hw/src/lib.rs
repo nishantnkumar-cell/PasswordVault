@@ -8,6 +8,8 @@ use vault_core::HwKey;
 pub mod fido2;
 #[cfg(windows)]
 pub mod hello;
+#[cfg(feature = "phone")]
+pub mod phone;
 pub mod protect;
 pub mod soft;
 #[cfg(target_os = "macos")]
@@ -26,6 +28,10 @@ pub mod wintpm;
 pub(crate) static TPM_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 pub type HwResult<T> = Result<T, String>;
+
+/// The relying party ID of every security key and phone passkey slot the
+/// vault makes; fixed, since changing it changes the derived secret.
+pub const RP_ID: &str = "vault.local";
 
 /// Starts every TPM slot blob made on Windows (`wintpm`). Blobs made on
 /// Linux (`tpm`) start with a small length instead, so the two never collide.

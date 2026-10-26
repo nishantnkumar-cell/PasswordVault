@@ -26,7 +26,7 @@ vault unlock                # with the master password
 vault unlock --fido2        # password, then touch your security key
 vault unlock --tpm          # password, plus the TPM PIN if the slot has one
 vault unlock --recovery     # the recovery code
-vault unlock --hello        # Windows Hello, if quick unlock is on (Windows)
+vault unlock --hello        # Windows Hello (Windows) or Touch ID (macOS), if quick unlock is on
 vault lock                  # lock now and wipe the keys from memory
 vault lock --full           # the same, and also forget the quick unlock key
 ```
@@ -81,6 +81,77 @@ same secret every time. On Windows, add `-- --compare` and run it in an
 administrator terminal to also check that Windows' security key service and
 direct USB access give the same secret (they must, so a slot works on every
 system).
+
+## Unlock with your phone
+
+Use your phone when you want a second factor but do not want to carry a
+security key. Someone who learns your master password still cannot open
+the vault without your phone, and someone who takes your phone still needs
+your password.
+
+**What you need**
+
+- An iPhone (iOS 18 or later) or an Android phone (Android 9 or later with
+  Google Play services) with a screen lock set.
+- A password manager on the phone that supports passkeys with the PRF
+  extension. iCloud Keychain and Google Password Manager do.
+- Bluetooth switched on on the phone and the computer, and an internet
+  connection on both. The phone and the computer pass the request through
+  the phone maker's relay; the relay never sees the secret.
+- **Linux:** a Bluetooth adapter and the BlueZ service (`bluetoothd`)
+  running. `bluetoothctl show` should list a powered adapter.
+- **Windows:** Windows 11 version 23H2 or later.
+
+**Add your phone in the desktop app**
+
+1. Unlock the vault and open **Unlock methods**.
+2. Under **Add a method**, choose **Phone**.
+3. Give it a name, such as "Alex's phone", and type your master password
+   twice.
+4. Press **Add**.
+   - **Linux:** the app shows a QR code. Point the phone's camera at it and
+     tap the link that appears.
+   - **Windows:** a Windows window opens. Choose **iPhone, iPad or Android
+     device**, then scan the QR code it shows with the phone's camera.
+5. On the phone, save the passkey for **vault.local** ("Secret Vault
+   unlock") and confirm with your face, fingerprint or screen lock.
+6. Some phones (and always Windows) ask you to confirm a second time. This
+   lets the vault check that the new method really opens it before saving
+   it.
+7. The new method shows in the list as "Security key or phone".
+
+**Add your phone from the command line**
+
+```sh
+vault add-slot phone --label "Alex's phone"
+```
+
+Type your master password. On Linux, a QR code is printed in the terminal;
+scan it with the phone. On Windows, follow the Windows window.
+
+**Unlock with your phone**
+
+- **Desktop app:** on the lock screen choose **Phone**, type your master
+  password, press **Unlock**, then scan the QR code (Linux) or follow the
+  Windows window. Confirm on the phone.
+- **Command line:** `vault unlock --phone`.
+- To pair a new copy of the app or the command line with the phone:
+  `vault pair --phone`, or choose **Phone** on the app's pairing screen.
+
+**Good to know**
+
+- The passkey is listed in your phone's password manager under
+  **vault.local**. Do not delete it while you use the method; if you did,
+  remove the method in the app and add the phone again.
+- If the passkey syncs to your other Apple or Google devices, each of them
+  can unlock the vault the same way.
+- A phone method is a kind of security key method: `vault slots` lists it as
+  `fido2`, and a security key that holds the same passkey also opens it.
+- If the vault has no phone method, the app says so and does not start the
+  phone.
+- If it fails: check that Bluetooth is on on both, that the phone has an
+  internet connection, and that you confirmed on the phone within two
+  minutes.
 
 ## Add the TPM
 
@@ -320,6 +391,10 @@ slots but not revoke.
   One exception: if the key has a PIN, Windows always checks it, which
   changes the key's secret, so on Windows only `--uv` slots work with such
   a key. Use `--uv` for keys with a PIN if you use Windows.
+- **Phone passkeys:** on Linux, Secret Vault draws the QR code itself and
+  talks to the phone through BlueZ. On Windows, Windows draws the QR code
+  and talks to the phone, and may offer a phone you used before directly.
+  Not available on macOS yet.
 - **macOS:** quick unlock uses Touch ID (or an Apple Watch, or the login
   password) the way Windows uses Windows Hello. Macs have no TPM, so there
   is no `tpm` slot; TPM slots made elsewhere are skipped. Security keys go
