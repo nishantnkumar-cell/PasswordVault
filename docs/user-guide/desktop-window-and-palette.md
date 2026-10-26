@@ -17,8 +17,9 @@ reach vaultd, start the service first:
 - **Windows:** if you used the installer, vaultd starts by itself when you
   sign in; otherwise start `vaultw.exe` (see
   [installing on Windows](windows-install.md)).
-- **macOS:** not supported yet. The app and the daemon run on Linux and
-  Windows today.
+- **macOS:** the installer's launch agent starts vaultd when you sign in;
+  open Secret Vault from Launchpad or Spotlight (see
+  [installing on macOS](13-macos.md)).
 
 ## Unlocking
 
@@ -159,7 +160,7 @@ clipboard after 30 seconds, when the vault locks and when the app closes.
 
 ## Keyboard shortcuts
 
-| Action | Linux and Windows | macOS (when supported) |
+| Action | Linux and Windows | macOS |
 | --- | --- | --- |
 | Open or close the command palette | Ctrl K | Cmd K |
 | Lock the vault | Ctrl L | Cmd L |
@@ -179,4 +180,6 @@ clipboard after 30 seconds, when the vault locks and when the app closes.
   work on both; on Windows, Windows itself asks for the touch and the PIN in
   its own window. Quick unlock with Windows Hello is Windows only (see the
   table under *Unlocking*).
-- **macOS** is not supported yet.
+- **macOS.** Copied secrets are marked so clipboard managers that respect
+  the marking skip them. Shortcuts use Cmd instead of Ctrl, and the app
+  shows "Cmd K". There is no TPM; quick unlock uses Touch ID.

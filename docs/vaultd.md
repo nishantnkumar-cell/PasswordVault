@@ -18,11 +18,21 @@ vault add-slot tpm --pin --pcr7
 
 Build without hardware support with `cargo build -p vaultd --no-default-features`.
 
+## macOS
+
+`cargo build --release` needs only Apple's command line tools. `contrib/macos/package.sh VERSION` wraps the programs in `Secret Vault.app` (signed ad hoc) with `install.sh` and the launch agent `contrib/macos/dev.passwordvault.vaultd.plist` (`LimitLoadToSessionType` Aqua, core dumps off, restart on failure, log in `~/Library/Logs/vaultd.log`). User steps: [user-guide/13-macos.md](user-guide/13-macos.md).
+
+- **Peer check:** `getpeereid` for the UID and `LOCAL_PEERPID` for the PID shown in the approval window (Linux uses `SO_PEERCRED`). The window names the program through `proc_pidpath` and its command line through `ps`.
+- **Hardening:** `RLIMIT_CORE` 0 and `ptrace(PT_DENY_ATTACH)`. There is no `mlockall` on macOS; swap is always encrypted with a key the kernel holds.
+- **Quick unlock:** `vault_hw::touchid` asks LocalAuthentication with `LAPolicyDeviceOwnerAuthentication` (Touch ID, Apple Watch, or the login password), in the same `Presence` role as Windows Hello: it releases the parked vault key and never opens a vault alone. It needs vaultd in the user's GUI session; from an SSH login it fails with `LAErrorNotInteractive`.
+- **FIDO2:** direct USB HID through `ctap-hid-fido2`, as on Linux; FIDO usage-page devices need no TCC permission.
+- **Not done:** Secure Enclave slots (they need a signed app with a keychain entitlement, and the Secure Enclave only does P-256, so they need the same post-quantum care as Windows TPM slots), and locking on screen lock or sleep.
+
 ## Paths
 
 | What | Default |
 | --- | --- |
-| Vault file | `$XDG_DATA_HOME/vault/vault.svault` |
+| Vault file | `$XDG_DATA_HOME/vault/vault.svault` (macOS without XDG variables: `~/Library/Application Support/vault/`, with state in `state/` under it, sockets included) |
 | Daemon state (generation counters, client token hashes, lock) | `$XDG_STATE_HOME/vault/` (0700) |
 | Socket | `$XDG_RUNTIME_DIR/vault/vaultd.sock` (0600, directory 0700) |
 | ssh-agent socket | `$XDG_RUNTIME_DIR/vault/ssh-agent.sock` (0600), see [`ssh.md`](ssh.md) |
@@ -113,6 +123,6 @@ It creates throwaway credentials, asks for hmac-secret twice in touch-only mode 
 ## Not done yet
 
 - Identifying the pairing client by pidfd (`SO_PEERPIDFD`) instead of its PID.
-- vaultd on macOS (the FIDO2 check already runs there). Windows: see windows.md.
+- macOS: Secure Enclave slots and locking on screen lock or sleep (see [macOS](#macos)). Windows: see windows.md.
 - Secret Service: approvals can't be listed or revoked, and nothing is imported from GNOME Keyring or KWallet.
 - The desktop app (docs/desktop.md) has no file picker for imports and no revoke; use the CLI for revoke.

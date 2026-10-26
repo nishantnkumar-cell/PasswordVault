@@ -15,8 +15,8 @@ Use cases:
 
 | | Linux | Windows | macOS |
 |---|---|---|---|
-| `vault pgp` | Yes (tested against GnuPG 2.4) | Yes | Not yet |
-| Desktop app: import, export, Encrypt and sign | Yes | Yes | Not yet |
+| `vault pgp` | Yes (tested against GnuPG 2.4) | Yes | Yes |
+| Desktop app: import, export, Encrypt and sign | Yes | Yes | Yes |
 
 The vault must be unlocked for every command. Wherever a
 command takes a `FILE`, leaving it out reads standard input; leaving out

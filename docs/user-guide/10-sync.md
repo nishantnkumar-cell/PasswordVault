@@ -126,9 +126,9 @@ so wipe or remove a lost device's vault file if you can.
 
 | | Linux | Windows | macOS |
 |---|---|---|---|
-| Sync through a folder | Yes | Yes | Not yet (`vaultd` does not run there yet) |
-| Typical folders | Dropbox, Syncthing, Nextcloud, a network share | OneDrive, Google Drive, Dropbox | |
-| Notes | Paths may start with `~/` | Keep the file *always on this device* | |
+| Sync through a folder | Yes | Yes | Yes |
+| Typical folders | Dropbox, Syncthing, Nextcloud, a network share | OneDrive, Google Drive, Dropbox | iCloud Drive, Dropbox, Google Drive, OneDrive |
+| Notes | Paths may start with `~/` | Keep the file *always on this device* | Turn off **Optimise Mac Storage** for iCloud Drive (or keep the file downloaded), so the file is always on the Mac |
 
 A vault synced between Linux and Windows works the same on both: the file
 format is identical.

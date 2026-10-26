@@ -36,7 +36,8 @@ random program on your computer cannot just ask for your passwords.
 
 1. [Getting started](01-getting-started.md): install, create a vault, save the recovery code, pair the CLI.
    On Windows, use the installer: [Installing and running on Windows](windows-install.md).
-2. [Unlocking and unlock methods](02-unlocking.md): password, security key, TPM, recovery code, quick unlock with Windows Hello; adding, removing and revoking them.
+   On a Mac: [Installing and running on macOS](13-macos.md).
+2. [Unlocking and unlock methods](02-unlocking.md): password, security key, TPM, recovery code, quick unlock with Windows Hello or Touch ID; adding, removing and revoking them.
 3. [Items, one-time codes, the generator and import](03-items.md): logins,
    secure notes, cards and identities.
 4. [Browser autofill](04-browser-autofill.md)
@@ -55,34 +56,35 @@ random program on your computer cannot just ask for your passwords.
 12. [Keep apps' passwords in the vault](12-secret-service.md): Linux apps
     that save passwords through the Secret Service (GNOME Keyring's or
     KWallet's job) keep them in the vault instead.
+13. [Installing and running on macOS](13-macos.md): the app, the launch
+    agent, Touch ID quick unlock, browsers, SSH, and what differs on a Mac.
 
 ## What works where
 
 | Feature | Linux | Windows 10/11 | macOS |
 |---|---|---|---|
-| `vaultd`, `vault` command, desktop app | Yes | Yes | Not yet |
-| Browser autofill | Chrome, Chromium, Edge, Firefox 128+ | Chrome, Edge, Firefox 128+ | Not yet |
-| Secure notes, cards, identities | Yes | Yes | Not yet |
-| Card and address autofill | Yes (card fill needs a desktop session) | Yes | Not yet |
-| Unlock: password, recovery code | Yes | Yes | Not yet |
-| Packages and in-place upgrades | `.deb`, and `.tar.gz` with `install.sh` | Installer, no administrator rights needed | Not yet |
-| Unlock: password + FIDO2 security key | Yes | Yes (Windows 11, or Windows 10 with current updates) | Not yet |
+| `vaultd`, `vault` command, desktop app | Yes | Yes | Yes (macOS 11 or newer) |
+| Browser autofill | Chrome, Chromium, Edge, Firefox 128+ | Chrome, Edge, Firefox 128+ | Chrome, Chromium, Edge, Firefox 128+ (not Safari) |
+| Secure notes, cards, identities | Yes | Yes | Yes |
+| Card and address autofill | Yes (card fill needs a desktop session) | Yes | Yes |
+| Unlock: password, recovery code | Yes | Yes | Yes |
+| Packages and in-place upgrades | `.deb`, and `.tar.gz` with `install.sh` | Installer, no administrator rights needed | `.tar.gz` with `install.sh`, no administrator rights needed |
+| Unlock: password + FIDO2 security key | Yes | Yes (Windows 11, or Windows 10 with current updates) | Yes |
 | Unlock: password + TPM | Yes | Yes | Not applicable |
-| Quick unlock with Windows Hello (after a full unlock) | Not applicable | Yes | Not applicable |
-| Face or fingerprint quick unlock, Touch ID, phone passkey | Not yet | Not applicable | Not yet |
-| SSH agent and git signing | Yes | Yes (untested on real hardware) | Not yet |
-| OpenPGP keys | Yes | Yes | Not yet |
-| `vault-gpg` for git and NeoMutt | Yes | git only (untested on real hardware) | Not yet |
-| `vault-gpg` for `pass` | Yes | Not applicable | Not yet |
-| Sync through OneDrive, Google Drive, Dropbox | Yes | Yes | Not yet |
+| Quick unlock with Windows Hello or Touch ID (after a full unlock) | Not yet | Yes (Windows Hello) | Yes (Touch ID) |
+| Face or fingerprint quick unlock on Linux, phone passkey | Not yet | Not applicable | Not yet |
+| SSH agent and git signing | Yes | Yes (untested on real hardware) | Yes |
+| OpenPGP keys | Yes | Yes | Yes |
+| `vault-gpg` for git and NeoMutt | Yes | git only (untested on real hardware) | Yes (untested on real hardware) |
+| `vault-gpg` for `pass` | Yes | Not applicable | Should work; untested |
+| Sync through OneDrive, Google Drive, Dropbox | Yes | Yes | Yes, and iCloud Drive |
 | Apps keep passwords in the vault (Secret Service) | Yes, opt-in | Not applicable | Not applicable |
-| Locks on screen lock and suspend | Yes | Yes | Not yet |
-| Keys kept out of swap and crash dumps | Yes | Not yet | Not yet |
+| Locks on screen lock and suspend | Yes | Yes | Not yet (locks after 15 idle minutes) |
+| Keys kept out of swap and crash dumps | Yes | Not yet | Yes (core dumps off; macOS always encrypts swap) |
 
-On macOS only the core library and the security-key check
-(`cargo run -p vault-hw --example fido2-check`) build today. A vault file
-made on Linux or Windows can be copied between those systems: the file
-format is the same everywhere.
+A vault file can be copied between Linux, Windows and macOS: the file
+format is the same everywhere. Only TPM slots are tied to one computer and
+one system.
 
 ## Reference
 

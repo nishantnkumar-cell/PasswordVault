@@ -14,6 +14,61 @@ to work yet.
 
 ## Unreleased
 
+### Secret Vault runs on macOS
+
+Until now only the core library ran on a Mac. Now everything does: `vaultd`,
+the `vault` command, the desktop app, security keys, browser autofill, the
+SSH agent, OpenPGP and sync. It needs macOS 11 or newer, on Apple silicon or
+Intel.
+
+How to start:
+
+1. Download `secret-vault-<version>-macos-arm64.tar.gz` (Apple silicon) or
+   `...-macos-x86_64.tar.gz` (Intel), unpack it, and run `./install.sh` in
+   it from Terminal. No administrator password is needed.
+2. Open **Secret Vault** from Launchpad or Spotlight. The setup wizard
+   walks you through the master password, the recovery code, Touch ID and
+   the browser.
+
+The installer puts **Secret Vault.app** in `~/Applications`, the `vault`
+command in `~/.local/bin`, and a launch agent that starts `vaultd` at every
+sign-in. Your vault lives in `~/Library/Application Support/vault/`. The
+whole walk-through is in
+[Installing and running on macOS](user-guide/13-macos.md).
+
+New on the Mac:
+
+- **Quick unlock with Touch ID.** After you unlock with your password,
+  Touch ID (or a paired Apple Watch, or your login password) opens the vault
+  again when it locks, for up to 24 hours. Turn it on under **Unlock
+  methods** > **Quick unlock with Touch ID**, or with `vault quick-unlock 8`.
+  Use it with **Unlock with Touch ID** or `vault unlock --touch-id`. Like
+  Windows Hello, it never opens a vault on its own: after a restart, you
+  need your password.
+- **Browsers:** Chrome, Chromium, Edge and Firefox. The setup wizard
+  registers them. Safari is not supported.
+- **Security keys** work as on Linux: the app asks for the key's PIN, and no
+  extra permission is needed. A key slot made on a Mac also unlocks on
+  Linux and Windows.
+- The desktop app shows **Cmd K** for the command palette, and copied
+  secrets are marked so clipboard managers skip them.
+
+Platform differences:
+
+- **macOS:** no TPM, so no TPM slots. TPM slots made on other computers are
+  skipped. A Secure Enclave slot is not supported yet. vaultd turns off
+  core dumps and blocks debuggers. There is no memory locking on macOS, but
+  macOS always encrypts swap. vaultd does not yet lock when the screen
+  locks or the Mac sleeps; it locks after 15 idle minutes. The app is not
+  signed with an Apple developer ID, so install it with `install.sh`, which
+  clears the download flag (or right-click the app and choose **Open**).
+- **Linux and Windows:** nothing changes. The `vault` command now also
+  accepts `vault unlock --touch-id` as another name for `--hello`.
+
+Known gaps: the app is not notarised. `pass` and NeoMutt through
+`vault-gpg` should work on a Mac but are untested. Locking on screen lock
+and sleep, and a Secure Enclave slot, are still to come.
+
 ### Import, export, encrypt, decrypt, sign and verify from the desktop app
 
 Until now the desktop app could only make SSH and OpenPGP keys. Everything

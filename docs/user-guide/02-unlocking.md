@@ -6,16 +6,17 @@ and any one of them opens the vault.
 
 | Slot | What you need to unlock | Good for | Linux | Windows | macOS |
 |---|---|---|---|---|---|
-| `password` | The master password | Everyday use | Yes | Yes | Not yet |
-| `fido2` | Password **and** a FIDO2 security key (touch, optionally its PIN) | Protection if your password leaks | Yes | Yes | Not yet |
+| `password` | The master password | Everyday use | Yes | Yes | Yes |
+| `fido2` | Password **and** a FIDO2 security key (touch, optionally its PIN) | Protection if your password leaks | Yes | Yes | Yes |
 | `tpm` | Password **and** this computer's TPM chip (optionally a TPM PIN) | Making a stolen copy of the vault file useless on another machine | Yes | Yes | Not applicable |
-| `recovery` | The recovery code alone | When you forget the password or lose the key | Yes | Yes | Not yet |
+| `recovery` | The recovery code alone | When you forget the password or lose the key | Yes | Yes | Yes |
 
 A new vault starts with one `password` slot and one `recovery` slot.
 
-**Windows Hello** is not a slot. It is [quick unlock](#quick-unlock-with-windows-hello-windows):
-after you unlock with one of the slots above, Windows Hello (face,
-fingerprint or your Windows PIN) can open the vault again when it locks,
+**Windows Hello** and **Touch ID** are not slots. They are
+[quick unlock](#quick-unlock-with-windows-hello-windows): after you unlock
+with one of the slots above, Windows Hello (face, fingerprint or your
+Windows PIN) or, on a Mac, Touch ID can open the vault again when it locks,
 for a time you choose.
 
 ## Lock and unlock
@@ -190,6 +191,12 @@ Other things that use public-key cryptography:
 
 ## Quick unlock with Windows Hello (Windows)
 
+On a Mac, Touch ID does the same job and the steps below are the same, with
+"Touch ID" in place of "Windows Hello" and `vault unlock --touch-id` (or
+`--hello`) to use it. The Mac's window accepts a fingerprint, a paired Apple
+Watch, or the login password. See
+[Quick unlock with Touch ID](13-macos.md#quick-unlock-with-touch-id).
+
 Typing a long master password every time the screen locks gets old. Quick
 unlock lets Windows Hello (your face, fingerprint or Windows PIN) open the
 vault again, but only for a while after a full unlock:
@@ -313,9 +320,13 @@ slots but not revoke.
   One exception: if the key has a PIN, Windows always checks it, which
   changes the key's secret, so on Windows only `--uv` slots work with such
   a key. Use `--uv` for keys with a PIN if you use Windows.
-- **macOS:** the daemon is not ported yet. When it is, Touch ID is planned
-  to work like Windows Hello quick unlock, and the Secure Enclave like the
-  TPM.
+- **macOS:** quick unlock uses Touch ID (or an Apple Watch, or the login
+  password) the way Windows uses Windows Hello. Macs have no TPM, so there
+  is no `tpm` slot; TPM slots made elsewhere are skipped. Security keys go
+  over USB directly, with the PIN typed in the app or the `vault` command,
+  as on Linux, and need no extra permission. A Secure Enclave slot (the
+  Mac's counterpart of the TPM) is not supported yet. See
+  [Installing and running on macOS](13-macos.md).
 - **Linux:** no Windows Hello equivalent yet. Face and fingerprint unlock
   are planned as the same kind of quick unlock.
 - **Linux:** when `vaultd` runs as the separate `vault` system user, install

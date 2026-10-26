@@ -15,7 +15,7 @@ Status: v1 feature-complete on Linux, not yet audited. Do not trust it with real
 | `vault-native-host` | Native messaging host for the browser extension. |
 | `extension/` | Browser autofill extension (Manifest V3): logins, cards and addresses. |
 
-New here? Read the [user guide](docs/user-guide/README.md): it walks through installing, creating a vault and using each feature on Linux and Windows. What changed in each version is in the [release notes](docs/release-notes.md).
+New here? Read the [user guide](docs/user-guide/README.md): it walks through installing, creating a vault and using each feature on Linux, Windows and macOS. What changed in each version is in the [release notes](docs/release-notes.md).
 
 For the technical reference, start with [`docs/vaultd.md`](docs/vaultd.md), then [`docs/browser.md`](docs/browser.md) for autofill.
 

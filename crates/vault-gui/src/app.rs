@@ -57,6 +57,13 @@ pub(crate) const HELLO_CONFIRM: &str = if cfg!(target_os = "macos") {
     "Confirm it's you in the Windows Security window…"
 };
 
+/// The command palette's shortcut as this system writes it.
+const PALETTE_KEY: &str = if cfg!(target_os = "macos") {
+    "Cmd K"
+} else {
+    "Ctrl K"
+};
+
 /// The OS clipboard. On Windows and macOS copied secrets are marked so
 /// clipboard history and sync skip them.
 #[derive(Default)]
@@ -1758,7 +1765,7 @@ impl App {
                             .accesskit_node_builder(r.id, |n| n.set_label("Search"));
                         search_changed = r.changed();
                         ui.label(
-                            RichText::new("Ctrl K")
+                            RichText::new(PALETTE_KEY)
                                 .monospace()
                                 .size(11.0)
                                 .color(theme::MUTED),
@@ -1973,7 +1980,7 @@ impl App {
             ui.horizontal(|ui| {
                 ui.add_space(8.0);
                 ui.label(
-                    RichText::new("Ctrl K finds items and actions")
+                    RichText::new(format!("{PALETTE_KEY} finds items and actions"))
                         .small()
                         .color(theme::MUTED),
                 );
@@ -2114,8 +2121,10 @@ impl App {
                 ui.add_space(40.0);
                 ui.vertical_centered(|ui| {
                     ui.label(
-                        RichText::new("Pick an item on the left, make a new one, or press Ctrl K.")
-                            .color(theme::MUTED),
+                        RichText::new(format!(
+                            "Pick an item on the left, make a new one, or press {PALETTE_KEY}."
+                        ))
+                        .color(theme::MUTED),
                     );
                 });
             }

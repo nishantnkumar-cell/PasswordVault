@@ -155,20 +155,28 @@ Set-ItemProperty HKCU:\Software\Microsoft\Windows\CurrentVersion\Run "Secret Vau
 
 ## macOS
 
-The daemon, the `vault` command, the desktop app and the browser host do
-not run on macOS yet. What you can try today is checking that your security
-key works with the vault's key code:
+Download `secret-vault-<version>-macos-arm64.tar.gz` (Apple silicon) or
+`...-macos-x86_64.tar.gz` (Intel) from the
+[Releases page](https://github.com/nishantnkumar-cell/PasswordVault/releases),
+unpack it, and run `./install.sh` in it from Terminal. No administrator
+password is needed. It installs **Secret Vault.app** in `~/Applications`,
+the `vault` command in `~/.local/bin`, and a launch agent that starts
+`vaultd` now and at every sign-in.
 
-```sh
-cargo run -p vault-hw --example fido2-check
-```
+To build from source instead, install Apple's command line tools
+(`xcode-select --install`) and Rust, then run `cargo build --release` and
+`contrib/macos/package.sh 0.0.0-local`, and install the archive it makes.
+
+[Installing and running on macOS](13-macos.md) has every step, Touch ID,
+browsers, SSH and the differences from Linux and Windows. Then come back to
+[Create your vault](#create-your-vault).
 
 ## Create your vault
 
 Do this once, with `vaultd` running. You can use the command line (below)
 or the [desktop app](05-desktop-app.md#no-vault-yet-the-setup-wizard), whose
 setup wizard walks you through the same steps in a window and then helps you
-add a TPM, security key or Windows Hello and connect the browser.
+add a TPM, security key, Windows Hello or Touch ID and connect the browser.
 
 ### 1. Choose a master password
 
