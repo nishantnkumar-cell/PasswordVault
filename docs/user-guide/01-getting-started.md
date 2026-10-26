@@ -20,6 +20,24 @@ command works on Linux, Windows and macOS.
 
 ## Linux
 
+### The easy way: a package
+
+Download a release from the project's
+[Releases page](https://github.com/nishantnkumar-cell/PasswordVault/releases):
+
+- **Debian 13, Ubuntu 24.04 or newer:**
+  `sudo apt install ./secret-vault_<version>_amd64.deb`
+- **Any other 64-bit distribution:** unpack
+  `secret-vault-<version>-linux-x86_64.tar.gz` and run `./install.sh` in it
+  (installs into `~/.local`, no root).
+
+Then start the daemon with `systemctl --user enable --now vaultd` and go to
+[Create your vault](#create-your-vault). Upgrading later is the same
+command with the newer file; see
+[Versions, downloads and upgrading](11-versions-and-upgrades.md).
+
+The rest of this section builds the programs from source instead.
+
 ### 1. Install the build tools
 
 Install Rust from [rustup.rs](https://rustup.rs), then the libraries that the
@@ -148,8 +166,9 @@ cargo run -p vault-hw --example fido2-check
 ## Create your vault
 
 Do this once, with `vaultd` running. You can use the command line (below)
-or the [desktop app](05-desktop-app.md#first-run), which walks you through
-the same steps in a window.
+or the [desktop app](05-desktop-app.md#no-vault-yet-the-setup-wizard), whose
+setup wizard walks you through the same steps in a window and then helps you
+add a TPM, security key or Windows Hello and connect the browser.
 
 ### 1. Choose a master password
 
@@ -217,6 +236,8 @@ vault pair
 allowed to do. **Deny** is selected by default; press **Allow** only if you
 started that request yourself. If you do not answer within a minute, it is
 denied. After a denial, new requests are refused for 10 seconds.
+
+![The approval window](images/approval-window.png)
 
 If you have no desktop (for example over SSH), prove an unlock method
 instead: `vault pair --password` (or `--fido2`, `--tpm`, `--recovery`).
