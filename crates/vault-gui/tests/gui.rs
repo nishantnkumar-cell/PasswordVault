@@ -980,7 +980,7 @@ fn key_tools_encrypt_sign_export_and_import() {
     type_into(
         &mut h,
         Role::MultilineTextInput,
-        "Text to sign",
+        "What to sign",
         "signed words",
     );
     click_last(&mut h, "Sign");
@@ -994,7 +994,7 @@ fn key_tools_encrypt_sign_export_and_import() {
     type_into(
         &mut h,
         Role::MultilineTextInput,
-        "Signed text",
+        "What was signed",
         "signed words",
     );
     type_into(&mut h, Role::MultilineTextInput, "Signature", &sig);
@@ -1002,7 +1002,7 @@ fn key_tools_encrypt_sign_export_and_import() {
     settle(&mut h);
     assert_eq!(h.state().error(), None);
     assert!(h.query_by_label("Good signature").is_some());
-    type_into(&mut h, Role::MultilineTextInput, "Signed text", " changed");
+    type_into(&mut h, Role::MultilineTextInput, "What was signed", " changed");
     click_last(&mut h, "Verify");
     settle(&mut h);
     assert!(h.state().error().is_some(), "a changed text doesn't verify");

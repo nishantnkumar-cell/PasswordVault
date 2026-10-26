@@ -29,7 +29,7 @@ pub(super) fn is_pgp(i: &ItemSummary) -> bool {
 
 /// Read a file the user named, refusing ones too big to send to vaultd.
 fn read_file(path: &str) -> Result<Vec<u8>, String> {
-    let path = path.trim();
+    let path = &expand(path);
     let shown = |e: std::io::Error| format!("{path}: {e}");
     let len = std::fs::metadata(path).map_err(shown)?.len();
     if len > MAX_INPUT {
@@ -254,6 +254,8 @@ pub(super) struct PgpTools {
     pub(super) output: Option<Output>,
     reveal: bool,
     save_path: String,
+    /// A result just arrived: bring it into view.
+    scroll: bool,
 }
 
 impl PgpTools {
@@ -308,7 +310,7 @@ impl PgpTools {
                     .ok_or("Pick the key to sign with.")?;
                 Ok(Request::PgpSign {
                     id,
-                    data: self.input.read("text to sign")?,
+                    data: self.input.read("text or file to sign")?,
                     armor,
                     // Pasted text gets a text signature, so it still checks
                     // after a mail program changes its line endings.
@@ -316,7 +318,7 @@ impl PgpTools {
                 })
             }
             Task::Verify => Ok(Request::PgpVerify {
-                data: self.input.read("signed text")?,
+                data: self.input.read("text or file that was signed")?,
                 signature: self.signature.read("signature")?,
                 certs: certificates(&self.others)?,
             }),
@@ -368,6 +370,15 @@ fn certificates(text: &str) -> Result<Vec<Vec<u8>>, String> {
         return Err("A pasted public key is cut off: its END line is missing.".into());
     }
     Ok(out)
+}
+
+/// The first lines of a result to show, and how many lines are left out.
+fn preview(text: &str) -> (&str, usize) {
+    const LINES: usize = 40;
+    match text.match_indices('\n').nth(LINES - 1) {
+        Some((end, _)) => (&text[..end], text[end + 1..].lines().count()),
+        None => (text, 0),
+    }
 }
 
 /// An example path for a file on this system.
@@ -436,14 +447,19 @@ impl App {
             }
             (Op::Pgp, Response::Bytes(b)) => {
                 self.pgp.output = Some(Output::Public(b));
+                self.pgp.scroll = true;
                 self.pgp.save_path = self.pgp.suggest_path();
             }
             (Op::Pgp, Response::Decrypted { plaintext, key }) => {
                 self.pgp.output = Some(Output::Plain(plaintext, key));
+                self.pgp.scroll = true;
                 self.pgp.reveal = false;
                 self.pgp.save_path = self.pgp.suggest_path();
             }
-            (Op::Pgp, Response::Verified(who)) => self.pgp.output = Some(Output::Good(who)),
+            (Op::Pgp, Response::Verified(who)) => {
+                self.pgp.output = Some(Output::Good(who));
+                self.pgp.scroll = true;
+            }
             _ => self.error = Some("Unexpected answer from vaultd.".into()),
         }
     }
@@ -569,16 +585,27 @@ impl App {
     /// unlock factor again, then the key itself.
     pub(super) fn export_section(&mut self, ui: &mut Ui, id: ItemId, pgp: bool) {
         let ok = self.busy.is_none();
+        let has = |kind: &str| self.slots.is_empty() || self.slots.iter().any(|s| s.kind == kind);
+        let methods: Vec<(Method, &str)> = [
+            (Method::Password, "password", "Master password"),
+            (Method::SecurityKey, "fido2", "Security key"),
+            (Method::Tpm, "tpm", "This device"),
+            (Method::Recovery, "recovery", "Recovery code"),
+        ]
+        .into_iter()
+        .filter(|(_, kind, _)| has(kind))
+        .map(|(m, _, name)| (m, name))
+        .collect();
         let Some(x) = self.export.as_mut().filter(|x| x.id == id) else {
             if theme::button(ui, Icon::Export, "Export private key").clicked() {
                 self.error = None;
                 self.notice = None;
                 self.export = Some(Export::new(id));
+                // To offer only the methods this vault has.
+                self.send(Op::ListSlots, Request::ListSlots);
             }
             return;
         };
-        theme::divider(ui);
-        ui.add_space(8.0);
         ui.label(theme::bold("Export private key").size(15.0));
         let mut close = false;
         let mut copy = None;
@@ -642,11 +669,15 @@ impl App {
             );
             ui.add_space(4.0);
             let f = &mut x.form;
+            if !methods.iter().any(|(m, _)| *m == f.method)
+                && let Some((m, _)) = methods.first()
+            {
+                f.method = *m;
+            }
             ui.horizontal_wrapped(|ui| {
-                ui.selectable_value(&mut f.method, Method::Password, "Master password");
-                ui.selectable_value(&mut f.method, Method::SecurityKey, "Security key");
-                ui.selectable_value(&mut f.method, Method::Tpm, "This device");
-                ui.selectable_value(&mut f.method, Method::Recovery, "Recovery code");
+                for (m, name) in &methods {
+                    ui.selectable_value(&mut f.method, *m, *name);
+                }
             });
             ui.add_space(4.0);
             let mut submit = false;
@@ -774,8 +805,8 @@ impl App {
             let (label, hint) = match task {
                 Task::Encrypt => ("Message", "What to encrypt"),
                 Task::Decrypt => ("Encrypted message", "-----BEGIN PGP MESSAGE-----"),
-                Task::Sign => ("Text to sign", "What to sign"),
-                Task::Verify => ("Signed text", "The text the signature is for"),
+                Task::Sign => ("What to sign", "The text to sign"),
+                Task::Verify => ("What was signed", "The text the signature is for"),
             };
             p.input.show(ui, "pgp-input", label, hint, 6);
             ui.add_space(10.0);
@@ -874,6 +905,7 @@ impl App {
     }
 
     fn pgp_output(&mut self, ui: &mut Ui) {
+        let scroll = std::mem::take(&mut self.pgp.scroll);
         let Some(out) = &self.pgp.output else {
             return;
         };
@@ -884,7 +916,7 @@ impl App {
         let mut toggle = false;
         let reveal = self.pgp.reveal;
         let save_path = &mut self.pgp.save_path;
-        theme::card().show(ui, |ui| {
+        let card = theme::card().show(ui, |ui| {
             ui.set_width(ui.available_width());
             let (bytes, secret): (&[u8], bool) = match out {
                 Output::Good(who) => {
@@ -923,16 +955,23 @@ impl App {
             let text = std::str::from_utf8(bytes).ok();
             match text {
                 Some(t) if !secret || reveal => {
-                    egui::ScrollArea::vertical()
-                        .id_salt("pgp-out")
-                        .max_height(260.0)
-                        .show(ui, |ui| {
-                            ui.add(
-                                egui::Label::new(RichText::new(t).monospace().size(12.0))
-                                    .wrap()
-                                    .selectable(!secret),
-                            );
-                        });
+                    // The page scrolls; a big result is cut short here, and
+                    // Copy and Save still take all of it.
+                    let (shown, more) = preview(t);
+                    ui.add(
+                        egui::Label::new(RichText::new(shown).monospace().size(12.0))
+                            .wrap()
+                            .selectable(!secret),
+                    );
+                    if more > 0 {
+                        ui.label(
+                            RichText::new(format!(
+                                "… and {more} more lines. Copy or save it to get all of it."
+                            ))
+                            .small()
+                            .color(theme::MUTED),
+                        );
+                    }
                 }
                 Some(_) => {
                     ui.label("••••••••••••");
@@ -965,7 +1004,7 @@ impl App {
                 |ui| {
                     let r = ui.add(
                         TextEdit::singleline(save_path)
-                            .hint_text(file_example())
+                            .hint_text("Path of a new file to save it in")
                             .desired_width(f32::INFINITY),
                     );
                     ui.ctx()
@@ -977,6 +1016,9 @@ impl App {
                 saving = Some((expand(save_path), Zeroizing::new(bytes.to_vec()), secret));
             }
         });
+        if scroll {
+            card.response.scroll_to_me(Some(egui::Align::BOTTOM));
+        }
         if toggle {
             self.pgp.reveal = !self.pgp.reveal;
         }
@@ -1121,6 +1163,15 @@ mod tests {
         f.path = "/nowhere/id_ed25519".into();
         assert_eq!(f.title().unwrap(), "id_ed25519");
         assert!(f.to_request().is_err(), "the file doesn't exist");
+    }
+
+    #[test]
+    fn previews_long_results() {
+        assert_eq!(preview("a\nb"), ("a\nb", 0));
+        let long: String = (0..50).map(|n| format!("{n}\n")).collect();
+        let (shown, more) = preview(&long);
+        assert_eq!(shown.lines().count(), 40);
+        assert_eq!(more, 10);
     }
 
     #[test]
