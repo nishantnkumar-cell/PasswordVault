@@ -911,6 +911,146 @@ fn makes_ssh_and_openpgp_keys() {
     );
 }
 
+/// A phone for tests: a soft authenticator behind the app's `Phone` trait. It
+/// returns no PRF output when creating a passkey, as iPhones may not, so the
+/// app has to ask a second time. While `hold` is set, it waits after showing
+/// its QR code, so the test can look at the window meanwhile.
+struct FakePhone {
+    key: vault_hw::soft::SoftFido2,
+    hold: Arc<std::sync::atomic::AtomicBool>,
+    asked: Mutex<u32>,
+}
+
+impl FakePhone {
+    fn wait(&self) {
+        while self.hold.load(std::sync::atomic::Ordering::SeqCst) {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+}
+
+impl vault_gui::client::Phone for FakePhone {
+    fn enroll(
+        &self,
+        rp_id: &str,
+        _prf_input: &[u8; 32],
+        events: &dyn Fn(vault_hw::phone::PhoneEvent),
+    ) -> Result<vault_hw::phone::Enrolled, String> {
+        use vault_hw::Fido2;
+        events(vault_hw::phone::PhoneEvent::Qr("FIDO:/1234".into()));
+        let id = self.key.enroll(rp_id, Some("0000"), true)?;
+        Ok(vault_hw::phone::Enrolled {
+            credential_id: id,
+            prf: None,
+        })
+    }
+    fn prf(
+        &self,
+        rp_id: &str,
+        creds: &[vault_hw::phone::PasskeyCred],
+        events: &dyn Fn(vault_hw::phone::PhoneEvent),
+    ) -> Result<(Vec<u8>, vault_core::HwKey), String> {
+        use vault_hw::Fido2;
+        *self.asked.lock().unwrap() += 1;
+        events(vault_hw::phone::PhoneEvent::Qr("FIDO:/5678".into()));
+        events(vault_hw::phone::PhoneEvent::Status(
+            "Connected; confirm on your phone".into(),
+        ));
+        self.wait();
+        let c = creds.first().ok_or("no passkey offered")?;
+        let k = self
+            .key
+            .hmac_secret(rp_id, &c.credential_id, &c.prf_input, Some("0000"), true)?;
+        Ok((c.credential_id.clone(), k))
+    }
+}
+
+#[test]
+fn adds_a_phone_and_unlocks_with_it() {
+    let dir = tempdir();
+    let sock = start(&dir, Duration::from_secs(300));
+    let hold = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let phone = Arc::new(FakePhone {
+        key: vault_hw::soft::SoftFido2 {
+            device_secret: [4; 32],
+            pin: "0000".into(),
+            counter: Mutex::new(0),
+        },
+        hold: hold.clone(),
+        asked: Mutex::new(0),
+    });
+    let app = App::with_phone(
+        Paths {
+            socket: sock,
+            token: dir.join("token"),
+        },
+        Box::new(FakeClip::default()),
+        || {},
+        phone.clone(),
+    );
+    let mut h = Harness::builder()
+        .with_size([1180.0, 1000.0])
+        .build_ui_state(|ui, app: &mut App| app.show(ui), app);
+    let pw = password();
+    wait_for(&mut h, Screen::Create);
+    click(&mut h, "Create a new vault");
+    type_into(&mut h, Role::PasswordInput, "Master password", &pw);
+    type_into(&mut h, Role::PasswordInput, "Repeat it", &pw);
+    click(&mut h, "Create vault");
+    wait_for(&mut h, Screen::Setup);
+    finish_setup(&mut h);
+
+    // No phone yet: the locked screen says so instead of asking the phone.
+    click(&mut h, "Lock");
+    wait_for(&mut h, Screen::Locked);
+    click(&mut h, "Phone");
+    type_into(&mut h, Role::PasswordInput, "Master password", &pw);
+    click(&mut h, "Unlock");
+    settle(&mut h);
+    assert!(h.state().error().unwrap().contains("No phone is set up"));
+    assert_eq!(*phone.asked.lock().unwrap(), 0);
+    // The password typed stays when switching back to the password.
+    click(&mut h, "Master password");
+    click(&mut h, "Unlock");
+    wait_for(&mut h, Screen::Unlocked);
+
+    // Add the phone: create, then confirm once more.
+    click(&mut h, "Unlock methods");
+    settle(&mut h);
+    h.get_all_by_role_and_label(Role::Button, "Phone")
+        .last()
+        .unwrap()
+        .click();
+    h.step();
+    type_into(&mut h, Role::TextInput, "Name", "work phone");
+    type_into(&mut h, Role::PasswordInput, "Password to use with it", &pw);
+    type_into(&mut h, Role::PasswordInput, "Repeat it", &pw);
+    click(&mut h, "Add");
+    settle(&mut h);
+    assert_eq!(h.state().error(), None);
+    assert_eq!(*phone.asked.lock().unwrap(), 1);
+    assert!(h.query_by_label("work phone").is_some());
+
+    // Unlock with it; the QR code shows while the phone is asked.
+    click(&mut h, "Lock");
+    wait_for(&mut h, Screen::Locked);
+    click(&mut h, "Phone");
+    type_into(&mut h, Role::PasswordInput, "Master password", &pw);
+    hold.store(true, std::sync::atomic::Ordering::SeqCst);
+    click(&mut h, "Unlock");
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while h.query_by_label("Phone QR code").is_none() {
+        assert!(Instant::now() < deadline, "no QR code shown");
+        h.step();
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(h.query_by_label_contains("confirm on your phone").is_some());
+    hold.store(false, std::sync::atomic::Ordering::SeqCst);
+    wait_for(&mut h, Screen::Unlocked);
+    assert!(h.query_by_label("Phone QR code").is_none());
+    assert_eq!(*phone.asked.lock().unwrap(), 2);
+}
+
 #[test]
 fn key_tools_encrypt_sign_export_and_import() {
     let dir = tempdir();

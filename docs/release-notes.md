@@ -14,6 +14,38 @@ to work yet.
 
 ## Unreleased
 
+### Unlock with a passkey on your phone (Linux and Windows)
+
+- **Your phone as a second factor.** You can now add a passkey on your
+  iPhone or Android phone as a way to unlock the vault, together with your
+  master password. The passkey is saved in the phone's password manager
+  (iCloud Keychain, Google Password Manager, or another one that supports
+  passkeys with PRF).
+- **How it connects.** The computer shows a QR code. You scan it with the
+  phone's camera, the two check over Bluetooth that they are near each
+  other, and you confirm on the phone with your face, fingerprint or screen
+  lock.
+- **The password is still needed.** The phone adds to the password and never
+  replaces it. A synced passkey can be restored through your Apple or Google
+  account, so the vault does not trust the phone on its own.
+- **Desktop app:** a new **Phone** choice on the lock screen and under
+  **Unlock methods > Add a method**.
+- **Command line:** `vault add-slot phone`, and `--phone` for `unlock`,
+  `pair`, `export` and `revoke`.
+- **No change to the vault file.** A phone method is stored as a security
+  key method that checks the user, so older versions still open the vault
+  with your other methods.
+- How to start: [Unlock with your phone](user-guide/02-unlocking.md#unlock-with-your-phone).
+
+| | Linux | Windows | macOS |
+| --- | --- | --- | --- |
+| Phone passkey unlock | Yes (needs Bluetooth and BlueZ) | Yes (Windows 11 23H2 or later) | Not yet |
+| Who shows the QR code | Secret Vault | Windows' own window | |
+
+Known limits: not yet tried with a real phone at the time of writing.
+Whether every phone accepts the vault's passkey name `vault.local` is still
+to be confirmed on hardware.
+
 ### Import, export, encrypt, decrypt, sign and verify from the desktop app
 
 Until now the desktop app could only make SSH and OpenPGP keys. Everything

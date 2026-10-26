@@ -44,7 +44,7 @@ Install Rust from [rustup.rs](https://rustup.rs), then the libraries that the
 security key and TPM support need. On Debian or Ubuntu:
 
 ```sh
-sudo apt-get install git pkg-config libtss2-dev libudev-dev libhidapi-dev
+sudo apt-get install git pkg-config libtss2-dev libudev-dev libhidapi-dev libdbus-1-dev
 ```
 
 On other distributions, install the packages that provide `tss2-esys`,

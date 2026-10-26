@@ -4,6 +4,7 @@
 //! and drops it (and clears a password it put on the clipboard) when the
 //! vault locks.
 
+use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use eframe::egui::{self, CornerRadius, Key, Margin, Rect, RichText, Stroke, TextEdit, Ui, Vec2};
@@ -16,7 +17,7 @@ use vault_ipc::{
 };
 use zeroize::Zeroizing;
 
-use crate::client::{Backend, Failure, Paths};
+use crate::client::{Backend, Failure, Paths, Phone, SystemPhone, Work};
 use crate::theme::{self, Icon};
 
 mod keys;
@@ -284,6 +285,7 @@ enum Method {
     #[default]
     Password,
     SecurityKey,
+    Phone,
     Tpm,
     Recovery,
 }
@@ -300,6 +302,19 @@ struct UnlockForm {
 /// key's PIN in its own window and ignores one sent by the app.
 const WINDOWS_ASKS_KEY_PIN: bool = cfg!(windows);
 
+/// Phone passkeys work on Linux and Windows; macOS comes later.
+const PHONE: bool = cfg!(any(target_os = "linux", windows));
+
+/// What to do on the phone, once the app shows the QR code (Linux) or
+/// Windows shows its window.
+const PHONE_HOW: &str = if cfg!(windows) {
+    "In the Windows window, choose \"iPhone, iPad or Android device\", scan the QR code with \
+     your phone's camera and confirm on the phone. Bluetooth must be on on both."
+} else {
+    "Scan the QR code with your phone's camera and confirm on the phone. Bluetooth must be on \
+     on both, and the phone needs an internet connection."
+};
+
 fn opt(s: &Secret) -> Option<Secret> {
     (!s.is_empty()).then(|| s.clone())
 }
@@ -314,6 +329,7 @@ impl UnlockForm {
                 password: self.password.clone(),
                 pin: opt(&self.pin),
             },
+            Method::Phone => unreachable!("the phone runs as `Work::PhoneUnlock`"),
             Method::Tpm => UnlockMethod::Tpm {
                 password: self.password.clone(),
                 pin: opt(&self.pin),
@@ -330,6 +346,7 @@ enum SlotKind {
     #[default]
     Password,
     SecurityKey,
+    Phone,
     Tpm,
     Recovery,
 }
@@ -646,7 +663,17 @@ impl App {
     /// Connect to the daemon at `paths`. `wake` repaints the window when an
     /// answer arrives.
     pub fn new(paths: Paths, clip: Box<dyn Clip>, wake: impl Fn() + Send + 'static) -> App {
-        let backend = Backend::start(paths.socket.clone(), wake);
+        App::with_phone(paths, clip, wake, Arc::new(SystemPhone))
+    }
+
+    /// Like [`App::new`], with `phone` standing in for the phone (tests).
+    pub fn with_phone(
+        paths: Paths,
+        clip: Box<dyn Clip>,
+        wake: impl Fn() + Send + 'static,
+        phone: Arc<dyn Phone>,
+    ) -> App {
+        let backend = Backend::start(paths.socket.clone(), wake, phone);
         let token = paths.load_token();
         App {
             paths,
@@ -732,6 +759,13 @@ impl App {
         self.notice = None;
         self.busy = Some(busy);
         self.send(op, request);
+    }
+
+    fn act_work(&mut self, busy: &'static str, op: Op, work: Work) {
+        self.error = None;
+        self.notice = None;
+        self.busy = Some(busy);
+        self.backend.send_work(op, self.token.clone(), work);
     }
 
     fn refresh(&mut self) {
@@ -1165,12 +1199,20 @@ impl App {
                 "Password, then touch the key",
             ),
             (
+                Method::Phone,
+                "Phone",
+                "Password, then a passkey on your phone",
+            ),
+            (
                 Method::Tpm,
                 "This device",
                 "Password and this computer's chip",
             ),
             (Method::Recovery, "Recovery code", "From your printed sheet"),
         ] {
+            if m == Method::Phone && !PHONE {
+                continue;
+            }
             if theme::choice_row(ui, self.unlock.method == m, name, how).clicked() {
                 self.unlock.method = m;
                 self.error = None;
@@ -1267,6 +1309,29 @@ impl App {
                 ui.spinner();
                 ui.label(b);
             });
+            self.phone_panel(ui);
+        }
+    }
+
+    /// The QR code and progress of a phone passkey that is running.
+    fn phone_panel(&self, ui: &mut Ui) {
+        let view = self
+            .backend
+            .phone
+            .lock()
+            .map(|v| v.clone())
+            .unwrap_or_default();
+        if let Some(uri) = view.qr.as_deref() {
+            ui.add_space(6.0);
+            qr_code(ui, uri);
+            ui.label(
+                RichText::new("Scan with your phone's camera, then confirm on the phone.")
+                    .small()
+                    .color(theme::MUTED),
+            );
+        }
+        if let Some(s) = &view.status {
+            ui.label(RichText::new(s).small().color(theme::TEXT));
         }
     }
 
@@ -1440,6 +1505,7 @@ impl App {
                 "Use your security key",
                 "Type your master password, then touch the key when it blinks.",
             ),
+            Method::Phone => ("Use your phone", PHONE_HOW),
             Method::Tpm => (
                 "Unlock with this device",
                 "Your master password together with this computer's security chip.",
@@ -1501,9 +1567,18 @@ impl App {
             }
             let busy = match self.unlock.method {
                 Method::SecurityKey => "Touch your security key when it blinks…",
+                Method::Phone => "Waiting for your phone…",
                 _ if pair => "Pairing…",
                 _ => "Unlocking…",
             };
+            if self.unlock.method == Method::Phone {
+                let work = Work::PhoneUnlock {
+                    password: self.unlock.password.clone(),
+                    pair: pair.then(|| (CLIENT_NAME.into(), ClientScope::Full)),
+                };
+                self.act_work(busy, if pair { Op::Pair } else { Op::Unlock }, work);
+                return;
+            }
             let method = self.unlock.to_method();
             if pair {
                 self.act(
@@ -3314,6 +3389,9 @@ impl App {
         ui.horizontal_wrapped(|ui| {
             ui.selectable_value(&mut f.kind, SlotKind::Password, "Password");
             ui.selectable_value(&mut f.kind, SlotKind::SecurityKey, "Security key");
+            if PHONE {
+                ui.selectable_value(&mut f.kind, SlotKind::Phone, "Phone");
+            }
             ui.selectable_value(&mut f.kind, SlotKind::Tpm, "TPM");
             ui.selectable_value(&mut f.kind, SlotKind::Recovery, "Recovery code");
         });
@@ -3325,6 +3403,11 @@ impl App {
                 SlotKind::SecurityKey => {
                     "A FIDO2 security key (YubiKey, Nitrokey, Titan and others) that you touch \
                      after typing the password. Plug it in before you press Add."
+                }
+                SlotKind::Phone => {
+                    "A passkey on your iPhone or Android phone, saved in its password manager \
+                     (iCloud Keychain, Google Password Manager or another), together with the \
+                     password. The app shows a QR code to scan; Bluetooth must be on on both."
                 }
                 SlotKind::Tpm => {
                     "The TPM chip in this computer, together with the password. It works only \
@@ -3426,6 +3509,14 @@ impl App {
                     label,
                 },
             ),
+            SlotKind::Phone => {
+                let work = Work::PhoneEnroll {
+                    password: f.password.clone(),
+                    label,
+                };
+                self.act_work("Creating a passkey on your phone…", Op::AddSlot, work);
+                return;
+            }
             SlotKind::Recovery => ("Adding…", Request::AddRecoverySlot { label }),
         };
         self.act(busy, Op::AddSlot, request);
@@ -3713,13 +3804,41 @@ fn ago(secs: u64) -> String {
     }
 }
 
+/// Draw `uri` as a QR code, dark on white with a quiet zone, as phones expect.
+fn qr_code(ui: &mut Ui, uri: &str) {
+    let Ok(code) = qrcode::QrCode::new(uri.as_bytes()) else {
+        ui.colored_label(theme::ERROR, "Could not draw the QR code.");
+        return;
+    };
+    let n = code.width();
+    let quiet = 4;
+    let cell = 4.0;
+    let side = (n + 2 * quiet) as f32 * cell;
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::hover());
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Image, true, "Phone QR code"));
+    let p = ui.painter_at(rect);
+    p.rect_filled(rect, 4.0, egui::Color32::WHITE);
+    for (i, c) in code.to_colors().iter().enumerate() {
+        if *c == qrcode::Color::Dark {
+            let (x, y) = ((i % n + quiet) as f32, (i / n + quiet) as f32);
+            let min = rect.min + egui::vec2(x * cell, y * cell);
+            p.rect_filled(
+                egui::Rect::from_min_size(min, egui::vec2(cell, cell)),
+                0.0,
+                egui::Color32::BLACK,
+            );
+        }
+    }
+}
+
 /// A slot kind's name and what it needs.
 fn slot_text(kind: &str) -> (&'static str, &'static str) {
     match kind {
         "password" => ("Password", "Your master password"),
         "fido2" => (
-            "Security key",
-            "Your master password, then a touch on the key (and its PIN if set)",
+            "Security key or phone",
+            "Your master password, then a touch on the key (and its PIN if set), or a \
+             passkey on your phone",
         ),
         "tpm" => (
             "This device (TPM)",

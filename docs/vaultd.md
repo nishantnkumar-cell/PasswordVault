@@ -5,7 +5,7 @@
 ## Build and run (Linux)
 
 ```sh
-sudo apt-get install libtss2-dev libudev-dev libhidapi-dev pkg-config   # Debian/Ubuntu
+sudo apt-get install libtss2-dev libudev-dev libhidapi-dev libdbus-1-dev pkg-config   # Debian/Ubuntu
 cargo install --path crates/vaultd && cargo install --path crates/vault-cli
 cargo install --path crates/vault-gui    # the desktop app and vault-prompt, the pairing window
 vaultd &                      # or: contrib/systemd/vaultd.service as a user service
