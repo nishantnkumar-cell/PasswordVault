@@ -14,6 +14,50 @@ to work yet.
 
 ## Unreleased
 
+### Import, export, encrypt, decrypt, sign and verify from the desktop app
+
+Until now the desktop app could only make SSH and OpenPGP keys. Everything
+else needed the `vault` command line. You can now do all of it in the app:
+
+- **Import a key you already have.** In SSH and PGP keys, the small ▾ next
+  to **New SSH key** now also offers **Import SSH key** and **Import OpenPGP
+  key**. The New item menu in All items has them too. Pick the key file, or
+  paste the key. If the key has a passphrase, the app asks for it. The
+  vault then stores the key without a passphrase, protected by the vault
+  itself.
+- **Export a private key**, to move it to a computer that doesn't have this
+  vault. Open the key and press **Export private key**. Even though the
+  vault is open, you have to prove it's you once more, with any of your
+  unlock methods (only the ones this vault has are offered). Then you can
+  copy the key (the clipboard clears after 30 seconds) or save it to a
+  file. The app never overwrites an existing file.
+- **A new Encrypt and sign page** under Tools, with four tasks:
+  - **Encrypt** a message or file for yourself and/or other people. Paste
+    their public keys or give the key files. You can also sign it.
+  - **Decrypt** a message or file. The vault finds the right key. The text
+    stays hidden until you press **Show**.
+  - **Sign** a text or file with a detached signature (`.asc`, or `.sig`
+    for binary).
+  - **Verify** a signature against your own keys or the signer's public
+    key.
+
+  Each task works on pasted text or on a file, up to about 15 MiB. The
+  result can be copied or saved, with a file name already suggested.
+- Ctrl K can start all of these: type "import", "encrypt", "decrypt",
+  "sign" or "verify".
+
+Platform differences:
+
+- **Linux and macOS:** saved private keys and decrypted files are readable
+  only by you (permissions 600).
+- **Windows:** a saved file gets the permissions of its folder. Keep keys
+  and decrypted files inside your user folder (`C:\Users\<you>\…`), which
+  only you and administrators can open. When you export with a security
+  key, Windows asks for the touch and PIN in its own window.
+- **macOS:** the desktop app and vaultd don't run on macOS yet. These notes
+  apply when they do.
+- Paths starting with `~/` work on every system, meaning your home folder.
+
 ### One search bar and a New button that follows you
 
 - **Search at the top.** One search field runs across the top of the
