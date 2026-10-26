@@ -2569,7 +2569,10 @@ impl App {
             ("Encrypt with OpenPGP", Action::Pgp(keys::Task::Encrypt)),
             ("Decrypt with OpenPGP", Action::Pgp(keys::Task::Decrypt)),
             ("Sign with OpenPGP", Action::Pgp(keys::Task::Sign)),
-            ("Verify an OpenPGP signature", Action::Pgp(keys::Task::Verify)),
+            (
+                "Verify an OpenPGP signature",
+                Action::Pgp(keys::Task::Verify),
+            ),
             ("Generate a password", Action::Generate),
             ("Import items", Action::Go(View::Import)),
             ("Unlock methods", Action::Go(View::Slots)),

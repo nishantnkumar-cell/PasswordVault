@@ -277,8 +277,12 @@ impl PgpTools {
         let live = |id: &ItemId| keys.iter().any(|k| k.id == *id);
         match self.task {
             Task::Encrypt => {
-                let to_items: Vec<ItemId> =
-                    self.to_items.iter().filter(|id| live(id)).copied().collect();
+                let to_items: Vec<ItemId> = self
+                    .to_items
+                    .iter()
+                    .filter(|id| live(id))
+                    .copied()
+                    .collect();
                 let to_certs = certificates(&self.others)?;
                 if to_items.is_empty() && to_certs.is_empty() {
                     return Err(
@@ -600,9 +604,7 @@ impl App {
                 });
             ui.add_space(6.0);
             if x.reveal {
-                ui.add(
-                    egui::Label::new(RichText::new(key.as_str()).monospace().size(11.5)).wrap(),
-                );
+                ui.add(egui::Label::new(RichText::new(key.as_str()).monospace().size(11.5)).wrap());
             }
             ui.horizontal(|ui| {
                 if show_button(ui, x.reveal).clicked() {
@@ -742,8 +744,10 @@ impl App {
             }
         });
         if task != self.pgp.task {
+            // Each task starts empty: a message left from encrypting is
+            // not what anyone means to sign or decrypt.
             self.pgp.task = task;
-            self.pgp.output = None;
+            self.pgp.clear();
             self.error = None;
             self.notice = None;
         }
@@ -791,7 +795,10 @@ impl App {
                     others_box(ui, &mut p.others, "Other people's public keys");
                     ui.add_space(8.0);
                     signer_box(ui, &mut p.signer, &keys, true);
-                    ui.checkbox(&mut p.binary, "Binary output (smaller; for files, not mail)");
+                    ui.checkbox(
+                        &mut p.binary,
+                        "Binary output (smaller; for files, not mail)",
+                    );
                 }
                 Task::Decrypt => {
                     ui.label(
@@ -1000,7 +1007,7 @@ impl App {
         self.go(View::Pgp);
         if self.pgp.task != task {
             self.pgp.task = task;
-            self.pgp.output = None;
+            self.pgp.clear();
         }
     }
 }
@@ -1022,19 +1029,17 @@ fn others_box(ui: &mut Ui, text: &mut String, label: &str) {
 /// A choice of the vault's OpenPGP keys to sign with.
 fn signer_box(ui: &mut Ui, signer: &mut Option<ItemId>, keys: &[&ItemSummary], optional: bool) {
     let name = |id: &Option<ItemId>| {
-        id.and_then(|id| keys.iter().find(|k| k.id == id))
-            .map_or(
-                if optional {
-                    "Don't sign"
-                } else {
-                    "Pick a key"
-                }
-                .to_owned(),
-                |k| k.title.clone(),
-            )
+        id.and_then(|id| keys.iter().find(|k| k.id == id)).map_or(
+            if optional { "Don't sign" } else { "Pick a key" }.to_owned(),
+            |k| k.title.clone(),
+        )
     };
     ui.horizontal(|ui| {
-        let l = ui.label(if optional { "Also sign with" } else { "Sign with" });
+        let l = ui.label(if optional {
+            "Also sign with"
+        } else {
+            "Sign with"
+        });
         let r = egui::ComboBox::from_id_salt("pgp-signer")
             .selected_text(name(signer))
             .width(260.0)
@@ -1084,7 +1089,11 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let p = dir.join("out.asc").display().to_string();
         write_new(&p, b"one", true).unwrap();
-        assert!(write_new(&p, b"two", true).unwrap_err().contains("already exists"));
+        assert!(
+            write_new(&p, b"two", true)
+                .unwrap_err()
+                .contains("already exists")
+        );
         assert_eq!(std::fs::read(&p).unwrap(), b"one");
         #[cfg(unix)]
         {
