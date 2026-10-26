@@ -61,15 +61,111 @@ press **Try again**.
 
 ## First run
 
-### No vault yet
+### No vault yet: the setup wizard
 
-1. Type a master password of at least 8 characters, then repeat it.
-2. Press **Create vault**. It takes a few seconds.
-3. The app shows the **recovery code** once. Write it down and keep it
-   offline (see [chapter 1](01-getting-started.md#2-write-down-the-recovery-code)),
-   then press **I've written it down**.
+The first time you open the app with no vault, a setup wizard walks you
+through everything a new vault needs. The steps are listed down the left
+side of the card: **Password**, **Recovery code**, **Unlock methods**,
+**Browser**, **Finish**. Finished steps get a green tick and the current one
+is blue, with "Step 2 of 4" above each page's title. Each page has **Back**
+at the bottom left and the button to go on at the bottom right. Only the
+first two steps are required; you can skip the rest and come back to them
+later. In a narrow window (under about 750 points wide) the step list
+folds into dots across the top.
 
-The app is paired and the vault is unlocked.
+![The welcome screen of the setup wizard](images/setup-1-welcome.png)
+
+**Welcome.** Choose **Create a new vault**. If you already use Secret Vault
+on another computer and sync it through OneDrive, Google Drive or Dropbox,
+choose **I already use Secret Vault on another device** instead (see
+[Join a synced vault](#join-a-synced-vault) below).
+
+**1. Master password.** Type a master password of at least 8 characters and
+repeat it. The bar under the first box shows how strong it looks: aim for
+**Strong**. "They match" appears under the second box once both are the
+same. Four or five random words (for example *orbit lantern velvet
+canyon*, but not that one) are easy to remember and hard to guess. Nobody
+can reset this password, so press **Create vault** only when you are sure
+you will remember it. Creating the vault takes a few seconds.
+
+![Choosing the master password](images/setup-2-password.png)
+
+**2. Recovery code.** The app shows the vault's **recovery code** once, in
+boxes, one group of characters each, so it's easy to copy onto paper. It
+opens the vault on its own if you forget your password or lose your other
+methods, so:
+
+- write it on paper or print it, and keep it away from the computer;
+- do not save it in a file, a screenshot or a photo on this computer.
+
+Tick **I've written down my recovery code and put it somewhere safe**, then
+press **Continue**. You can't go on until the box is ticked.
+
+![The recovery code step](images/setup-3-recovery.png)
+
+**3. Unlock methods (optional).** Add quicker or stronger ways to unlock.
+Press **Set up** next to one, fill in its options and press **Add** (or
+**Turn on**). You don't type your password again: the wizard uses the one
+from step 1. Each method has an icon (chip, security key, Windows Hello)
+that turns green, with **Added**, once you have added it.
+
+| Method | What it does | Linux | Windows | macOS |
+|---|---|---|---|---|
+| Windows Hello | After a password unlock, your face, fingerprint or Windows PIN re-opens the vault for 8 hours, until the computer restarts | No | Yes, if Windows Hello is set up | No |
+| This computer's TPM chip | Unlocking needs your password *and* this computer, so a copied vault file is useless elsewhere. Optional PIN | Yes, if the computer has a TPM 2.0 you may use | Yes | No (no TPM) |
+| Security key | Unlocking needs your password and a touch on a FIDO2 key (YubiKey, Nitrokey, Titan) | Yes | Yes; Windows shows its own window for the touch and PIN | Yes |
+
+On Windows, if your security key has a PIN, tick **Also ask for the key's
+PIN every time**. Windows always checks that PIN, so a touch-only method
+can't work with such a key.
+
+Press **Continue** (or **Skip for now** if you added nothing). Everything
+here can also be done later on the **Unlock methods** page.
+
+![Adding a security key in the wizard](images/setup-5-key.png)
+
+**4. Browser (optional, Linux and Windows).** Connect the browser
+extension so it can fill your logins:
+
+1. Load the extension in Chrome, Edge or Firefox (it is not in the stores
+   yet; see [Browser autofill](04-browser-autofill.md#1-load-the-extension)).
+2. Copy the extension's ID from its card on `chrome://extensions` or
+   `edge://extensions` (32 letters, a to p) into **Chrome or Edge extension
+   ID**. Tick **I also use Firefox** if you do. Press **Register**. The app
+   runs `vault-native-host --install` for you; it must sit next to the app,
+   as the installer puts it. When it is done you see **Registered with your
+   browsers**.
+3. In the browser, click the Secret Vault icon, then **Connect**, and press
+   **Allow** in the window that opens.
+
+On macOS this step only says that browser autofill is not available yet.
+(The app can't be used on macOS yet, because vaultd doesn't run there.)
+
+![Connecting the browser](images/setup-7-browser.png)
+
+**5. Finish.** A summary card shows what you set up, with an empty circle
+next to anything you skipped. Press **Open my vault**, or **Import passwords**
+to bring in logins from Bitwarden or a browser's password export
+([Import](#import)).
+
+![The summary at the end](images/setup-8-done.png)
+
+Good to know:
+
+- The app is paired with the vault as soon as it is created, and the vault
+  stays unlocked through the wizard.
+- If the vault locks during the wizard (for example after 15 idle minutes),
+  the wizard ends; unlock and finish the optional steps from **Unlock
+  methods** instead.
+- If you close the app half-way, the vault is already made. Next time the
+  app shows the normal lock screen.
+
+### Join a synced vault
+
+On the welcome screen choose **I already use Secret Vault on another
+device**, type the path of the vault file in your synced folder (for
+example `C:\Users\alex\OneDrive\vault.svault`) and press **Join**. Then pair
+the app with the master password you already use.
 
 ### A vault already exists
 
@@ -99,16 +195,73 @@ button disappears and the password is needed again.
 [Chapter 2](02-unlocking.md#quick-unlock-with-windows-hello-windows)
 explains the details.
 
-Lock with the **Lock** button or **Ctrl+L**. The vault also locks when idle,
+Lock with the **Lock** button at the top right (next to the time left
+before the vault locks by itself) or **Ctrl+L**. The vault also locks when idle,
 when the screen locks or the computer sleeps, or when another program locks
 it; the app follows within two seconds and forgets everything it showed.
 
 ## Items
 
-The middle column lists your items, with a **Search** box above it.
-**All items**, **Logins**, **Secure notes**, **Cards**, **Identities**,
-**One-time codes** and **SSH and PGP keys** in the sidebar filter the list.
-Select an item to see it on the right.
+The middle column lists your items. Select an item to see it on the right.
+Across the top of the window are the search bar, the blue **New** button
+and **Lock**; they stay there on every page.
+
+![The window with Logins open and the search bar limited to it](images/desktop-top-bar.png)
+
+### Browse by category
+
+The sidebar's top group picks which items the middle column shows:
+
+| Sidebar entry | Shows |
+| --- | --- |
+| **All items** | Everything |
+| **Logins** | Website and app logins (not keys) |
+| **Secure notes** | Notes |
+| **Cards** | Payment cards |
+| **Identities** | Names and addresses for filling forms |
+| **One-time codes** | Logins with a two-factor code set up |
+| **SSH and PGP keys** | Keys only |
+
+1. Click an entry in the sidebar. It turns white with a blue icon, and
+   the heading of the middle column changes to match, for example
+   **Secure notes**, with the number of items in it on the right.
+2. The list shows only that kind of item.
+3. If the category is empty, the list says so ("No secure notes yet.")
+   and points you to the **New** button at the top.
+4. If an item was open on the right and it isn't in the new category, it
+   closes, so the right side shows "Pick an item on the left". A form you
+   are filling in (a new or edited item, or a new key) stays open until
+   you save or cancel it.
+
+### Search
+
+Type in the **search bar at the top** to filter by title, username or
+website. While a category is open, search stays inside it: a small blue
+tag such as **in Logins ×** at the start of the bar says so. Click the ×,
+or **Search all items** under an empty result, to search everything.
+Typing in the bar from **Generator**, **Import**, **Unlock methods** or
+**Sync** takes you back to the item list. Opening an item from the
+**Ctrl K** palette switches to **All items** when the item is in another
+category, so you can see it in the list.
+
+### Add an item: the New button
+
+The blue button at the top right is named for what it makes in the open
+category:
+
+| Open category | Button |
+| --- | --- |
+| **All items** | **New item ▾**, a menu of every kind: Login, Secure note, Card, Identity, SSH key, OpenPGP key |
+| **Logins**, **One-time codes** | **New login** |
+| **Secure notes** | **New secure note** |
+| **Cards** | **New card** |
+| **Identities** | **New identity** |
+| **SSH and PGP keys** | **New SSH key**, with a **▾** beside it for **New OpenPGP key** |
+
+![The New item menu in All items](images/new-item-menu.png)
+
+A one-time code isn't an item of its own: add one by editing a login and
+pasting its 2FA setup key.
 
 - Each value has its own copy button, such as **Copy username**, **Copy
   password**, **Copy number** or **Copy code** (when the item has a
@@ -153,8 +306,12 @@ screen or a file. You need the vault unlocked.
 
 ![The New SSH key form](images/desktop-8-new-ssh-key.png)
 
-1. Press **New item** at the top of the item list and choose **SSH key**
+1. Open **SSH and PGP keys** in the sidebar and press **New SSH key** at
+   the top right, or choose **SSH key** from **New item ▾** in All items
    (or press Ctrl K and run **New SSH key**).
+
+   ![The New SSH key button with its menu open](images/new-key-button.png)
+
 2. **Title**: what the key is for, such as "Laptop", "GitHub" or "Backup
    server". Use one key per computer or service, so you can remove one
    without touching the others.
@@ -175,8 +332,9 @@ commits:
 
 ![The New OpenPGP key form](images/desktop-9-new-pgp-key.png)
 
-1. Press **New item** and choose **OpenPGP key** (or Ctrl K, **New
-   OpenPGP key**).
+1. In **SSH and PGP keys**, press the **▾** next to **New SSH key** and
+   choose **New OpenPGP key**, or choose **OpenPGP key** from **New item ▾**
+   in All items (or Ctrl K, **New OpenPGP key**).
 2. **Name**: the name people will see on the key, such as "Alex Example".
 3. **Email**: the address the key is for, such as alex@example.com.
    Optional, but mail programs and git find your key by it.
@@ -205,8 +363,9 @@ Platforms: making keys works the same on Linux and Windows. On Windows the
 vault's SSH agent is a named pipe, which the built-in OpenSSH client uses
 ([chapter 6](06-ssh-and-git.md)). The app does not run on macOS yet.
 
-**New item** asks which kind to make (**Login**, **Secure note**,
-**Card** or **Identity**) and opens an empty form for it. A login's form:
+The **New** button at the top right (see
+[Add an item](#add-an-item-the-new-button)) opens an empty form for the
+kind you choose. A login's form:
 
 1. **Title** (required), **Username**.
 2. **Password**: type it, or press **Generate** to make one with the

@@ -68,7 +68,7 @@ The ephemeral session key lives in the same `vaultd` process as the wrapped vaul
 Without SDCP, anything that can open or emulate the V4L2 device (root, or the user via a virtual camera) can inject frames. Warm-gate-only is the right restriction. It also costs a lot (helper, models, sandbox, liveness) relative to the security it adds; see roadmap below.
 
 ### 2.4 Encrypted metadata leaks via the header (Note)
-`credential_id`, `rp_id`, `label` and `platform` sit in the plaintext header, which reveals which security keys and machines are enrolled ("Nishant's work laptop"). Encrypt labels under `K_header`-derived keys or drop them; keep only what is needed to attempt unlock.
+`credential_id`, `rp_id`, `label` and `platform` sit in the plaintext header, which reveals which security keys and machines are enrolled ("Alex's work laptop"). Encrypt labels under `K_header`-derived keys or drop them; keep only what is needed to attempt unlock.
 
 ### 2.5 TPM bus sniffing (Should fix)
 Discrete TPMs on an LPC/SPI bus can be sniffed on a stolen laptop. Use salted/encrypted HMAC sessions (parameter encryption) for every unseal; `tss-esapi` supports this (verify API).
