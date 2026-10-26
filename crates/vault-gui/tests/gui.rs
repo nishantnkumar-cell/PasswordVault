@@ -83,7 +83,7 @@ fn window(sock: PathBuf, token: PathBuf, clip: FakeClip) -> Harness<'static, App
         || {},
     );
     Harness::builder()
-        .with_size([1180.0, 1000.0])
+        .with_size([1180.0, 1100.0])
         .build_ui_state(|ui, app: &mut App| app.show(ui), app)
 }
 
@@ -643,20 +643,22 @@ fn sidebar_categories_change_the_screen() {
         h.query_by_role_and_label(Role::Button, label).is_some()
     };
 
-    // An empty vault offers a first login.
+    // An empty vault says so; the top bar's New item menu has every kind.
     assert!(shown(&h, "No items yet."));
-    click(&mut h, "New login");
+    click(&mut h, "New item");
+    click(&mut h, "Login");
     type_into(&mut h, Role::TextInput, "Title", "Example Mail");
     click(&mut h, "Save");
     settle(&mut h);
     assert!(button(&h, "Edit"), "the saved login is open");
 
-    // An empty category says so, offers its own New button, and closes the
-    // login, which isn't a note.
+    // An empty category says so, the top bar's New button is named for it,
+    // and the login, which isn't a note, is closed.
     click(&mut h, "Secure notes");
     assert!(shown(&h, "No secure notes yet."));
     assert!(!button(&h, "Edit"), "the login stayed open");
     assert!(!button(&h, "Example Mail"));
+    assert!(!button(&h, "New item") && !button(&h, "New login"));
     click(&mut h, "New secure note");
     assert!(
         h.query_by_role_and_label(Role::MultilineTextInput, "Notes")
@@ -667,11 +669,15 @@ fn sidebar_categories_change_the_screen() {
     settle(&mut h);
     assert!(button(&h, "Door codes"));
 
-    // Keys: their own empty text and both New buttons.
+    // Keys: their own empty text, New SSH key, and OpenPGP in the menu
+    // beside it.
     click(&mut h, "SSH and PGP keys");
     assert!(shown(&h, "No SSH or PGP keys yet."));
-    assert!(button(&h, "New SSH key") && button(&h, "New OpenPGP key"));
     assert!(!button(&h, "Door codes"));
+    click(&mut h, "More kinds of key");
+    assert!(button(&h, "New OpenPGP key"));
+    h.key_press(eframe::egui::Key::Escape);
+    h.step();
     click(&mut h, "New SSH key");
     assert!(button(&h, "Make key"), "the key form opened");
 
@@ -684,6 +690,14 @@ fn sidebar_categories_change_the_screen() {
 
     click(&mut h, "Cards");
     assert!(shown(&h, "No cards yet."));
+    assert!(button(&h, "New card"));
+
+    // Search stays in the open category until widened to everything.
+    type_into(&mut h, Role::TextInput, "Search", "door");
+    assert!(shown(&h, "Nothing matches."));
+    click(&mut h, "Search all items");
+    assert!(button(&h, "Door codes"));
+    assert!(button(&h, "New item"), "back on All items");
 }
 
 #[test]

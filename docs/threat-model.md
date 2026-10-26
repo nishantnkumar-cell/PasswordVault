@@ -80,6 +80,9 @@ Status: **M** = mitigated by the design, **P** = partially mitigated, **A** = ac
 | Keylog the master password | Wayland: partially mitigated by compositor isolation. X11: any client can keylog | A on X11, P on Wayland |
 | Read the clipboard | Prefer autofill; auto-clear; password-manager MIME hint (verify) | P |
 | Modify the browser extension or profile | Out of scope: same-user code owns the browser profile | A |
+| Capture a phone passkey's PRF output | The desktop app or `vault` runs the phone passkey (QR code, Bluetooth, the phone maker's relay) and sends the 32-byte PRF output to `vaultd` with the password, so `vaultd` keeps its network sandbox. Same-user code that can see the password can see this output too; it opens only that slot, still with the password, and wrong guesses are rate limited as for any method | A |
+| Answer a phone QR code from far away (relay or phishing over a screen share) | The hybrid transport requires Bluetooth proximity between phone and computer before the phone talks; the relay sees only encrypted traffic | M |
+| Take over the Apple or Google account that syncs the passkey | The phone factor never opens the vault alone: the password stays in the KEK | P |
 
 ### A4, root or kernel attacker
 
@@ -113,7 +116,7 @@ v1 uses only symmetric primitives with 256-bit keys (XChaCha20-Poly1305, HKDF-SH
 - Root or kernel compromise, firmware attacks, evil-maid attacks on a running unlocked machine.
 - Same-user malware on X11.
 - Side channels (power, EM, cache timing) beyond using constant-time crates.
-- Face unlock, phone factors, Secret Service, passkey storage, server sync, sharing. Each gets a section here before it is built. Folder sync (docs/sync.md) is covered under A5.
+- Face unlock, phone companion app, Secret Service, passkey storage, server sync, sharing. Each gets a section here before it is built. Folder sync (docs/sync.md) is covered under A5; phone passkeys under A3.
 
 ## 8. Open items
 

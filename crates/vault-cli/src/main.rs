@@ -28,6 +28,7 @@ SETUP
   pair [--autofill] [METHOD]   pair this client: approve it in the window vaultd opens,
                                or prove METHOD instead
   status                       daemon and vault state
+  version                      this program's version (also --version)
 
 UNLOCKING                      METHOD is one of --password (default), --fido2, --phone, --tpm,
                                --recovery
@@ -638,6 +639,7 @@ fn main() {
 
     match cmd {
         "help" | "-h" | "--help" => println!("{HELP}"),
+        "version" | "-V" | "--version" => println!("vault {}", vault_ipc::VERSION),
         "init" => {
             let mut c = Client::connect();
             let password = new_password("New master password (at least 8 characters): ");

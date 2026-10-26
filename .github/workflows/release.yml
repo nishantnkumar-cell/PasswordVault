@@ -1,0 +1,36 @@
+# Publishes a GitHub Release when a version tag (v0.2.0, ...) is pushed. The
+# tag must match the version in Cargo.toml; contrib/release/release.sh makes
+# both. See docs/user-guide/11-versions-and-upgrades.md.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  packages:
+    uses: ./.github/workflows/package.yml
+
+  publish:
+    needs: packages
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v7
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(contrib/release/version.sh --build)
+          contrib/release/notes.sh "$version" > notes.md
+          test -s notes.md || { echo "no \"## $version\" section in docs/release-notes.md" >&2; exit 1; }
+          ls -l dist
+          gh release create "v$version" dist/* --title "Secret Vault $version" --notes-file notes.md --verify-tag

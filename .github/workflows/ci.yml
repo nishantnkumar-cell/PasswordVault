@@ -18,6 +18,8 @@ jobs:
           components: rustfmt, clippy
       - run: sudo apt-get update && sudo apt-get install -y libtss2-dev libudev-dev libhidapi-dev libdbus-1-dev pkg-config swtpm swtpm-tools dbus
       - run: cargo fmt --all --check
+      - name: Versions agree (Cargo.toml, extension)
+        run: contrib/release/version.sh
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
       - name: TPM tests against swtpm
@@ -47,35 +49,10 @@ jobs:
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
 
-  # The Windows installer (contrib/windows/vault.iss), kept as a download on each run.
-  windows-installer:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-      - run: cargo build --release --locked
-      # Chocolatey has the newest Inno Setup 6 (6.7.1); the script also builds with 7.
-      - name: Install Inno Setup
-        shell: pwsh
-        run: |
-          choco upgrade innosetup --no-progress -y
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Build the installer
-        shell: pwsh
-        run: |
-          $iscc = Get-ChildItem "$env:ProgramFiles\Inno Setup 7\ISCC.exe", "${env:ProgramFiles(x86)}\Inno Setup 7\ISCC.exe",
-              "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" -ErrorAction SilentlyContinue |
-            Select-Object -First 1 -ExpandProperty FullName
-          if (-not $iscc) { throw "Inno Setup (ISCC.exe) not found" }
-          Write-Host "Using $iscc"
-          $version = (cargo metadata --no-deps --format-version 1 | ConvertFrom-Json).packages |
-            Where-Object name -eq vaultd | Select-Object -ExpandProperty version
-          & $iscc "/DAppVersion=$version" contrib\windows\vault.iss
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - uses: actions/upload-artifact@v7
-        with:
-          name: windows-installer
-          path: target/installer/*.exe
+  # The installer, Linux packages and extension zip (package.yml), as downloads
+  # under each run's Artifacts, versioned X.Y.Z-dev.<commit>.
+  packages:
+    uses: ./.github/workflows/package.yml
 
   # vaultd is not ported to macOS yet; the core crates and the key check must build there.
   macos:

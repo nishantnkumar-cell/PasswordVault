@@ -1,6 +1,6 @@
 [package]
 name = "vault-hw"
-version = "0.1.0"
+version.workspace = true
 description = "Hardware unlock factors: FIDO2 hmac-secret, phone passkeys, TPM 2.0 and Windows Hello."
 edition.workspace = true
 license.workspace = true

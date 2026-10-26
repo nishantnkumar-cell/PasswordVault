@@ -3,8 +3,14 @@
 ; Build the programs, then compile this script with Inno Setup 7 (6.x also works):
 ;
 ;     cargo build --release --locked
-;     iscc contrib\windows\vault.iss /DAppVersion=0.1.0
+;     iscc contrib\windows\vault.iss /DAppVersion=0.2.0
 ;
+; CI passes the build's version (contrib/version.sh --build), e.g. 0.2.0 for a
+; release or 0.2.0-dev.1a2b3c4 otherwise, and NumVersion, its numeric part.
+;
+; Running a newer installer over an existing install upgrades it in place: same
+; folder, same install mode, same tasks; vaultd and the app are stopped first
+; and the vault itself is never touched. An older installer asks first.
 ; The installer asks "for me only" (the default, no administrator rights:
 ; %LOCALAPPDATA%\Programs, HKCU) or "for all users" (one administrator prompt
 ; during setup: Program Files, HKLM). Either way vaultd runs as each signed-in
@@ -12,7 +18,10 @@
 ; rights, and at sign-in it starts from the Run key through vaultw.exe.
 
 #ifndef AppVersion
-  #define AppVersion "0.1.0"
+  #define AppVersion "0.2.0"
+#endif
+#ifndef NumVersion
+  #define NumVersion AppVersion
 #endif
 #ifndef BinDir
   #define BinDir "..\..\target\release"
@@ -25,6 +34,14 @@
 AppId={{B15F8027-096D-4CCA-B21D-F856FEDF70E6}
 AppName=Secret Vault
 AppVersion={#AppVersion}
+; Shown in Settings > Apps and in the file's properties (numbers only there).
+VersionInfoVersion={#NumVersion}
+VersionInfoProductTextVersion={#AppVersion}
+AppVerName=Secret Vault {#AppVersion}
+; Upgrades keep the previous folder, install mode and task choices.
+UsePreviousAppDir=yes
+UsePreviousPrivileges=yes
+UsePreviousTasks=yes
 AppPublisher=PasswordVault project
 AppPublisherURL=https://github.com/nishantnkumar-cell/PasswordVault
 DefaultDirName={autopf}\Secret Vault
@@ -77,7 +94,7 @@ Filename: "{app}\vaultw.exe"; Flags: nowait runasoriginaluser; Tasks: autostart
 Filename: "{app}\vault-gui.exe"; Description: "Open Secret Vault"; Flags: postinstall nowait skipifsilent runasoriginaluser
 
 [UninstallRun]
-Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM vaultd.exe"; Flags: runhidden; RunOnceId: "StopVaultd"
+Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM vaultd.exe /IM vault-gui.exe"; Flags: runhidden; RunOnceId: "StopVaultd"
 
 [Code]
 function EnvRoot: Integer;
@@ -124,13 +141,69 @@ begin
   RegWriteExpandStringValue(EnvRoot, EnvKey, 'Path', Copy(Path, 2, Length(Path) - 2));
 end;
 
-// An upgrade replaces vaultd.exe, so stop the running one. The vault locks;
+const
+  UninstallKey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{B15F8027-096D-4CCA-B21D-F856FEDF70E6}_is1';
+
+var
+  OldVersion: String;
+
+// The installed version, from either install mode, or '' when none.
+function InstalledVersion: String;
+begin
+  if not RegQueryStringValue(HKEY_CURRENT_USER, UninstallKey, 'DisplayVersion', Result) then
+    if not RegQueryStringValue(HKEY_LOCAL_MACHINE, UninstallKey, 'DisplayVersion', Result) then
+      Result := '';
+end;
+
+// "0.2.0-dev.1a2b3c4" -> "0.2.0".
+function NumericPart(V: String): String;
+begin
+  Result := V;
+  if Pos('-', Result) > 0 then
+    Result := Copy(Result, 1, Pos('-', Result) - 1);
+end;
+
+// An older installer over a newer install asks first (default: no), since an
+// older vaultd may not read a vault the newer one has saved.
+function InitializeSetup: Boolean;
+var
+  Old, New: Int64;
+begin
+  Result := True;
+  OldVersion := InstalledVersion;
+  if OldVersion = '' then
+    exit;
+  if StrToVersion(NumericPart(OldVersion), Old) and StrToVersion('{#NumVersion}', New) then
+    if ComparePackedVersion(New, Old) < 0 then
+      Result := SuppressibleMsgBox(
+        'Secret Vault ' + OldVersion + ' is installed, which is newer than this installer ({#AppVersion}).'
+        + #13#10#13#10 + 'An older version may not be able to open a vault that a newer one has saved. '
+        + 'Install the older version anyway?', mbConfirmation, MB_YESNO or MB_DEFBUTTON2, IDNO) = IDYES;
+end;
+
+function UpdateReadyMemo(Space, NewLine, MemoUserInfoInfo, MemoDirInfo, MemoTypeInfo,
+  MemoComponentsInfo, MemoGroupInfo, MemoTasksInfo: String): String;
+begin
+  if OldVersion = '' then
+    Result := 'Install Secret Vault {#AppVersion}'
+  else if OldVersion = '{#AppVersion}' then
+    Result := 'Reinstall Secret Vault {#AppVersion}'
+  else
+    Result := 'Upgrade Secret Vault from ' + OldVersion + ' to {#AppVersion}' + NewLine
+      + Space + 'Your vault, settings and paired apps are kept.';
+  Result := Result + NewLine + NewLine + MemoDirInfo;
+  if MemoTasksInfo <> '' then
+    Result := Result + NewLine + NewLine + MemoTasksInfo;
+end;
+
+// An upgrade replaces the programs, so stop the running ones. The vault locks;
 // its file is saved on every change, so nothing is lost.
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   Code: Integer;
 begin
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM vaultd.exe', '', SW_HIDE, ewWaitUntilTerminated, Code);
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM vaultd.exe /IM vault-gui.exe /IM vault-prompt.exe',
+    '', SW_HIDE, ewWaitUntilTerminated, Code);
   Result := '';
 end;
 

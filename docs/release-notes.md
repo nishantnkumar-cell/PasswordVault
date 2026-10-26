@@ -14,6 +14,182 @@ to work yet.
 
 ## Unreleased
 
+### Unlock with a passkey on your phone (Linux and Windows)
+
+- **Your phone as a second factor.** You can now add a passkey on your
+  iPhone or Android phone as a way to unlock the vault, together with your
+  master password. The passkey is saved in the phone's password manager
+  (iCloud Keychain, Google Password Manager, or another one that supports
+  passkeys with PRF).
+- **How it connects.** The computer shows a QR code. You scan it with the
+  phone's camera, the two check over Bluetooth that they are near each
+  other, and you confirm on the phone with your face, fingerprint or screen
+  lock.
+- **The password is still needed.** The phone adds to the password and never
+  replaces it. A synced passkey can be restored through your Apple or Google
+  account, so the vault does not trust the phone on its own.
+- **Desktop app:** a new **Phone** choice on the lock screen and under
+  **Unlock methods > Add a method**.
+- **Command line:** `vault add-slot phone`, and `--phone` for `unlock`,
+  `pair`, `export` and `revoke`.
+- **No change to the vault file.** A phone method is stored as a security
+  key method that checks the user, so older versions still open the vault
+  with your other methods.
+- How to start: [Unlock with your phone](user-guide/02-unlocking.md#unlock-with-your-phone).
+
+| | Linux | Windows | macOS |
+| --- | --- | --- | --- |
+| Phone passkey unlock | Yes (needs Bluetooth and BlueZ) | Yes (Windows 11 23H2 or later) | Not yet |
+| Who shows the QR code | Secret Vault | Windows' own window | |
+
+Known limits: not yet tried with a real phone at the time of writing.
+Whether every phone accepts the vault's passkey name `vault.local` is still
+to be confirmed on hardware.
+
+### One search bar and a New button that follows you
+
+- **Search at the top.** One search field runs across the top of the
+  desktop app's window and stays there on every page. While a category is
+  open it searches only that category, shown by a small blue "in Logins ×"
+  tag; click the × (or **Search all items** under an empty result) to
+  search everything. Typing in it from Generator, Import, Unlock methods
+  or Sync jumps back to the item list. Ctrl K still opens the palette for
+  items and actions together.
+- **New button named for the category.** The blue button at the top right
+  says what it makes: **New login** in Logins and One-time codes, **New
+  secure note**, **New card**, **New identity**, and **New SSH key** in SSH
+  and PGP keys, with a small ▾ beside it for **New OpenPGP key**. In All
+  items it is **New item ▾**, a menu of every kind. The separate "New item"
+  button above the list is gone.
+- **Lock** and the auto-lock timer moved to the top right.
+- **Icons before words.** Every sidebar entry has an icon (the open one
+  sits on a white button with a blue icon tile), and so do the main
+  buttons: New, Lock, Edit, Delete (now red), Copy, Show/Hide, Save,
+  Generate, Import and Sync now.
+- **How to use it:**
+  [Search](user-guide/05-desktop-app.md#search) and
+  [Add an item](user-guide/05-desktop-app.md#add-an-item-the-new-button).
+- **Platforms.** The same on Linux and Windows. The app does not run on
+  macOS yet.
+
+### A clearer first-time setup
+
+- The setup card now lists its steps down the left side (Password,
+  Recovery code, Unlock methods, Browser, Finish). Finished steps get a
+  green tick and the current one is blue, with "Step 2 of 4" above each
+  page's title.
+- **Back** sits at the bottom left and the next step's button at the
+  bottom right, under a thin line, on every page.
+- The master password fields are full width, with the strength bar under
+  the first and "They match" under the second.
+- The recovery code is shown in boxes, one group each, so it's easier to
+  copy onto paper.
+- Unlock methods show an icon for each (chip, security key, Windows Hello)
+  that turns green once added.
+- The last page sums up what was set up in one card, with **Import
+  passwords** and **Open my vault** side by side.
+- On a small screen (window under about 750 points wide) the step list
+  folds back into dots across the top.
+- **How to use it:**
+  [No vault yet: the setup wizard](user-guide/05-desktop-app.md#no-vault-yet-the-setup-wizard).
+- **Platforms.** No differences in the layout. The Unlock methods step
+  offers Windows Hello, the TPM chip and security keys on Windows, and the
+  TPM chip and security keys on Linux. The app does not run on macOS yet.
+
+### Version numbers, release downloads and in-place upgrades
+
+- **One version for everything.** The daemon, the `vault` command, the
+  desktop app, the browser host, `vault-gpg`, the extension and the
+  installers now share one version number, starting at **0.2.0**. Releases
+  with new features raise the middle number, fix-only releases the last.
+- **See your version.** `vault --version`, `vaultd --version`,
+  `vault-native-host --version` and `vault-gpg --version` print it, and the
+  desktop app shows it at the bottom of the sidebar. Builds that are not
+  releases say so: `0.2.0-dev.1a2b3c4` (the commit they were built from).
+- **Release downloads.** Each release is published on the project's GitHub
+  Releases page, no account needed, with the Windows installer, a Debian /
+  Ubuntu package (`.deb`), a Linux archive (`.tar.gz`) and the browser
+  extension (`.zip`), all named with the version. Every CI run also keeps
+  development builds of the same files.
+- **Upgrades in place.** Running a newer Windows installer upgrades the
+  existing install: same folder, mode and choices, closes the app and
+  vaultd, and starts vaultd again. Its last page says *Upgrade Secret Vault
+  from X to Y*. The `.deb` upgrades with `apt install`, and the archive's
+  `install.sh` upgrades a `~/.local` install and restarts vaultd. The vault,
+  unlock methods and paired apps are always kept.
+- **Going back asks first.** An older Windows installer or `install.sh`
+  over a newer version asks before going ahead, with No as the default,
+  since an older version may not read a vault a newer one saved; apt
+  refuses unless told `--allow-downgrades`.
+- **Windows Installed apps** shows the version, and the installer file's
+  properties carry it too.
+
+Platform notes: Windows has the installer; Linux has the `.deb` (Debian 13,
+Ubuntu 24.04 and newer) and the `.tar.gz` (any 64-bit distribution). After
+a `.deb` upgrade, each user runs `systemctl --user restart vaultd`; the
+installer and `install.sh` restart vaultd themselves. macOS has no package
+yet because the daemon does not run there.
+
+How to use it: [Versions, downloads and upgrading](user-guide/11-versions-and-upgrades.md).
+
+### A cleaner, more polished desktop app
+
+- **New look throughout.** The app now ships its own fonts (Inter for text,
+  JetBrains Mono for passwords, codes and keys), so it looks the same on
+  Linux and Windows. Names and headings are semibold, lines between panes
+  and rows are soft grey instead of dark, and spacing follows the design
+  mockups.
+- **Item list.** Each item has a coloured letter tile, its title in bold over
+  the username, and small tags for 2FA and keys. The sidebar shows how many
+  items each category holds.
+- **Item details.** Each field is a row with its name over its value and a
+  Copy button on the right; the password's Copy is the blue one.
+- **Unlock screen.** The ways to unlock (master password, security key, this
+  device, recovery code) are listed on the left; the form for the chosen one
+  is on the right.
+- **Ctrl K palette.** Items show their letter tile and username; the
+  highlighted row shows that Enter runs it.
+- **Windows fit the screen.** The main window opens centred and no larger
+  than the free part of the screen, leaving the taskbar and the title bar
+  visible. On a 1920x1080 display at 150% scaling it opens at 1180x624
+  instead of running off the bottom. The approval window (pairing, card
+  fill, key use) grows to fit its text instead of cutting it off.
+- **Always light.** The app and its title bar stay light even when Windows or
+  Linux is set to dark mode, so there is no black title bar or black approval
+  window any more.
+- **How to use it:**
+  [The desktop app: window layout and the command palette](user-guide/desktop-window-and-palette.md).
+- **Platforms.** No feature differences between Linux and Windows. On Linux
+  with Wayland the compositor decides where windows open, so "opens
+  centred" may not apply there. The app does not run on macOS yet.
+
+### Setup wizard in the desktop app
+
+- **A guided first run.** When there is no vault yet, the desktop app now
+  opens a setup wizard instead of a bare password form. It walks you
+  through five steps, listed down the left of the card: choose a master password (with a
+  strength meter), save the recovery code (you must tick that you saved it
+  before going on), add more unlock methods, connect the browser, and a
+  summary.
+- **Add unlock methods without retyping.** In the wizard you can add a TPM
+  method, a security key or (on Windows) Windows Hello quick unlock with one
+  press each. The wizard reuses the password you just chose and forgets it
+  when setup ends or the vault locks.
+- **Register the browser from the app.** Paste the extension's ID and press
+  **Register**; the app runs `vault-native-host --install` for you.
+- **Join from the welcome screen.** **I already use Secret Vault on another
+  device** opens the join-a-synced-vault form.
+- **Platforms:** Windows shows Windows Hello, TPM and security key; Linux
+  shows TPM and security key. The wizard is written to show only the
+  security key and to say autofill isn't available on macOS, but the app
+  can't be used on macOS yet because vaultd doesn't run there.
+- **Known limits:** the wizard ends if the vault locks part-way; finish the
+  optional steps under **Unlock methods**. **Register** needs the Chrome or
+  Edge extension ID, so a Firefox-only setup still runs
+  `vault-native-host --install` by hand.
+- **How to use it:**
+  [No vault yet: the setup wizard](user-guide/05-desktop-app.md#no-vault-yet-the-setup-wizard)
+
 ### Security keys in the desktop app on Windows
 
 - **No PIN box on Windows.** On Windows, Secret Vault reaches security keys
@@ -26,6 +202,11 @@ to work yet.
   now explains on Windows that a key with a PIN needs **Also ask for the
   key's PIN every time** ticked, because Windows always checks that PIN and
   a touch-only method then can't work.
+- **Earlier, clearer error for touch-only keys with a PIN.** On Windows,
+  adding a touch-only security key that has a PIN or fingerprint now stops
+  after the first touch, with a message saying to use a method that asks
+  for the PIN. Before, it failed only after the second touch, with a
+  harder-to-read message.
 - **How to use it:**
   [Add a security key](user-guide/02-unlocking.md#add-a-security-key-fido2)
   and [Unlock methods](user-guide/05-desktop-app.md#unlock-methods).
@@ -36,6 +217,26 @@ to work yet.
   service (WebAuthn API version 4), vaultd falls back to direct USB access,
   which needs administrator rights and the PIN from the app; use the
   `vault` command there for slots with a PIN.
+
+### Sidebar categories now visibly change the screen
+
+- **What was wrong.** Choosing **Secure notes**, **SSH and PGP keys** or
+  another category in the desktop app's sidebar did filter the list, but
+  the window hardly changed: an empty category still said "No items yet.",
+  and an item you had open stayed on the right. On Windows and Linux alike
+  it looked as if the click did nothing.
+- **What you see now.** The item list starts with the category's name
+  (for example **Secure notes**). An empty category says so in its own
+  words, such as "No secure notes yet.", and points you to the **New**
+  button at the top, which is named for the category (see the next
+  entry). Switching category closes an open item that isn't
+  in the new category; a form you are filling in stays open, so nothing
+  you typed is lost. Opening an item from the Ctrl K palette switches the
+  list to **All items** if the item is in another category.
+- **How to use it:**
+  [Browse by category](user-guide/05-desktop-app.md#browse-by-category).
+- **Platforms.** The same on Linux and Windows. The app does not run on
+  macOS yet.
 
 ### Make SSH and OpenPGP keys in the desktop app
 
