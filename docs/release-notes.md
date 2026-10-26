@@ -14,6 +14,29 @@ to work yet.
 
 ## Unreleased
 
+### Security keys in the desktop app on Windows
+
+- **No PIN box on Windows.** On Windows, Secret Vault reaches security keys
+  through Windows' own security key service, which shows its own window for
+  the touch and the key's PIN. The desktop app now leaves out the **PIN**
+  box for security keys there, on the lock screen and under **Add a
+  method**, and says that Windows will ask. Before, the box was shown but
+  what you typed in it was ignored.
+- **A hint for keys with a PIN.** Under **Add a method**, **Security key**
+  now explains on Windows that a key with a PIN needs **Also ask for the
+  key's PIN every time** ticked, because Windows always checks that PIN and
+  a touch-only method then can't work.
+- **How to use it:**
+  [Add a security key](user-guide/02-unlocking.md#add-a-security-key-fido2)
+  and [Unlock methods](user-guide/05-desktop-app.md#unlock-methods).
+- **Platforms.** Windows only. Linux keeps the PIN box, because there
+  Secret Vault talks to the key directly and passes the PIN itself. The app
+  does not run on macOS yet.
+- **Not yet.** On Windows 10 builds too old for Windows' security key
+  service (WebAuthn API version 4), vaultd falls back to direct USB access,
+  which needs administrator rights and the PIN from the app; use the
+  `vault` command there for slots with a PIN.
+
 ### Make SSH and OpenPGP keys in the desktop app
 
 - **New keys without the command line.** **New item** now also offers

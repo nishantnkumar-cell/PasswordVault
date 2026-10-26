@@ -86,8 +86,9 @@ The app keeps its own pairing, separate from the CLI's and the browser's.
 
 In the **Unlock with** list pick Password, Security key, This device (TPM)
 or Recovery code, fill in what it asks and press **Unlock** (or Enter). For a security key, touch it when it
-blinks. On Windows, for a security key Windows opens its own window for the
-touch and PIN (leave the PIN field empty).
+blinks. On Linux, type the key's PIN in **PIN (if set)** if the method
+asks for it. On Windows there is no PIN box for a security key: Windows
+opens its own window for the touch and, if needed, the PIN.
 
 **Windows Hello (Windows).** With quick unlock turned on (see *Unlock
 methods* below), the lock screen shows an **Unlock with Windows Hello**
@@ -277,7 +278,15 @@ and fill in what it asks:
 
 - **Password:** the new password, twice.
 - **Security key:** your master password; tick **Also ask for the key's PIN
-  every time** if you want the PIN required. Touch the key twice.
+  every time** if you want the PIN required. Plug the key in, press **Add**
+  and touch the key twice: once to register it and once to test it.
+  - *Linux:* if the key has a PIN, type it in the **PIN** box. Many keys
+    with a PIN want it even to register a touch-only method.
+  - *Windows:* there is no PIN box. Windows opens its own security key
+    window for each touch and asks for the PIN there. If your key has a PIN,
+    tick **Also ask for the key's PIN every time**: Windows always checks
+    the PIN of such a key, which gives a different secret, so a touch-only
+    method fails with it.
 - **TPM** (Linux and Windows): your master password, an optional **PIN**,
   and optionally **Stop working if Secure Boot settings change (PCR 7)**.
 - **Recovery code:** the new code is shown once; write it down.
@@ -301,6 +310,7 @@ and what to do about conflicts.
 |---|---|---|---|
 | Key details, **Copy public key**, **Ask before each use** | Yes | Yes | Not yet (the app does not run on macOS yet) |
 | Security key and TPM rows under **Unlock methods** | Yes | Yes (Windows shows its own window for the security key's touch and PIN) | Not yet |
+| **PIN** box for a security key | Yes | Not shown: Windows asks in its own window | Not yet |
 | **Quick unlock with Windows Hello** box | Not shown | Yes | Not yet |
 | **Sync** page | Yes | Yes | Not yet |
 
