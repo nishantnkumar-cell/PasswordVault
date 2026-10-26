@@ -730,11 +730,12 @@ impl App {
                 Ok(()) => {
                     self.error = None;
                     self.notice = Some(format!(
-                        "Saved to {path}, readable only by you{}.",
+                        "Saved to {path}{}",
                         if cfg!(windows) {
-                            " and administrators"
+                            ". It gets the folder's permissions: keep it inside your user \
+                             folder, which only you and administrators can open."
                         } else {
-                            ""
+                            ", readable only by you."
                         }
                     ));
                 }
