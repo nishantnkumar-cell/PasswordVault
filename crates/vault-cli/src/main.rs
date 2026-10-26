@@ -884,6 +884,9 @@ fn main() {
         "slots" => {
             for s in slots(&mut Client::connect()) {
                 println!("{}  {:<9} {}", short(&s.id), s.kind, s.label);
+                if let Some(w) = &s.warning {
+                    println!("{:8}  note: {w}", "");
+                }
             }
         }
         "add-slot" => {
