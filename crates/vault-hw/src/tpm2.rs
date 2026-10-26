@@ -849,6 +849,7 @@ pub(crate) mod tests {
 
     /// Clear the simulator's dictionary-attack counter, which wrong-PIN
     /// tests raise and which outlives a test run.
+    #[cfg(target_os = "linux")]
     pub(crate) fn reset_swtpm_lockout() {
         let mut t = Swtpm::connect();
         ensure_srk(&mut t);
