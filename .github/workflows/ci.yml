@@ -16,7 +16,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      - run: sudo apt-get update && sudo apt-get install -y libtss2-dev libudev-dev libhidapi-dev pkg-config swtpm swtpm-tools dbus
+      - run: sudo apt-get update && sudo apt-get install -y libtss2-dev libudev-dev libhidapi-dev pkg-config swtpm swtpm-tools dbus libsecret-tools python3-secretstorage
       - run: cargo fmt --all --check
       - name: Versions agree (Cargo.toml, extension)
         run: contrib/release/version.sh

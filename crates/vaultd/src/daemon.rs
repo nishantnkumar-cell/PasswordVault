@@ -518,6 +518,71 @@ impl Daemon {
         }
     }
 
+    /// Whether the vault is unlocked.
+    pub fn is_unlocked(&self) -> bool {
+        self.vault.is_some()
+    }
+
+    /// Every item `keep` selects, with its ID. Fails while locked. Does not
+    /// count as activity: an application polling the Secret Service must
+    /// not keep the vault unlocked.
+    pub fn items_where(&mut self, keep: impl Fn(&ItemData) -> bool) -> R<Vec<(ItemId, ItemData)>> {
+        let ids: Vec<ItemId> = self.vault()?.item_ids().copied().collect();
+        let mut out = Vec::new();
+        for id in ids {
+            let Ok(it) = self.item(&id) else { continue };
+            if keep(&it) {
+                out.push((id, it));
+            }
+        }
+        Ok(out)
+    }
+
+    /// Save `item` under `id`, or as a new item, and write the vault. Keeps
+    /// an edited item's key and creation time; a new item gets no key.
+    pub fn put_item(&mut self, id: Option<ItemId>, mut item: ItemData) -> R<ItemId> {
+        let t = now();
+        let id = match id {
+            Some(id) => {
+                let old = self.item(&id)?;
+                item.created = old.created;
+                item.key = old.key.clone();
+                id
+            }
+            None => {
+                item.created = t;
+                item.key = None;
+                self.vault()?.new_item_id(&mut OsRandom).map_err(e)?
+            }
+        };
+        item.modified = t;
+        item.normalize();
+        self.vault()?
+            .put_item(&mut OsRandom, &id, &item.to_bytes())
+            .map_err(e)?;
+        self.save()?;
+        Ok(id)
+    }
+
+    /// Delete item `id` and write the vault.
+    pub fn delete_item(&mut self, id: &ItemId) -> R<()> {
+        self.vault()?.remove_item(id).map_err(e)?;
+        self.save()
+    }
+
+    /// Claim the prompt to ask about an application using the Secret
+    /// Service. Finish with [`Self::end_app_prompt`].
+    pub fn begin_app_prompt(&mut self) -> R<Arc<dyn Approver>> {
+        self.claim_prompt(
+            "vaultd cannot show the approval window, so no application can use the Secret Service",
+        )
+    }
+
+    /// Release the prompt from [`Self::begin_app_prompt`].
+    pub fn end_app_prompt(&mut self, answer: &Result<bool, String>) {
+        self.finish_prompt(answer);
+    }
+
     /// Claim the one prompt that may be open at a time. The caller asks
     /// without holding the daemon lock, then calls [`Self::finish_prompt`].
     fn claim_prompt(&mut self, cannot: &str) -> R<Arc<dyn Approver>> {
@@ -1230,34 +1295,13 @@ impl Daemon {
                 item: without_key(self.item(&id)?),
                 id,
             }),
-            Request::PutItem { id, mut item } => {
-                let t = now();
-                // Keys change only through the key requests: an edited item
-                // keeps its key, and a new one starts without.
-                let id = match id {
-                    Some(id) => {
-                        let old = self.item(&id)?;
-                        item.created = old.created;
-                        item.key = old.key.clone();
-                        id
-                    }
-                    None => {
-                        item.created = t;
-                        item.key = None;
-                        self.vault()?.new_item_id(rng).map_err(e)?
-                    }
-                };
-                item.modified = t;
-                item.normalize();
-                self.vault()?
-                    .put_item(rng, &id, &item.to_bytes())
-                    .map_err(e)?;
-                self.save()?;
-                Ok(Response::ItemSaved { id })
-            }
+            // Keys change only through the key requests: an edited item
+            // keeps its key, and a new one starts without.
+            Request::PutItem { id, item } => Ok(Response::ItemSaved {
+                id: self.put_item(id, item)?,
+            }),
             Request::DeleteItem { id } => {
-                self.vault()?.remove_item(&id).map_err(e)?;
-                self.save()?;
+                self.delete_item(&id)?;
                 Ok(Response::Ok)
             }
             Request::FindForOrigin { origin } => Ok(Response::Items(self.summaries(|it| {

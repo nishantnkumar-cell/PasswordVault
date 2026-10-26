@@ -8,6 +8,11 @@
 # user manager. That is also why MemoryDenyWriteExecute is off here: OpenGL
 # drivers that compile code at run time (llvmpipe) need it.
 
+# To keep apps' passwords (libsecret: mail and chat clients, secret-tool) in
+# the vault, add --secret-service to ExecStart, after disabling GNOME
+# Keyring's or KWallet's Secret Service. The session bus is reached through
+# DBUS_SESSION_BUS_ADDRESS, which the user manager provides.
+
 [Unit]
 Description=Secret Vault daemon
 
