@@ -4,6 +4,8 @@
 
 use std::sync::Arc;
 
+pub use crate::icon::Icon;
+
 use eframe::egui::{
     self, Color32, CornerRadius, FontData, FontDefinitions, FontFamily, FontId, Margin, Pos2, Rect,
     RichText, Sense, Shadow, Shape, Stroke, TextStyle, Ui, Vec2, ViewportCommand, WidgetInfo,
@@ -231,7 +233,7 @@ pub fn primary(ui: &mut Ui, enabled: bool, text: &str) -> egui::Response {
     ui.add_enabled(
         enabled,
         egui::Button::new(RichText::new(text).family(semibold()).color(Color32::WHITE))
-            .fill(if enabled { ACCENT } else { BORDER_STRONG })
+            .fill(ACCENT)
             .stroke(Stroke::NONE)
             .min_size(Vec2::new(0.0, 36.0)),
     )
@@ -244,6 +246,32 @@ pub fn soft(ui: &mut Ui, text: &str) -> egui::Response {
             .fill(GROUND)
             .stroke(Stroke::new(1.0, BORDER))
             .min_size(Vec2::new(0.0, 32.0)),
+    )
+}
+
+/// A quiet button with an icon before its label.
+pub fn soft_icon(ui: &mut Ui, icon: Icon, text: &str) -> egui::Response {
+    ui.add(
+        egui::Button::new((icon.atom(14.0), RichText::new(text).size(13.0).color(INK)))
+            .fill(GROUND)
+            .stroke(Stroke::new(1.0, BORDER))
+            .min_size(Vec2::new(0.0, 32.0)),
+    )
+}
+
+/// The small blue button inside a card, with an icon, for its main copy.
+pub fn primary_small(ui: &mut Ui, icon: Icon, text: &str) -> egui::Response {
+    ui.add(
+        egui::Button::new((
+            icon.atom_in(14.0, Color32::WHITE),
+            RichText::new(text)
+                .family(semibold())
+                .size(13.0)
+                .color(Color32::WHITE),
+        ))
+        .fill(ACCENT)
+        .stroke(Stroke::NONE)
+        .min_size(Vec2::new(0.0, 32.0)),
     )
 }
 
@@ -390,24 +418,44 @@ fn paint_tag(ui: &Ui, right: f32, cy: f32, text: &str, fg: Color32, bg: Color32)
     rect.left()
 }
 
-/// One entry of the sidebar: a name and, on the right, a count. The open
-/// one is a white chip.
-pub fn nav_row(ui: &mut Ui, on: bool, name: &str, count: Option<usize>) -> egui::Response {
+/// One entry of the sidebar: an icon in a small square, a name and, on the
+/// right, a count. The open one is a white button whose square turns blue.
+pub fn nav_row(
+    ui: &mut Ui,
+    on: bool,
+    icon: Icon,
+    name: &str,
+    count: Option<usize>,
+) -> egui::Response {
     let w = ui.available_width();
-    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, 34.0), Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, 38.0), Sense::click());
     resp.widget_info(|| WidgetInfo::selected(egui::Role::Button, true, on, name));
     if ui.is_rect_visible(rect) {
         let p = ui.painter();
         if on {
             p.rect_filled(
                 rect.translate(Vec2::new(0.0, 1.0)),
-                CornerRadius::same(7),
-                Color32::from_black_alpha(14),
+                CornerRadius::same(9),
+                Color32::from_black_alpha(12),
             );
-            p.rect_filled(rect, CornerRadius::same(7), SURFACE);
+            p.rect(
+                rect,
+                CornerRadius::same(9),
+                SURFACE,
+                Stroke::new(1.0, BORDER),
+                egui::StrokeKind::Inside,
+            );
         } else if resp.hovered() {
-            p.rect_filled(rect, CornerRadius::same(7), Color32::from_black_alpha(10));
+            p.rect_filled(rect, CornerRadius::same(9), Color32::from_black_alpha(10));
         }
+        let square = Rect::from_min_size(
+            Pos2::new(rect.left() + 7.0, rect.center().y - 12.0),
+            Vec2::splat(24.0),
+        );
+        if on {
+            p.rect_filled(square, CornerRadius::same(6), ACCENT_WEAK);
+        }
+        icon.paint(p, square.shrink(4.0), if on { ACCENT } else { MUTED });
         let font = if on {
             FontId::new(14.0, semibold())
         } else {
@@ -415,7 +463,7 @@ pub fn nav_row(ui: &mut Ui, on: bool, name: &str, count: Option<usize>) -> egui:
         };
         let ink = if on { INK } else { TEXT };
         p.text(
-            Pos2::new(rect.left() + 10.0, rect.center().y),
+            Pos2::new(square.right() + 10.0, rect.center().y),
             egui::Align2::LEFT_CENTER,
             name,
             font,
@@ -432,6 +480,49 @@ pub fn nav_row(ui: &mut Ui, on: bool, name: &str, count: Option<usize>) -> egui:
         }
     }
     resp
+}
+
+/// A white button with a hairline edge, an icon and a label.
+pub fn button(ui: &mut Ui, icon: Icon, text: &str) -> egui::Response {
+    ui.add(
+        egui::Button::new((
+            icon.atom(15.0),
+            RichText::new(text).family(semibold()).size(13.0).color(INK),
+        ))
+        .fill(SURFACE)
+        .stroke(Stroke::new(1.0, BORDER_STRONG))
+        .min_size(Vec2::new(0.0, 34.0)),
+    )
+}
+
+/// The filled blue button with an icon before its label.
+pub fn primary_icon(ui: &mut Ui, enabled: bool, icon: Icon, text: &str) -> egui::Response {
+    ui.add_enabled(
+        enabled,
+        egui::Button::new((
+            icon.atom_in(15.0, Color32::WHITE),
+            RichText::new(text).family(semibold()).color(Color32::WHITE),
+        ))
+        .fill(ACCENT)
+        .stroke(Stroke::NONE)
+        .min_size(Vec2::new(0.0, 36.0)),
+    )
+}
+
+/// A red outline button for an action that removes something.
+pub fn danger(ui: &mut Ui, icon: Icon, text: &str) -> egui::Response {
+    ui.add(
+        egui::Button::new((
+            icon.atom_in(15.0, ERROR),
+            RichText::new(text)
+                .family(semibold())
+                .size(13.0)
+                .color(ERROR),
+        ))
+        .fill(SURFACE)
+        .stroke(Stroke::new(1.0, Color32::from_rgb(0xF1, 0xC4, 0xC0)))
+        .min_size(Vec2::new(0.0, 34.0)),
+    )
 }
 
 /// One of a few choices stacked in a column, with a muted line under its

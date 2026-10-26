@@ -5470,7 +5470,7 @@ dependencies = [
 
 [[package]]
 name = "vault-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "data-encoding",
  "rpassword",
@@ -5481,7 +5481,7 @@ dependencies = [
 
 [[package]]
 name = "vault-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "argon2 0.6.0",
  "chacha20poly1305",
@@ -5503,7 +5503,7 @@ dependencies = [
 
 [[package]]
 name = "vault-gpg"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "pgp",
  "tempfile",
@@ -5515,7 +5515,7 @@ dependencies = [
 
 [[package]]
 name = "vault-gui"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "arboard",
  "eframe",
@@ -5529,7 +5529,7 @@ dependencies = [
 
 [[package]]
 name = "vault-hw"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "aes 0.9.3",
  "ctap-hid-fido2",
@@ -5551,7 +5551,7 @@ dependencies = [
 
 [[package]]
 name = "vault-import"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "csv",
  "serde",
@@ -5561,7 +5561,7 @@ dependencies = [
 
 [[package]]
 name = "vault-ipc"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "postcard",
  "serde",
@@ -5572,7 +5572,7 @@ dependencies = [
 
 [[package]]
 name = "vault-native-host"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rpassword",
  "serde",
@@ -5584,7 +5584,7 @@ dependencies = [
 
 [[package]]
 name = "vaultd"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "nix",
  "pgp",

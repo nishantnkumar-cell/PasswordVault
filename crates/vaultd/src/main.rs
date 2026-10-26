@@ -28,6 +28,7 @@ OPTIONS:
   --no-prompt        never show the pairing approval window (pairing then needs
                      an unlock method); VAULT_PROMPT names the window program
                      [default: vault-prompt next to vaultd]
+  -V, --version      print the version
   -h, --help         this text";
 
 /// No core dumps, no ptrace attach from same-UID processes, and keys kept
@@ -56,6 +57,10 @@ fn harden() {
 }
 
 fn main() {
+    if matches!(std::env::args().nth(1).as_deref(), Some("-V" | "--version")) {
+        println!("vaultd {}", vault_ipc::VERSION);
+        return;
+    }
     #[cfg(unix)]
     harden();
     let mut vault = local::data_dir().join("vault.svault");

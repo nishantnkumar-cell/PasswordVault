@@ -1,6 +1,6 @@
 [package]
 name = "vault-gui"
-version = "0.1.0"
+version.workspace = true
 description = "Desktop app for vaultd."
 edition.workspace = true
 license.workspace = true

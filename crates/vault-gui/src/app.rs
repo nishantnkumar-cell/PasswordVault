@@ -6,7 +6,7 @@
 
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use eframe::egui::{self, Key, Margin, RichText, Stroke, TextEdit, Ui, Vec2};
+use eframe::egui::{self, CornerRadius, Key, Margin, Rect, RichText, Stroke, TextEdit, Ui, Vec2};
 use vault_core::item::{Card, CustomField, FieldKind, Identity, ItemData, ItemKind, UrlEntry};
 use vault_core::origin::MatchMode;
 use vault_core::totp::TotpConfig;
@@ -17,7 +17,7 @@ use vault_ipc::{
 use zeroize::Zeroizing;
 
 use crate::client::{Backend, Failure, Paths};
-use crate::theme;
+use crate::theme::{self, Icon};
 
 mod setup;
 
@@ -25,6 +25,10 @@ mod setup;
 pub const CLIPBOARD_CLEAR: Duration = Duration::from_secs(30);
 const STATUS_EVERY: Duration = Duration::from_secs(2);
 const CLIENT_NAME: &str = "desktop app";
+/// Height of the bar across the top of the unlocked window.
+const TOP_BAR: f32 = 60.0;
+/// Width of the sidebar, and of the app's name above it.
+const SIDEBAR: f32 = 236.0;
 
 /// The system clipboard, or a stand-in for tests.
 pub trait Clip {
@@ -169,6 +173,43 @@ impl Filter {
         }
     }
 
+    /// A short name for the search field: "Search keys", "in Keys".
+    fn short(self) -> &'static str {
+        match self {
+            Filter::All => "All items",
+            Filter::Kind(ItemKind::Login) => "Logins",
+            Filter::Kind(ItemKind::Note) => "Notes",
+            Filter::Kind(ItemKind::Card) => "Cards",
+            Filter::Kind(ItemKind::Identity) => "Identities",
+            Filter::Codes => "Codes",
+            Filter::Keys => "Keys",
+        }
+    }
+
+    fn icon(self) -> Icon {
+        match self {
+            Filter::All => Icon::Grid,
+            Filter::Kind(k) => kind_icon(k),
+            Filter::Codes => Icon::Clock,
+            Filter::Keys => Icon::Terminal,
+        }
+    }
+
+    /// The top bar's New button in this category: its label and what it
+    /// starts. All items has a menu instead.
+    fn new_button(self) -> Option<(&'static str, Quick)> {
+        Some(match self {
+            Filter::All => return None,
+            Filter::Kind(ItemKind::Login) | Filter::Codes => {
+                ("New login", Quick::Item(ItemKind::Login))
+            }
+            Filter::Kind(ItemKind::Note) => ("New secure note", Quick::Item(ItemKind::Note)),
+            Filter::Kind(ItemKind::Card) => ("New card", Quick::Item(ItemKind::Card)),
+            Filter::Kind(ItemKind::Identity) => ("New identity", Quick::Item(ItemKind::Identity)),
+            Filter::Keys => ("New SSH key", Quick::Key(false)),
+        })
+    }
+
     fn admits(self, i: &ItemSummary) -> bool {
         match self {
             Filter::All => true,
@@ -180,7 +221,17 @@ impl Filter {
     }
 }
 
-/// What an empty category's shortcut button starts.
+/// The icon for a kind of item.
+fn kind_icon(k: ItemKind) -> Icon {
+    match k {
+        ItemKind::Login => Icon::Key,
+        ItemKind::Note => Icon::Note,
+        ItemKind::Card => Icon::Card,
+        ItemKind::Identity => Icon::Identity,
+    }
+}
+
+/// What a New button starts.
 #[derive(Clone, Copy)]
 enum Quick {
     Item(ItemKind),
@@ -1297,7 +1348,7 @@ impl App {
             }
             ui.add_space(10.0);
             ui.horizontal(|ui| {
-                if theme::primary(ui, ok, "Sync now").clicked() && ok {
+                if theme::primary_icon(ui, ok, Icon::Sync, "Sync now").clicked() && ok {
                     self.act("Syncing…", Op::Sync, Request::SyncNow);
                 }
                 if ui.add_enabled(ok, egui::Button::new("Turn off")).clicked() {
@@ -1484,13 +1535,18 @@ impl App {
                 None => Some(Palette::default()),
             };
         }
+        egui::Panel::top("top")
+            .resizable(false)
+            .exact_size(TOP_BAR)
+            .frame(egui::Frame::new().fill(theme::SURFACE))
+            .show(ui, |ui| self.top_bar(ui));
         egui::Panel::left("nav")
             .resizable(false)
-            .exact_size(236.0)
+            .exact_size(SIDEBAR)
             .frame(
                 egui::Frame::new()
                     .fill(theme::SIDEBAR)
-                    .inner_margin(Margin::symmetric(14, 20)),
+                    .inner_margin(Margin::symmetric(12, 16)),
             )
             .show(ui, |ui| self.sidebar(ui));
         let page = egui::Frame::new()
@@ -1568,20 +1624,226 @@ impl App {
         }
     }
 
-    fn sidebar(&mut self, ui: &mut Ui) {
-        ui.horizontal(|ui| {
-            theme::lock_tile(ui, 32.0);
-            ui.vertical(|ui| {
-                ui.spacing_mut().item_spacing.y = 0.0;
-                ui.label(theme::title("Secret Vault", 15.0));
-                ui.label(RichText::new("Personal vault").small().color(theme::MUTED));
+    /// The bar across the top: the app's name over the sidebar, one search
+    /// field for the whole window, and on the right the lock timer, the New
+    /// button for the open category, and Lock.
+    fn top_bar(&mut self, ui: &mut Ui) {
+        let full = ui.max_rect();
+        let brand = Rect::from_min_size(full.min, Vec2::new(SIDEBAR, full.height()));
+        ui.painter().rect_filled(brand, 0.0, theme::SIDEBAR);
+        ui.painter().vline(
+            brand.right(),
+            brand.y_range(),
+            Stroke::new(1.0, theme::BORDER),
+        );
+        let mut idle = None;
+        if let Some((s, at)) = &self.status
+            && let Some(left) = s.idle_lock_in
+        {
+            let left = left.saturating_sub(at.elapsed().as_secs());
+            idle = Some(format!("Locks in {}:{:02}", left / 60, left % 60));
+        }
+        let mut lock = false;
+        let mut start = None;
+        let mut search_changed = false;
+        let mut widen = false;
+        ui.horizontal_centered(|ui| {
+            ui.add_space(18.0);
+            theme::lock_tile(ui, 30.0);
+            ui.add_space(2.0);
+            ui.label(theme::title("Secret Vault", 15.0));
+            let used = ui.cursor().left() - full.left();
+            ui.add_space(SIDEBAR - used + 20.0);
+
+            // Search: as wide as the room the buttons on the right leave.
+            let room = (ui.available_width() - 430.0).clamp(240.0, 640.0);
+            let scoped = self.filter != Filter::All;
+            egui::Frame::new()
+                .fill(theme::GROUND)
+                .stroke(Stroke::new(1.0, theme::BORDER))
+                .corner_radius(10)
+                .inner_margin(Margin::symmetric(10, 0))
+                .show(ui, |ui| {
+                    ui.set_width(room - 20.0);
+                    ui.set_height(38.0);
+                    ui.horizontal_centered(|ui| {
+                        ui.spacing_mut().item_spacing.x = 8.0;
+                        Icon::Search.show(ui, 16.0, theme::MUTED);
+                        if scoped {
+                            let chip = egui::Button::new((
+                                RichText::new(format!("in {}", self.filter.short()))
+                                    .family(theme::semibold())
+                                    .size(12.0)
+                                    .color(theme::ACCENT),
+                                RichText::new("×").size(13.0).color(theme::ACCENT),
+                            ))
+                            .fill(theme::ACCENT_WEAK)
+                            .stroke(Stroke::NONE)
+                            .corner_radius(6)
+                            .min_size(Vec2::new(0.0, 24.0));
+                            let r = ui.add(chip).on_hover_text("Search all items instead");
+                            if r.clicked() {
+                                widen = true;
+                            }
+                        }
+                        let hint = if scoped {
+                            format!("Search {}", self.filter.short().to_lowercase())
+                        } else {
+                            "Search all items".to_owned()
+                        };
+                        let kbd = 54.0;
+                        let r = ui.add(
+                            TextEdit::singleline(&mut self.search)
+                                .hint_text(hint)
+                                .frame(egui::Frame::NONE)
+                                .align(egui::Align2::LEFT_CENTER)
+                                .min_size(Vec2::new(0.0, 36.0))
+                                .desired_width((ui.available_width() - kbd).max(60.0)),
+                        );
+                        ui.ctx()
+                            .accesskit_node_builder(r.id, |n| n.set_label("Search"));
+                        search_changed = r.changed();
+                        ui.label(
+                            RichText::new("Ctrl K")
+                                .monospace()
+                                .size(11.0)
+                                .color(theme::MUTED),
+                        )
+                        .on_hover_text("Find items and actions");
+                    });
+                });
+
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.add_space(16.0);
+                lock = theme::button(ui, Icon::Lock, "Lock").clicked();
+                ui.add_space(2.0);
+                start = self.new_buttons(ui);
+                if let Some(t) = idle {
+                    ui.add_space(6.0);
+                    ui.label(RichText::new(t).small().color(theme::MUTED));
+                    status_dot(ui, theme::OK);
+                }
             });
         });
-        ui.add_space(8.0);
-        let mut idle = None;
+        if widen {
+            self.show_category(Filter::All);
+            self.go(View::Items);
+        }
+        if search_changed && self.view != View::Items {
+            self.go(View::Items);
+        }
+        match start {
+            Some(Quick::Item(k)) => {
+                self.go(View::Items);
+                self.selected = None;
+                self.open = None;
+                self.new_key = None;
+                self.edit = Some(Edit::new(k));
+            }
+            Some(Quick::Key(pgp)) => {
+                self.go(View::Items);
+                self.start_key(pgp);
+            }
+            None => {}
+        }
+        if lock {
+            self.act("Locking…", Op::Lock, Request::Lock);
+        }
+    }
+
+    /// The blue New button, named for the open category. All items gets a
+    /// menu of every kind; keys get a small menu beside it for OpenPGP.
+    fn new_buttons(&self, ui: &mut Ui) -> Option<Quick> {
+        let mut start = None;
+        let blue = |b: egui::Button<'static>| b.fill(theme::ACCENT).stroke(Stroke::NONE);
+        let white = |t: &str| {
+            RichText::new(t)
+                .family(theme::semibold())
+                .color(egui::Color32::WHITE)
+        };
+        let entry = |ui: &mut Ui, icon: Icon, text: &str| {
+            ui.add(
+                egui::Button::new((icon.atom(15.0), RichText::new(text).color(theme::INK)))
+                    .frame(false)
+                    .min_size(Vec2::new(200.0, 32.0)),
+            )
+            .clicked()
+        };
+        match self.filter.new_button() {
+            None => {
+                let b = blue(
+                    egui::Button::new((
+                        Icon::Plus.atom_in(15.0, egui::Color32::WHITE),
+                        white("New item"),
+                        Icon::ChevronDown.atom_in(12.0, egui::Color32::WHITE),
+                    ))
+                    .min_size(Vec2::new(0.0, 36.0)),
+                );
+                egui::containers::menu::MenuButton::from_button(b).ui(ui, |ui| {
+                    for k in ItemKind::ALL {
+                        if entry(ui, kind_icon(k), k.label()) {
+                            start = Some(Quick::Item(k));
+                        }
+                    }
+                    ui.separator();
+                    if entry(ui, Icon::Terminal, "SSH key") {
+                        start = Some(Quick::Key(false));
+                    }
+                    if entry(ui, Icon::Terminal, "OpenPGP key") {
+                        start = Some(Quick::Key(true));
+                    }
+                });
+            }
+            Some((label, quick)) => {
+                // Right to left: the menu half first, then the main button.
+                if matches!(quick, Quick::Key(_)) {
+                    let more = blue(
+                        egui::Button::new(Icon::ChevronDown.atom_in(12.0, egui::Color32::WHITE))
+                            .corner_radius(CornerRadius {
+                                nw: 0,
+                                sw: 0,
+                                ne: 8,
+                                se: 8,
+                            })
+                            .min_size(Vec2::new(30.0, 36.0)),
+                    );
+                    let (r, _) =
+                        egui::containers::menu::MenuButton::from_button(more).ui(ui, |ui| {
+                            if entry(ui, Icon::Terminal, "New OpenPGP key") {
+                                start = Some(Quick::Key(true));
+                            }
+                        });
+                    ui.ctx()
+                        .accesskit_node_builder(r.id, |n| n.set_label("More kinds of key"));
+                    ui.add_space(-ui.spacing().item_spacing.x + 1.0);
+                }
+                let mut b = blue(
+                    egui::Button::new((
+                        Icon::Plus.atom_in(15.0, egui::Color32::WHITE),
+                        white(label),
+                    ))
+                    .min_size(Vec2::new(0.0, 36.0)),
+                );
+                if matches!(quick, Quick::Key(_)) {
+                    b = b.corner_radius(CornerRadius {
+                        nw: 8,
+                        sw: 8,
+                        ne: 0,
+                        se: 0,
+                    });
+                }
+                if ui.add(b).clicked() {
+                    start = Some(quick);
+                }
+            }
+        }
+        start
+    }
+
+    fn sidebar(&mut self, ui: &mut Ui) {
         let mut rollback = false;
         let mut sync = None;
-        if let Some((s, at)) = &self.status {
+        if let Some((s, _)) = &self.status {
             sync = s.sync.as_ref().map(|y| {
                 if y.error.is_some() {
                     ("Sync has a problem", theme::WARN)
@@ -1591,47 +1853,20 @@ impl App {
                     ("Sync is on", theme::MUTED)
                 }
             });
-            if let Some(left) = s.idle_lock_in {
-                let left = left.saturating_sub(at.elapsed().as_secs());
-                idle = Some(format!("locks in {}:{:02}", left / 60, left % 60));
-            }
             rollback = s.rollback_detected;
         }
-        egui::Frame::new()
-            .fill(theme::SURFACE)
-            .stroke(Stroke::new(1.0, theme::BORDER))
-            .corner_radius(8)
-            .inner_margin(Margin::symmetric(10, 8))
-            .show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                ui.spacing_mut().item_spacing.y = 2.0;
-                ui.spacing_mut().interact_size.y = 18.0;
-                ui.horizontal(|ui| {
-                    status_dot(ui, theme::OK);
-                    ui.label(RichText::new("Unlocked").size(13.0).color(theme::TEXT));
-                    if let Some(t) = idle {
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.label(RichText::new(t).small().color(theme::MUTED));
-                        });
-                    }
-                });
-                if let Some((text, color)) = sync {
-                    ui.label(RichText::new(text).small().color(color));
-                }
-            });
         if rollback {
             ui.colored_label(
                 theme::WARN,
                 "WARNING: the vault file is older than one seen before, so saving is off.",
             );
         }
-        ui.add_space(12.0);
         let mut go = None;
         ui.spacing_mut().item_spacing.y = 2.0;
         for (f, name) in Filter::NAV {
             let on = self.view == View::Items && self.filter == f;
             let count = self.items.iter().filter(|i| f.admits(i)).count();
-            if theme::nav_row(ui, on, name, Some(count)).clicked() {
+            if theme::nav_row(ui, on, f.icon(), name, Some(count)).clicked() {
                 go = Some((View::Items, f));
             }
         }
@@ -1641,38 +1876,42 @@ impl App {
             theme::caption(ui, "Tools");
         });
         ui.add_space(2.0);
-        for (v, name) in [
-            (View::Generator, "Generator"),
-            (View::Import, "Import"),
-            (View::Slots, "Unlock methods"),
-            (View::Sync, "Sync"),
+        for (v, icon, name) in [
+            (View::Generator, Icon::Dice, "Generator"),
+            (View::Import, Icon::Import, "Import"),
+            (View::Slots, Icon::Shield, "Unlock methods"),
+            (View::Sync, Icon::Sync, "Sync"),
         ] {
-            if theme::nav_row(ui, self.view == v, name, None).clicked() {
+            if theme::nav_row(ui, self.view == v, icon, name, None).clicked() {
                 go = Some((v, self.filter));
             }
         }
-        let mut lock = false;
         ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
-            ui.spacing_mut().item_spacing.y = 8.0;
-            ui.label(
-                RichText::new("Ctrl K finds items and actions")
-                    .small()
-                    .color(theme::MUTED),
-            );
-            lock = ui
-                .add(
-                    egui::Button::new((
-                        egui::Atom::grow(),
-                        theme::bold("Lock").size(13.0),
-                        egui::Atom::grow(),
-                    ))
-                    .min_size(Vec2::new(ui.available_width(), 38.0)),
-                )
-                .clicked();
+            ui.spacing_mut().item_spacing.y = 4.0;
+            ui.horizontal(|ui| {
+                ui.add_space(8.0);
+                ui.label(
+                    RichText::new(format!("Version {}", vault_ipc::VERSION))
+                        .small()
+                        .color(theme::MUTED),
+                );
+            });
+            ui.horizontal(|ui| {
+                ui.add_space(8.0);
+                ui.label(
+                    RichText::new("Ctrl K finds items and actions")
+                        .small()
+                        .color(theme::MUTED),
+                );
+            });
+            if let Some((text, color)) = sync {
+                ui.horizontal(|ui| {
+                    ui.add_space(8.0);
+                    Icon::Sync.show(ui, 13.0, color);
+                    ui.label(RichText::new(text).small().color(color));
+                });
+            }
         });
-        if lock {
-            self.act("Locking…", Op::Lock, Request::Lock);
-        }
         if let Some((v, f)) = go {
             self.show_category(f);
             self.go(v);
@@ -1708,64 +1947,31 @@ impl App {
     }
 
     fn item_list(&mut self, ui: &mut Ui) {
-        ui.horizontal(|ui| {
-            ui.add_space(4.0);
-            ui.label(theme::title(self.filter.name(), 18.0));
-        });
-        ui.add_space(4.0);
-        let r = ui.add(
-            TextEdit::singleline(&mut self.search)
-                .hint_text("Search titles, users and sites")
-                .background_color(theme::GROUND)
-                .margin(Margin::symmetric(12, 9))
-                .desired_width(f32::INFINITY),
-        );
-        ui.ctx()
-            .accesskit_node_builder(r.id, |n| n.set_label("Search"));
         let q = self.search.to_lowercase();
         let shown: Vec<&ItemSummary> = self
             .items
             .iter()
             .filter(|i| self.filter.admits(i) && Self::matches(i, &q))
             .collect();
-        let mut new = None;
-        let mut new_key = None;
+        let in_category = self.items.iter().filter(|i| self.filter.admits(i)).count();
         ui.horizontal(|ui| {
-            ui.add_space(4.0);
-            ui.label(
-                RichText::new(format!("{} of {} items", shown.len(), self.items.len()))
-                    .small()
-                    .color(theme::MUTED),
-            );
+            ui.add_space(6.0);
+            self.filter.icon().show(ui, 18.0, theme::MUTED);
+            ui.label(theme::title(self.filter.name(), 17.0));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let new_button = egui::Button::new(
-                    RichText::new("New item")
-                        .family(theme::semibold())
-                        .size(13.0)
-                        .color(egui::Color32::WHITE),
-                )
-                .fill(theme::ACCENT)
-                .stroke(Stroke::NONE)
-                .min_size(Vec2::new(0.0, 32.0));
-                egui::containers::menu::MenuButton::from_button(new_button).ui(ui, |ui| {
-                    for k in ItemKind::ALL {
-                        if ui.button(k.label()).clicked() {
-                            new = Some(k);
-                        }
-                    }
-                    ui.separator();
-                    if ui.button("SSH key").clicked() {
-                        new_key = Some(false);
-                    }
-                    if ui.button("OpenPGP key").clicked() {
-                        new_key = Some(true);
-                    }
-                });
+                ui.add_space(6.0);
+                let count = if q.is_empty() {
+                    format!("{in_category}")
+                } else {
+                    format!("{} of {in_category}", shown.len())
+                };
+                ui.label(RichText::new(count).color(theme::MUTED));
             });
         });
         ui.add_space(2.0);
         theme::divider(ui);
         let mut pick = None;
+        let mut widen = false;
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
                 ui.spacing_mut().item_spacing.y = 2.0;
@@ -1783,48 +1989,43 @@ impl App {
                         pick = Some(i.id);
                     }
                 }
-                let in_category = self.items.iter().any(|i| self.filter.admits(i));
-                if !in_category {
-                    ui.add_space(6.0);
-                    ui.label(RichText::new(self.filter.empty()).color(theme::MUTED));
-                    ui.add_space(6.0);
-                    // A shortcut to the obvious next step, under its own name.
-                    let quick: &[(&str, Quick)] = match self.filter {
-                        Filter::All | Filter::Codes => {
-                            &[("New login", Quick::Item(ItemKind::Login))]
-                        }
-                        Filter::Kind(k) => match k {
-                            ItemKind::Login => &[("New login", Quick::Item(k))],
-                            ItemKind::Note => &[("New secure note", Quick::Item(k))],
-                            ItemKind::Card => &[("New card", Quick::Item(k))],
-                            ItemKind::Identity => &[("New identity", Quick::Item(k))],
-                        },
-                        Filter::Keys => &[
-                            ("New SSH key", Quick::Key(false)),
-                            ("New OpenPGP key", Quick::Key(true)),
-                        ],
-                    };
-                    for (label, q) in quick {
-                        if ui.button(*label).clicked() {
-                            match *q {
-                                Quick::Item(k) => new = Some(k),
-                                Quick::Key(pgp) => new_key = Some(pgp),
-                            }
-                        }
-                    }
+                if in_category == 0 && q.is_empty() {
+                    ui.add_space(10.0);
+                    ui.horizontal_wrapped(|ui| {
+                        ui.add_space(6.0);
+                        ui.label(RichText::new(self.filter.empty()).color(theme::MUTED));
+                    });
+                    ui.horizontal_wrapped(|ui| {
+                        ui.add_space(6.0);
+                        let button = self.filter.new_button().map_or("New item", |(l, _)| l);
+                        ui.label(
+                            RichText::new(format!("Use {button} at the top to add one."))
+                                .small()
+                                .color(theme::MUTED),
+                        );
+                    });
                 } else if shown.is_empty() {
-                    ui.label(RichText::new("Nothing matches.").color(theme::MUTED));
+                    ui.add_space(10.0);
+                    ui.horizontal(|ui| {
+                        ui.add_space(6.0);
+                        ui.label(RichText::new("Nothing matches.").color(theme::MUTED));
+                    });
+                    if self.filter != Filter::All
+                        && self.items.iter().any(|i| Self::matches(i, &q))
+                        && ui
+                            .horizontal(|ui| {
+                                ui.add_space(6.0);
+                                theme::button(ui, Icon::Search, "Search all items").clicked()
+                            })
+                            .inner
+                    {
+                        widen = true;
+                    }
                 }
             });
         });
-        if let Some(k) = new {
-            self.selected = None;
-            self.open = None;
-            self.new_key = None;
-            self.edit = Some(Edit::new(k));
-        }
-        if let Some(pgp) = new_key {
-            self.start_key(pgp);
+        if widen {
+            self.show_category(Filter::All);
         }
         if let Some(id) = pick {
             self.select(id);
@@ -1901,10 +2102,10 @@ impl App {
                     }
                     ui.label("Delete this item for good?");
                 } else {
-                    if ui.button("Delete").clicked() {
+                    if theme::danger(ui, Icon::Trash, "Delete").clicked() {
                         self.confirm_delete = true;
                     }
-                    if ui.button("Edit").clicked() {
+                    if theme::button(ui, Icon::Pencil, "Edit").clicked() {
                         edit = true;
                     }
                 }
@@ -1947,14 +2148,14 @@ impl App {
                 |ui| {
                     let text = format!("Copy {}", label.to_lowercase());
                     let clicked = if secret {
-                        theme::primary(ui, true, &text).clicked()
+                        theme::primary_small(ui, Icon::Copy, &text).clicked()
                     } else {
-                        theme::soft(ui, &text).clicked()
+                        theme::soft_icon(ui, Icon::Copy, &text).clicked()
                     };
                     if clicked {
                         copy = Some((Zeroizing::new(value.to_owned()), label.to_owned()));
                     }
-                    if secret && theme::soft(ui, if reveal { "Hide" } else { "Show" }).clicked() {
+                    if secret && show_button(ui, reveal).clicked() {
                         toggle_reveal = true;
                     }
                 },
@@ -2029,7 +2230,8 @@ impl App {
                                         },
                                         |ui| {
                                             if let Some((code, _)) = now
-                                                && theme::soft(ui, "Copy code").clicked()
+                                                && theme::soft_icon(ui, Icon::Copy, "Copy code")
+                                                    .clicked()
                                             {
                                                 copy_code = Some(code.clone());
                                             }
@@ -2155,7 +2357,7 @@ impl App {
                             );
                         }
                         ui.add_space(4.0);
-                        if theme::primary(ui, true, "Copy public key").clicked() {
+                        if theme::primary_small(ui, Icon::Copy, "Copy public key").clicked() {
                             copy = Some((Zeroizing::new(text.clone()), "Public key".to_owned()));
                         }
                     }
@@ -2204,10 +2406,10 @@ impl App {
                         ui.label("••••••••••••");
                     }
                     ui.horizontal(|ui| {
-                        if ui.button(if reveal { "Hide" } else { "Show" }).clicked() {
+                        if show_button(ui, reveal).clicked() {
                             toggle_reveal = true;
                         }
-                        if theme::primary(ui, true, "Copy note").clicked() {
+                        if theme::primary_small(ui, Icon::Copy, "Copy note").clicked() {
                             copy = Some((Zeroizing::new(item.notes.clone()), "Note".to_owned()));
                         }
                     });
@@ -2632,7 +2834,7 @@ impl App {
         let ok = self.busy.is_none();
         let (mut save, mut cancel) = (false, false);
         ui.horizontal(|ui| {
-            save = theme::primary(ui, ok, "Save").clicked();
+            save = theme::primary_icon(ui, ok, Icon::Check, "Save").clicked();
             cancel = ui.button("Cancel").clicked();
         });
         if generate {
@@ -2812,7 +3014,7 @@ impl App {
             ui.checkbox(&mut o.symbols, "Symbols");
             ui.checkbox(&mut o.avoid_ambiguous, "Avoid look-alike characters");
             ui.add_space(4.0);
-            if theme::primary(ui, true, "Generate").clicked() {
+            if theme::primary_icon(ui, true, Icon::Dice, "Generate").clicked() {
                 let options = *o;
                 self.send(Op::Generate, Request::Generate { options });
             }
@@ -2835,7 +3037,7 @@ impl App {
                         );
                     },
                     |ui| {
-                        if theme::soft(ui, "Copy password").clicked() {
+                        if theme::primary_small(ui, Icon::Copy, "Copy password").clicked() {
                             copy = Some(p.clone());
                         }
                     },
@@ -2875,7 +3077,7 @@ impl App {
             });
             ui.add_space(4.0);
             let ok = self.busy.is_none() && !self.import_path.trim().is_empty();
-            if theme::primary(ui, ok, "Import").clicked() {
+            if theme::primary_icon(ui, ok, Icon::Import, "Import").clicked() {
                 match std::fs::read_to_string(self.import_path.trim()) {
                     Ok(data) => {
                         let format = self.import_format;
@@ -3213,6 +3415,15 @@ impl Drop for App {
 
 /// A labelled password box. True when Enter was pressed in it.
 /// A label over a full-width password box. True when Enter was pressed in it.
+/// Show or Hide for a secret value, with an eye.
+fn show_button(ui: &mut Ui, reveal: bool) -> egui::Response {
+    if reveal {
+        theme::soft_icon(ui, Icon::EyeOff, "Hide")
+    } else {
+        theme::soft_icon(ui, Icon::Eye, "Show")
+    }
+}
+
 fn stacked_secret(ui: &mut Ui, label: &str, text: &mut Secret) -> bool {
     ui.spacing_mut().item_spacing.y = 6.0;
     let l = ui.label(theme::bold(label).size(13.0));

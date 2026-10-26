@@ -620,7 +620,7 @@ fn main() {
         println!("gpg (GnuPG) 2.4.4");
         println!(
             "This is vault-gpg {}, a gpg-compatible front end for vaultd; it is not GnuPG.",
-            env!("CARGO_PKG_VERSION")
+            vault_ipc::VERSION
         );
     } else if a.help {
         println!("{HELP}");

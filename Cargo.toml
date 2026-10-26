@@ -3,6 +3,9 @@ resolver = "3"
 members = ["crates/vault-cli", "crates/vault-gpg", "crates/vault-gui", "crates/vault-core", "crates/vault-hw", "crates/vault-import", "crates/vault-ipc", "crates/vault-native-host", "crates/vaultd"]
 
 [workspace.package]
+# The one version for every crate, the extension and the packages. Change it
+# with contrib/release.sh, never by hand (docs/user-guide/11-versions-and-upgrades.md).
+version = "0.2.0"
 edition = "2024"
 license = "PolyForm-Noncommercial-1.0.0"
 publish = false
