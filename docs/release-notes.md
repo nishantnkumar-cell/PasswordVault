@@ -46,6 +46,50 @@ Known limits: not yet tried with a real phone at the time of writing.
 Whether every phone accepts the vault's passkey name `vault.local` is still
 to be confirmed on hardware.
 
+### Import, export, encrypt, decrypt, sign and verify from the desktop app
+
+Until now the desktop app could only make SSH and OpenPGP keys. Everything
+else needed the `vault` command line. You can now do all of it in the app:
+
+- **Import a key you already have.** In SSH and PGP keys, the small ▾ next
+  to **New SSH key** now also offers **Import SSH key** and **Import OpenPGP
+  key**. The New item menu in All items has them too. Pick the key file, or
+  paste the key. If the key has a passphrase, the app asks for it. The
+  vault then stores the key without a passphrase, protected by the vault
+  itself.
+- **Export a private key**, to move it to a computer that doesn't have this
+  vault. Open the key and press **Export private key**. Even though the
+  vault is open, you have to prove it's you once more, with any of your
+  unlock methods (only the ones this vault has are offered). Then you can
+  copy the key (the clipboard clears after 30 seconds) or save it to a
+  file. The app never overwrites an existing file.
+- **A new Encrypt and sign page** under Tools, with four tasks:
+  - **Encrypt** a message or file for yourself and/or other people. Paste
+    their public keys or give the key files. You can also sign it.
+  - **Decrypt** a message or file. The vault finds the right key. The text
+    stays hidden until you press **Show**.
+  - **Sign** a text or file with a detached signature (`.asc`, or `.sig`
+    for binary).
+  - **Verify** a signature against your own keys or the signer's public
+    key.
+
+  Each task works on pasted text or on a file, up to about 15 MiB. The
+  result can be copied or saved, with a file name already suggested.
+- Ctrl K can start all of these: type "import", "encrypt", "decrypt",
+  "sign" or "verify".
+
+Platform differences:
+
+- **Linux and macOS:** saved private keys and decrypted files are readable
+  only by you (permissions 600).
+- **Windows:** a saved file gets the permissions of its folder. Keep keys
+  and decrypted files inside your user folder (`C:\Users\<you>\…`), which
+  only you and administrators can open. When you export with a security
+  key, Windows asks for the touch and PIN in its own window.
+- **macOS:** the desktop app and vaultd don't run on macOS yet. These notes
+  apply when they do.
+- Paths starting with `~/` work on every system, meaning your home folder.
+
 ### Post-quantum Windows TPM slots
 
 - **Windows TPM slots are now sealed inside the TPM.** A TPM slot added on
@@ -68,6 +112,29 @@ to be confirmed on hardware.
   stops new Windows TPM slots from being added; the error says so. A slot
   added on Windows still cannot be opened under Linux on the same PC, or
   the other way round.
+
+### Keep apps' passwords in the vault (Secret Service, Linux)
+
+- **What's new.** On Linux, vaultd can now stand in for GNOME Keyring or
+  KWallet as the desktop's *Secret Service*. Apps that save passwords
+  through it (mail and chat clients, `secret-tool`, many GNOME and KDE
+  apps, Python's `keyring`) then keep them in your vault, encrypted like
+  everything else, and folder sync carries them to your other computers.
+- **Safe by default.** It is off until you turn it on. Each program must be
+  allowed once in Secret Vault's approval window, which names the program
+  and its command line. Apps only ever see the passwords apps saved, never
+  your own logins, cards, identities or keys. Nothing can be read while the
+  vault is locked; an app that asks to unlock opens the desktop app. Secrets
+  travel over the encrypted session apps use by default.
+- **How to use it:** [Keep apps' passwords in the vault](user-guide/12-secret-service.md).
+- **Platforms.** Linux only. Windows (Credential Manager) and macOS
+  (Keychain) have their own stores that are not replaced.
+- **Not yet.** Approvals last until vaultd restarts and can't be listed or
+  revoked yet. While the vault is locked, apps find no saved passwords (they
+  can't see that there are any), so some apps ask you to type the password
+  again; unlock the vault first. There is one collection: apps that create
+  their own collections are refused. Passwords already in GNOME Keyring or
+  KWallet are not moved over.
 
 ### One search bar and a New button that follows you
 

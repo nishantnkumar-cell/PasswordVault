@@ -104,3 +104,23 @@ fn key_use_names_the_key_and_purpose() {
     h.step();
     assert_eq!(h.state().answer, Some(false));
 }
+
+#[test]
+fn an_app_asking_for_its_passwords_shows_its_command_line() {
+    let mut h = asking(Ask::App {
+        command: Some("python3 mail-sync.py".into()),
+    });
+    assert!(
+        h.query_by_label_contains("use its saved app passwords")
+            .is_some()
+    );
+    assert!(h.query_by_label("python3 mail-sync.py").is_some());
+    assert!(
+        h.query_by_label_contains("none of your other items")
+            .is_some()
+    );
+    assert!(h.get_by_role_and_label(Role::Button, "Deny").is_focused());
+    h.get_by_role_and_label(Role::Button, "Allow").click();
+    h.step();
+    assert_eq!(h.state().answer, Some(true));
+}

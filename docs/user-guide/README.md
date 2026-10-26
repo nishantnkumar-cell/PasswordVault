@@ -52,6 +52,9 @@ random program on your computer cannot just ask for your passwords.
     through OneDrive, Google Drive, Dropbox or any synced folder.
 11. [Versions, downloads and upgrading](11-versions-and-upgrades.md): which
     version you have, where to download one, and upgrading in place.
+12. [Keep apps' passwords in the vault](12-secret-service.md): Linux apps
+    that save passwords through the Secret Service (GNOME Keyring's or
+    KWallet's job) keep them in the vault instead.
 
 ## What works where
 
@@ -73,6 +76,7 @@ random program on your computer cannot just ask for your passwords.
 | `vault-gpg` for git and NeoMutt | Yes | git only (untested on real hardware) | Not yet |
 | `vault-gpg` for `pass` | Yes | Not applicable | Not yet |
 | Sync through OneDrive, Google Drive, Dropbox | Yes | Yes | Not yet |
+| Apps keep passwords in the vault (Secret Service) | Yes, opt-in | Not applicable | Not applicable |
 | Locks on screen lock and suspend | Yes | Yes | Not yet |
 | Keys kept out of swap and crash dumps | Yes | Not yet | Not yet |
 

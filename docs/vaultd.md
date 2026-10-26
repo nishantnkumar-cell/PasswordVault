@@ -60,6 +60,35 @@ The same window confirms each card the browser asks to fill (docs/browser.md, Ca
 - **TPM.** On Windows, see docs/windows.md: the secret is wrapped to a TPM-bound RSA key through the Platform Crypto Provider. On Linux: sealed under a transient ECC P-256 storage key; every seal and unseal runs in a session salted to that key with parameter encryption. With a PIN the object is subject to the TPM's dictionary-attack lockout. With `--pcr7`, a change to Secure Boot state makes the slot unusable until it is re-enrolled; use another slot to unlock and re-add it.
 - **Hardening.** `RLIMIT_CORE=0` and `PR_SET_DUMPABLE=0` at start. Secrets in the protocol and the item model are zeroized on drop.
 
+## Secret Service (Linux)
+
+With `--secret-service` (not on by default), vaultd takes `org.freedesktop.secrets` on the
+session bus and serves the freedesktop Secret Service API:
+
+- One collection, `/org/freedesktop/secrets/collection/vault` ("Vault"),
+  also `/org/freedesktop/secrets/aliases/default`. `CreateCollection` with
+  alias `default` returns it; other collections are refused.
+- Sessions: `plain` and `dh-ietf1024-sha256-aes128-cbc-pkcs7`. A session is
+  usable only by the bus connection that opened it and closes when that
+  connection goes away.
+- Only items created through the API are visible: logins with a custom
+  field named `Secret Service` (content type) and `ss:<attribute>` fields.
+  Non-UTF-8 secrets are stored base64 with a `Secret Service encoding`
+  field. No item schema change, so older vaultd versions read these items.
+- Each caller's executable (from `GetConnectionUnixProcessID`) must be
+  allowed in vault-prompt (`--secret-service [--command LINE] [--program
+  PATH]`) before it can list items or read, write or delete them. Allowed
+  programs are kept in memory until vaultd exits; a decline holds for 60 s.
+  Callers whose bus UID differs from the owner are refused. As the brief
+  says, the sender's identity is advisory against same-user programs.
+- Locked vault: `SearchItems` returns nothing, item access fails with
+  `IsLocked`, `Unlock` returns a prompt whose `Prompt()` starts the desktop
+  app (`VAULT_GUI`, else `vault-gui` next to vaultd) and completes when the
+  vault is unlocked by any means, within 5 minutes. `Lock` locks the vault.
+- Secret Service calls don't reset the idle timer.
+- Not served when another process owns the name, or when vaultd runs as a
+  separate system user (no session bus).
+
 ## Running as a separate system user
 
 `contrib/systemd/vaultd@.service` runs the daemon as the `vault` user, one instance per person (`vaultd@yourname`), with the vault in `/var/lib/vault/yourname/` and the socket at `/run/vault/yourname/vaultd.sock`. The socket is world-connectable, and the daemon accepts only the UID named by `--owner-user`. Install steps are at the top of the unit file. Set `VAULT_SOCKET` for `vault` and the browser host. The unit expects a `tss` group for the TPM; remove `SupplementaryGroups=tss` on distributions without one.
@@ -85,4 +114,5 @@ It creates throwaway credentials, asks for hmac-secret twice in touch-only mode 
 
 - Identifying the pairing client by pidfd (`SO_PEERPIDFD`) instead of its PID.
 - vaultd on macOS (the FIDO2 check already runs there). Windows: see windows.md.
+- Secret Service: approvals can't be listed or revoked, and nothing is imported from GNOME Keyring or KWallet.
 - The desktop app (docs/desktop.md) has no file picker for imports and no revoke; use the CLI for revoke.

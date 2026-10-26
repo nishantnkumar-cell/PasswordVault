@@ -155,6 +155,24 @@ and try again. On Windows use `C:\Windows\System32\OpenSSH\ssh.exe`, not the
 Run `vault-native-host --install` again with the extension ID shown in the
 browser ([chapter 4](04-browser-autofill.md#2-register-the-native-host)).
 
+**Apps don't save passwords in the vault (Linux)**
+
+- vaultd's log says another Secret Service is running: GNOME Keyring or
+  KWallet still owns it. Turn theirs off as in
+  [chapter 12](12-secret-service.md#turn-it-on), log out and in, then run
+  `systemctl --user restart vaultd`.
+  `busctl --user status org.freedesktop.secrets` shows which program owns
+  the name.
+- An app says access was denied: someone chose Deny in the approval
+  window, or no window could open (vaultd needs a display, as for
+  pairing). Wait a minute, try again and choose Allow.
+- An app asks again for a password it saved before: the vault was
+  probably locked, and apps can't find anything then. Unlock the vault and
+  restart the app.
+- Passwords from GNOME Keyring are missing: they stay in GNOME Keyring,
+  nothing is moved over. Save them again in the app with the vault
+  unlocked.
+
 ## Unpair a program
 
 There is no command to unpair a single program yet. To make the vault

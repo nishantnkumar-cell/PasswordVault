@@ -1050,3 +1050,218 @@ fn adds_a_phone_and_unlocks_with_it() {
     assert!(h.query_by_label("Phone QR code").is_none());
     assert_eq!(*phone.asked.lock().unwrap(), 2);
 }
+
+#[test]
+fn key_tools_encrypt_sign_export_and_import() {
+    let dir = tempdir();
+    let clip = FakeClip::default();
+    let mut h = created(&dir, Duration::from_secs(300), clip.clone());
+    let copied = |clip: &FakeClip| clip.0.lock().unwrap().clone().expect("copied");
+
+    // An OpenPGP key that doesn't ask before each use.
+    click(&mut h, "New item");
+    click(&mut h, "OpenPGP key");
+    type_into(&mut h, Role::TextInput, "Name", "Alex Example");
+    type_into(&mut h, Role::TextInput, "Email", "alex@example.com");
+    h.get_by_role_and_label(Role::CheckBox, "Ask before each use")
+        .click();
+    h.step();
+    click(&mut h, "Make key");
+    settle(&mut h);
+    assert_eq!(h.state().error(), None);
+
+    // Encrypt to it, then decrypt.
+    click(&mut h, "Encrypt and sign");
+    type_into(&mut h, Role::MultilineTextInput, "Message", "hello there");
+    h.get_by_role_and_label(Role::CheckBox, "Alex Example (you)")
+        .click();
+    h.step();
+    click_last(&mut h, "Encrypt");
+    settle(&mut h);
+    assert_eq!(h.state().error(), None);
+    click(&mut h, "Copy");
+    let message = copied(&clip);
+    assert!(
+        message.starts_with("-----BEGIN PGP MESSAGE-----"),
+        "{message}"
+    );
+
+    click(&mut h, "Decrypt");
+    type_into(
+        &mut h,
+        Role::MultilineTextInput,
+        "Encrypted message",
+        &message,
+    );
+    click_last(&mut h, "Decrypt");
+    settle(&mut h);
+    assert_eq!(h.state().error(), None);
+    assert!(h.query_by_label_contains("Alex Example").is_some());
+    assert!(
+        h.query_by_label("hello there").is_none(),
+        "hidden until shown"
+    );
+    click(&mut h, "Copy text");
+    assert_eq!(copied(&clip), "hello there");
+    let plain = dir.join("hello.txt");
+    type_into(
+        &mut h,
+        Role::TextInput,
+        "Save as",
+        &plain.display().to_string(),
+    );
+    click(&mut h, "Save to file");
+    assert_eq!(std::fs::read(&plain).unwrap(), b"hello there");
+    click(&mut h, "Save to file");
+    assert!(h.state().error().unwrap().contains("already exists"));
+
+    // Sign, then check the signature.
+    click(&mut h, "Sign");
+    type_into(
+        &mut h,
+        Role::MultilineTextInput,
+        "What to sign",
+        "signed words",
+    );
+    click_last(&mut h, "Sign");
+    settle(&mut h);
+    assert_eq!(h.state().error(), None);
+    click(&mut h, "Copy");
+    let sig = copied(&clip);
+    assert!(sig.starts_with("-----BEGIN PGP SIGNATURE-----"), "{sig}");
+
+    click(&mut h, "Verify");
+    type_into(
+        &mut h,
+        Role::MultilineTextInput,
+        "What was signed",
+        "signed words",
+    );
+    type_into(&mut h, Role::MultilineTextInput, "Signature", &sig);
+    click_last(&mut h, "Verify");
+    settle(&mut h);
+    assert_eq!(h.state().error(), None);
+    assert!(h.query_by_label("Good signature").is_some());
+    type_into(
+        &mut h,
+        Role::MultilineTextInput,
+        "What was signed",
+        " changed",
+    );
+    click_last(&mut h, "Verify");
+    settle(&mut h);
+    assert!(h.state().error().is_some(), "a changed text doesn't verify");
+
+    // Export the private key: the vault being open is not enough.
+    click(&mut h, "SSH and PGP keys");
+    h.get_by_role_and_label(Role::Button, "Alex Example Key")
+        .click();
+    h.step();
+    settle(&mut h);
+    click(&mut h, "Export private key");
+    type_into(
+        &mut h,
+        Role::PasswordInput,
+        "Master password",
+        "not it at all",
+    );
+    click(&mut h, "Export");
+    settle(&mut h);
+    assert!(h.state().error().is_some(), "wrong password");
+    assert!(h.query_by_label("Copy private key").is_none());
+    h.get_by_role_and_label(Role::PasswordInput, "Master password")
+        .focus();
+    h.step();
+    h.key_press_modifiers(eframe::egui::Modifiers::COMMAND, eframe::egui::Key::A);
+    h.step();
+    h.get_by_role_and_label(Role::PasswordInput, "Master password")
+        .type_text(&password());
+    h.step();
+    click(&mut h, "Export");
+    settle(&mut h);
+    assert_eq!(h.state().error(), None);
+    click(&mut h, "Copy private key");
+    assert!(copied(&clip).starts_with("-----BEGIN PGP PRIVATE KEY BLOCK-----"));
+    let file = dir.join("alex.asc");
+    type_into(
+        &mut h,
+        Role::TextInput,
+        "Save to",
+        &file.display().to_string(),
+    );
+    click(&mut h, "Save key file");
+    assert_eq!(h.state().error(), None);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&file).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
+    }
+    click(&mut h, "Done");
+
+    // And bring it back in from the file.
+    click(&mut h, "More kinds of key");
+    click(&mut h, "Import OpenPGP key");
+    assert!(h.query_by_label("Import an OpenPGP key").is_some());
+    type_into(
+        &mut h,
+        Role::TextInput,
+        "Key file",
+        &file.display().to_string(),
+    );
+    click(&mut h, "Import key");
+    settle(&mut h);
+    assert_eq!(h.state().error(), None);
+    let items = h.state().items();
+    assert_eq!(items.len(), 2);
+    assert!(
+        items.iter().any(|i| i.title == "alex"),
+        "titled from the file"
+    );
+
+    // The same round trip for an SSH key, exported with the recovery code.
+    click(&mut h, "New SSH key");
+    type_into(&mut h, Role::TextInput, "Title", "Laptop");
+    click(&mut h, "Make key");
+    settle(&mut h);
+    click(&mut h, "Export private key");
+    click(&mut h, "Recovery code");
+    assert!(
+        h.query_by_role_and_label(Role::PasswordInput, "Master password")
+            .is_none()
+    );
+    click(&mut h, "Cancel");
+    click(&mut h, "Export private key");
+    type_into(&mut h, Role::PasswordInput, "Master password", &password());
+    click(&mut h, "Export");
+    settle(&mut h);
+    assert_eq!(h.state().error(), None);
+    let ssh = dir.join("id_laptop");
+    type_into(
+        &mut h,
+        Role::TextInput,
+        "Save to",
+        &ssh.display().to_string(),
+    );
+    click(&mut h, "Save key file");
+    let text = std::fs::read_to_string(&ssh).unwrap();
+    assert!(
+        text.starts_with("-----BEGIN OPENSSH PRIVATE KEY-----"),
+        "{text}"
+    );
+    click(&mut h, "More kinds of key");
+    click(&mut h, "Import SSH key");
+    type_into(
+        &mut h,
+        Role::TextInput,
+        "Key file",
+        &ssh.display().to_string(),
+    );
+    type_into(&mut h, Role::TextInput, "Title", "Laptop again");
+    click(&mut h, "Import key");
+    settle(&mut h);
+    assert_eq!(h.state().error(), None);
+    let items = h.state().items();
+    let key = |t: &str| items.iter().find(|i| i.title == t).unwrap().key.clone();
+    assert_eq!(key("Laptop"), key("Laptop again"), "the same key came back");
+}

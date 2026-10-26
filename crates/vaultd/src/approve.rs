@@ -1,7 +1,8 @@
 //! Approval by the user: the daemon asks itself, in a window it starts
 //! (`vault-prompt`), naming the program that asked. Used for pairing a
-//! client, before releasing a card to the browser, and before each use of a
-//! key marked `confirm`. A client can make the request but cannot answer it.
+//! client, before releasing a card to the browser, before each use of a
+//! key marked `confirm`, and before an application first uses the Secret
+//! Service. A client can make the request but cannot answer it.
 
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -44,6 +45,16 @@ pub struct UsePrompt {
     pub program: Option<String>,
 }
 
+/// An application asking to use the Secret Service (Linux).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppPrompt {
+    /// The connecting process's executable, as the OS reports it.
+    pub program: Option<String>,
+    /// Its command line, shortened, for telling scripts of one interpreter
+    /// apart. Informational.
+    pub command: Option<String>,
+}
+
 /// What the user is asked.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Prompt {
@@ -51,6 +62,9 @@ pub enum Prompt {
     Pair(PairPrompt),
     /// Release a card for filling.
     FillCard(CardPrompt),
+    /// Let an application read and store its passwords through the Secret
+    /// Service.
+    App(AppPrompt),
 }
 
 /// Something that can ask the user. `Ok(true)` means approved.
@@ -156,6 +170,13 @@ impl Approver for Helper {
                     .arg(&p.origin);
                 &p.program
             }
+            Prompt::App(p) => {
+                cmd.arg("--secret-service");
+                if let Some(c) = &p.command {
+                    cmd.arg("--command").arg(c);
+                }
+                &p.program
+            }
         };
         if let Some(prog) = program {
             cmd.arg("--program").arg(prog);
@@ -174,6 +195,28 @@ pub fn program_of(pid: u32) -> Option<String> {
     #[cfg(windows)]
     return vault_ipc::win::process_path(pid).ok();
     #[cfg(not(any(target_os = "linux", windows)))]
+    {
+        let _ = pid;
+        None
+    }
+}
+
+/// The command line of process `pid`, single-line and at most 200
+/// characters, for the prompt. Informational, like [`program_of`].
+pub fn command_of(pid: u32) -> Option<String> {
+    #[cfg(target_os = "linux")]
+    {
+        let raw = std::fs::read(format!("/proc/{pid}/cmdline")).ok()?;
+        let line = raw
+            .split(|&b| b == 0)
+            .filter(|a| !a.is_empty())
+            .map(String::from_utf8_lossy)
+            .collect::<Vec<_>>()
+            .join(" ");
+        let line: String = line.chars().filter(|c| !c.is_control()).take(200).collect();
+        (!line.is_empty()).then_some(line)
+    }
+    #[cfg(not(target_os = "linux"))]
     {
         let _ = pid;
         None
@@ -207,6 +250,7 @@ mod tests {
     fn finds_our_own_program() {
         let me = program_of(std::process::id()).unwrap();
         assert_eq!(me, std::env::current_exe().unwrap().display().to_string());
+        assert!(command_of(std::process::id()).is_some());
     }
 
     #[cfg(unix)]
@@ -260,5 +304,14 @@ mod tests {
         );
         assert_eq!(echo.confirm_use(&u), Ok(true));
         assert_eq!(script("no-use", "exit 1").confirm_use(&u), Ok(false));
+        let app = Prompt::App(AppPrompt {
+            program: Some("/usr/bin/python3".into()),
+            command: Some("python3 mail.py".into()),
+        });
+        let echo = script(
+            "echo-app",
+            r#"[ "$*" = "--secret-service --command python3 mail.py --program /usr/bin/python3" ] || exit 2"#,
+        );
+        assert_eq!(echo.approve(&app), Ok(true));
     }
 }

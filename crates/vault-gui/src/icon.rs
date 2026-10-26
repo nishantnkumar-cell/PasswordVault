@@ -22,6 +22,13 @@ pub enum Icon {
     /// The password generator.
     Dice,
     Import,
+    Export,
+    /// OpenPGP tools: encrypt and sign.
+    Mail,
+    /// Sign.
+    Signature,
+    /// Decrypt.
+    Unlocked,
     /// Unlock methods.
     Shield,
     Sync,
@@ -118,6 +125,38 @@ impl Icon {
                     &[(4.0, 15.0), (4.0, 20.0), (20.0, 20.0), (20.0, 15.0)],
                     false,
                 ),
+            ],
+            Icon::Export => &[
+                Path(&[(12.0, 14.5), (12.0, 3.0)], false),
+                Path(&[(7.5, 7.5), (12.0, 3.0), (16.5, 7.5)], false),
+                Path(
+                    &[(4.0, 15.0), (4.0, 20.0), (20.0, 20.0), (20.0, 15.0)],
+                    false,
+                ),
+            ],
+            Icon::Mail => &[
+                Rect(3.0, 5.5, 18.0, 13.0, 2.0),
+                Path(&[(3.5, 7.0), (12.0, 13.0), (20.5, 7.0)], false),
+            ],
+            Icon::Signature => &[
+                Path(
+                    &[
+                        (3.5, 15.0),
+                        (6.0, 9.0),
+                        (8.0, 15.5),
+                        (10.5, 10.0),
+                        (12.0, 14.5),
+                        (13.5, 12.5),
+                        (15.0, 14.0),
+                    ],
+                    false,
+                ),
+                Path(&[(3.5, 19.5), (20.5, 19.5)], false),
+            ],
+            Icon::Unlocked => &[
+                Rect(4.5, 10.5, 15.0, 10.5, 2.0),
+                Arc(12.0, 7.5, 3.8, 0.5, 1.0),
+                Path(&[(8.2, 7.5), (8.2, 10.5)], false),
             ],
             Icon::Shield => &[
                 Path(

@@ -20,6 +20,7 @@ use zeroize::Zeroizing;
 use crate::client::{Backend, Failure, Paths, Phone, SystemPhone, Work};
 use crate::theme::{self, Icon};
 
+mod keys;
 mod setup;
 
 /// How long a copied secret stays on the clipboard.
@@ -99,6 +100,10 @@ enum Op {
     PublicKey(ItemId),
     KeyConfirm,
     NewKey,
+    ImportKey,
+    ExportKey(ItemId),
+    /// Encrypt, decrypt, sign or verify on the OpenPGP page.
+    Pgp,
     Sync,
     QuickUnlock,
     /// An unlock method added from the first-run wizard.
@@ -129,6 +134,8 @@ pub enum View {
     Import,
     Slots,
     Sync,
+    /// Encrypt, decrypt, sign and verify with OpenPGP keys.
+    Pgp,
 }
 
 /// Which items the list shows.
@@ -237,6 +244,8 @@ fn kind_icon(k: ItemKind) -> Icon {
 enum Quick {
     Item(ItemKind),
     Key(bool),
+    /// Import an SSH key (`false`) or an OpenPGP key (`true`).
+    Import(bool),
 }
 
 /// A secret to copy once the daemon sends it.
@@ -263,6 +272,9 @@ enum Action {
     NewItem,
     /// Make an SSH key (`false`) or an OpenPGP key (`true`).
     NewKey(bool),
+    /// Import an SSH key (`false`) or an OpenPGP key (`true`).
+    ImportKey(bool),
+    Pgp(keys::Task),
     Generate,
     Go(View),
     Lock,
@@ -617,6 +629,9 @@ pub struct App {
     totp_pending: bool,
     edit: Option<Edit>,
     new_key: Option<KeyForm>,
+    import_key: Option<keys::KeyImport>,
+    export: Option<keys::Export>,
+    pgp: keys::PgpTools,
     confirm_delete: bool,
     /// The open key item's public half, to show and copy.
     public_key: Option<(ItemId, String)>,
@@ -685,6 +700,9 @@ impl App {
             totp_pending: false,
             edit: None,
             new_key: None,
+            import_key: None,
+            export: None,
+            pgp: keys::PgpTools::default(),
             confirm_delete: false,
             public_key: None,
             gen_options: GenerateOptions {
@@ -764,6 +782,9 @@ impl App {
         self.edit = None;
         self.confirm_delete = false;
         self.public_key = None;
+        self.import_key = None;
+        self.export = None;
+        self.pgp = keys::PgpTools::default();
         self.generated = None;
         self.slots.clear();
         self.slot_form = SlotForm::default();
@@ -853,6 +874,7 @@ impl App {
                 return;
             }
             Err(Failure::Daemon(m)) => {
+                self.on_key_error(op, &m);
                 if m.contains("locked") && self.screen == Screen::Unlocked {
                     self.refresh();
                 }
@@ -863,6 +885,7 @@ impl App {
         match (op, r) {
             (Op::Status, Response::Status(s)) => self.on_status(s),
             (op @ (Op::Init | Op::SetupSlot(_) | Op::SetupHello), r) => self.on_setup_result(op, r),
+            (op @ (Op::ImportKey | Op::ExportKey(_) | Op::Pgp), r) => self.on_key_result(op, r),
             (Op::Pair, Response::Paired { token }) => {
                 if let Err(e) = self.paths.save_token(&token) {
                     self.error = Some(format!("Couldn't save this app's pairing: {e}"));
@@ -1006,6 +1029,8 @@ impl App {
         self.totp = None;
         self.edit = None;
         self.new_key = None;
+        self.import_key = None;
+        self.export = None;
         self.send(Op::OpenItem(id), Request::GetItem { id });
     }
 
@@ -1642,7 +1667,9 @@ impl App {
                 egui::CentralPanel::default().frame(page).show(ui, |ui| {
                     self.messages(ui);
                     egui::ScrollArea::vertical().show(ui, |ui| {
-                        if self.new_key.is_some() {
+                        if self.import_key.is_some() {
+                            theme::card().show(ui, |ui| self.import_key_form(ui));
+                        } else if self.new_key.is_some() {
                             theme::card().show(ui, |ui| self.key_form(ui));
                         } else if self.edit.is_some() {
                             theme::card().show(ui, |ui| self.edit_form(ui));
@@ -1677,6 +1704,14 @@ impl App {
                     self.messages(ui);
                     egui::ScrollArea::vertical().show(ui, |ui| {
                         self.sync_page(ui);
+                    });
+                });
+            }
+            View::Pgp => {
+                egui::CentralPanel::default().frame(page).show(ui, |ui| {
+                    self.messages(ui);
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        self.pgp_page(ui);
                     });
                 });
             }
@@ -1813,11 +1848,16 @@ impl App {
                 self.selected = None;
                 self.open = None;
                 self.new_key = None;
+                self.import_key = None;
                 self.edit = Some(Edit::new(k));
             }
             Some(Quick::Key(pgp)) => {
                 self.go(View::Items);
                 self.start_key(pgp);
+            }
+            Some(Quick::Import(pgp)) => {
+                self.go(View::Items);
+                self.start_import(pgp);
             }
             None => {}
         }
@@ -1867,6 +1907,13 @@ impl App {
                     if entry(ui, Icon::Terminal, "OpenPGP key") {
                         start = Some(Quick::Key(true));
                     }
+                    ui.separator();
+                    if entry(ui, Icon::Import, "Import SSH key") {
+                        start = Some(Quick::Import(false));
+                    }
+                    if entry(ui, Icon::Import, "Import OpenPGP key") {
+                        start = Some(Quick::Import(true));
+                    }
                 });
             }
             Some((label, quick)) => {
@@ -1886,6 +1933,13 @@ impl App {
                         egui::containers::menu::MenuButton::from_button(more).ui(ui, |ui| {
                             if entry(ui, Icon::Terminal, "New OpenPGP key") {
                                 start = Some(Quick::Key(true));
+                            }
+                            ui.separator();
+                            if entry(ui, Icon::Import, "Import SSH key") {
+                                start = Some(Quick::Import(false));
+                            }
+                            if entry(ui, Icon::Import, "Import OpenPGP key") {
+                                start = Some(Quick::Import(true));
                             }
                         });
                     ui.ctx()
@@ -1956,6 +2010,7 @@ impl App {
             (View::Import, Icon::Import, "Import"),
             (View::Slots, Icon::Shield, "Unlock methods"),
             (View::Sync, Icon::Sync, "Sync"),
+            (View::Pgp, Icon::Mail, "Encrypt and sign"),
         ] {
             if theme::nav_row(ui, self.view == v, icon, name, None).clicked() {
                 go = Some((v, self.filter));
@@ -1998,7 +2053,7 @@ impl App {
     /// filled in stays, so no typing is lost.
     fn show_category(&mut self, f: Filter) {
         self.filter = f;
-        if self.edit.is_some() || self.new_key.is_some() {
+        if self.edit.is_some() || self.new_key.is_some() || self.import_key.is_some() {
             return;
         }
         let inside = self
@@ -2140,6 +2195,7 @@ impl App {
         let mut edit = false;
         let mut delete = false;
         let mut set_confirm = None;
+        let mut export_pgp = None;
 
         ui.horizontal(|ui| {
             theme::monogram(ui, &item.title, 56.0);
@@ -2461,10 +2517,12 @@ impl App {
                 ui.add_space(6.0);
                 ui.label(
                     RichText::new(
-                        "The private key is never shown: vaultd signs and decrypts for you.",
+                        "vaultd signs and decrypts for you, so programs never see the private \
+                         key. Export it only to move it to a device without this vault.",
                     )
                     .color(theme::MUTED),
                 );
+                export_pgp = Some(k.starts_with("OpenPGP"));
             });
         }
 
@@ -2494,6 +2552,15 @@ impl App {
             });
         }
 
+        // Keys rarely have notes, so the export card can come last; it needs
+        // the whole app, which the item borrowed above no longer holds.
+        if let Some(pgp) = export_pgp {
+            ui.add_space(12.0);
+            theme::card().show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                self.export_section(ui, id, pgp);
+            });
+        }
         if toggle_reveal {
             self.reveal = !self.reveal;
         }
@@ -2572,6 +2639,15 @@ impl App {
             ("New item", Action::NewItem),
             ("New SSH key", Action::NewKey(false)),
             ("New OpenPGP key", Action::NewKey(true)),
+            ("Import SSH key", Action::ImportKey(false)),
+            ("Import OpenPGP key", Action::ImportKey(true)),
+            ("Encrypt with OpenPGP", Action::Pgp(keys::Task::Encrypt)),
+            ("Decrypt with OpenPGP", Action::Pgp(keys::Task::Decrypt)),
+            ("Sign with OpenPGP", Action::Pgp(keys::Task::Sign)),
+            (
+                "Verify an OpenPGP signature",
+                Action::Pgp(keys::Task::Verify),
+            ),
             ("Generate a password", Action::Generate),
             ("Import items", Action::Go(View::Import)),
             ("Unlock methods", Action::Go(View::Slots)),
@@ -2757,12 +2833,18 @@ impl App {
                 self.selected = None;
                 self.open = None;
                 self.new_key = None;
+                self.import_key = None;
                 self.edit = Some(Edit::new(ItemKind::Login));
             }
             Action::NewKey(pgp) => {
                 self.go(View::Items);
                 self.start_key(pgp);
             }
+            Action::ImportKey(pgp) => {
+                self.go(View::Items);
+                self.start_import(pgp);
+            }
+            Action::Pgp(task) => self.open_pgp(task),
             Action::Generate => {
                 self.go(View::Generator);
                 let options = self.gen_options;
@@ -2936,6 +3018,8 @@ impl App {
         self.selected = None;
         self.open = None;
         self.edit = None;
+        self.import_key = None;
+        self.export = None;
         self.error = None;
         self.notice = None;
         self.new_key = Some(KeyForm::new(pgp));
