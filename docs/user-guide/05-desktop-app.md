@@ -86,8 +86,9 @@ The app keeps its own pairing, separate from the CLI's and the browser's.
 
 In the **Unlock with** list pick Password, Security key, This device (TPM)
 or Recovery code, fill in what it asks and press **Unlock** (or Enter). For a security key, touch it when it
-blinks. On Windows, for a security key Windows opens its own window for the
-touch and PIN (leave the PIN field empty).
+blinks. On Linux, type the key's PIN in **PIN (if set)** if the method
+asks for it. On Windows there is no PIN box for a security key: Windows
+opens its own window for the touch and, if needed, the PIN.
 
 **Windows Hello (Windows).** With quick unlock turned on (see *Unlock
 methods* below), the lock screen shows an **Unlock with Windows Hello**
@@ -105,43 +106,9 @@ it; the app follows within two seconds and forgets everything it showed.
 ## Items
 
 The middle column lists your items, with a **Search** box above it.
+**All items**, **Logins**, **Secure notes**, **Cards**, **Identities**,
+**One-time codes** and **SSH and PGP keys** in the sidebar filter the list.
 Select an item to see it on the right.
-
-### Browse by category
-
-![An empty category with its New buttons](images/desktop-10-empty-category.png)
-
-The sidebar's top group picks which items the middle column shows:
-
-| Sidebar entry | Shows |
-| --- | --- |
-| **All items** | Everything |
-| **Logins** | Website and app logins (not keys) |
-| **Secure notes** | Notes |
-| **Cards** | Payment cards |
-| **Identities** | Names and addresses for filling forms |
-| **One-time codes** | Logins with a two-factor code set up |
-| **SSH and PGP keys** | Keys only |
-
-1. Click an entry in the sidebar. It turns blue, and the name at the top
-   of the middle column changes to match, for example **Secure notes**.
-2. The list shows only that kind of item. The line under **Search** says
-   how many of all your items are shown, such as "2 of 7 items".
-3. If the category is empty, the list says so ("No secure notes yet.")
-   and offers a button to make the first one, such as **New secure note**.
-   Under **SSH and PGP keys** there are two: **New SSH key** and
-   **New OpenPGP key** (see [Make a new key](#make-a-new-key)).
-   *One-time codes* has no button of its own: add a code by editing a
-   login and pasting its 2FA setup key.
-4. If an item was open on the right and it isn't in the new category, it
-   closes, so the right side shows "Pick an item on the left". A form you
-   are filling in (a new or edited item, or a new key) stays open until
-   you save or cancel it.
-
-**Search** works inside the chosen category. To search everything, choose
-**All items** first. Opening an item from the **Ctrl K** palette switches
-to **All items** when the item is in another category, so you can see it
-in the list.
 
 - Each value has its own copy button, such as **Copy username**, **Copy
   password**, **Copy number** or **Copy code** (when the item has a
@@ -311,7 +278,15 @@ and fill in what it asks:
 
 - **Password:** the new password, twice.
 - **Security key:** your master password; tick **Also ask for the key's PIN
-  every time** if you want the PIN required. Touch the key twice.
+  every time** if you want the PIN required. Plug the key in, press **Add**
+  and touch the key twice: once to register it and once to test it.
+  - *Linux:* if the key has a PIN, type it in the **PIN** box. Many keys
+    with a PIN want it even to register a touch-only method.
+  - *Windows:* there is no PIN box. Windows opens its own security key
+    window for each touch and asks for the PIN there. If your key has a PIN,
+    tick **Also ask for the key's PIN every time**: Windows always checks
+    the PIN of such a key, which gives a different secret, so a touch-only
+    method fails with it.
 - **TPM** (Linux and Windows): your master password, an optional **PIN**,
   and optionally **Stop working if Secure Boot settings change (PCR 7)**.
 - **Recovery code:** the new code is shown once; write it down.
@@ -335,6 +310,7 @@ and what to do about conflicts.
 |---|---|---|---|
 | Key details, **Copy public key**, **Ask before each use** | Yes | Yes | Not yet (the app does not run on macOS yet) |
 | Security key and TPM rows under **Unlock methods** | Yes | Yes (Windows shows its own window for the security key's touch and PIN) | Not yet |
+| **PIN** box for a security key | Yes | Not shown: Windows asks in its own window | Not yet |
 | **Quick unlock with Windows Hello** box | Not shown | Yes | Not yet |
 | **Sync** page | Yes | Yes | Not yet |
 

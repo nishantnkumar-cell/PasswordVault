@@ -225,6 +225,10 @@ struct UnlockForm {
     code: Secret,
 }
 
+/// On Windows vaultd uses Windows' security key service, which asks for the
+/// key's PIN in its own window and ignores one sent by the app.
+const WINDOWS_ASKS_KEY_PIN: bool = cfg!(windows);
+
 fn opt(s: &Secret) -> Option<Secret> {
     (!s.is_empty()).then(|| s.clone())
 }
@@ -1309,11 +1313,20 @@ impl App {
                 submit |= secret_field(ui, "Master password", &mut f.password);
                 ui.end_row();
             }
-            if matches!(f.method, Method::SecurityKey | Method::Tpm) {
+            if f.method == Method::Tpm || f.method == Method::SecurityKey && !WINDOWS_ASKS_KEY_PIN {
                 submit |= secret_field(ui, "PIN (if set)", &mut f.pin);
                 ui.end_row();
             }
         });
+        if f.method == Method::SecurityKey && WINDOWS_ASKS_KEY_PIN {
+            ui.label(
+                RichText::new(
+                    "Windows asks for the touch, and the key's PIN if needed, in its own window.",
+                )
+                .small()
+                .color(theme::MUTED),
+            );
+        }
         let ok = self.busy.is_none();
         let label = if pair { "Pair" } else { "Unlock" };
         submit |= theme::primary(ui, ok, label).clicked();
@@ -2810,7 +2823,7 @@ impl App {
                 submit |= secret_field(ui, "Repeat it", &mut f.password2);
                 ui.end_row();
             }
-            if matches!(f.kind, SlotKind::SecurityKey | SlotKind::Tpm) {
+            if f.kind == SlotKind::Tpm || f.kind == SlotKind::SecurityKey && !WINDOWS_ASKS_KEY_PIN {
                 secret_field(ui, "PIN (optional)", &mut f.pin);
                 ui.end_row();
             }
@@ -2818,6 +2831,17 @@ impl App {
         match f.kind {
             SlotKind::SecurityKey => {
                 ui.checkbox(&mut f.require_uv, "Also ask for the key's PIN every time");
+                if WINDOWS_ASKS_KEY_PIN {
+                    ui.label(
+                        RichText::new(
+                            "Windows asks for the touch and the PIN in its own window. If your \
+                             key has a PIN, tick the box: Windows always checks that PIN, so a \
+                             touch-only method can't work with such a key here.",
+                        )
+                        .small()
+                        .color(theme::MUTED),
+                    );
+                }
             }
             SlotKind::Tpm => {
                 ui.checkbox(

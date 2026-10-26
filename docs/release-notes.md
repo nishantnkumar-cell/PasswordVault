@@ -14,26 +14,28 @@ to work yet.
 
 ## Unreleased
 
-### Sidebar categories now visibly change the screen
+### Security keys in the desktop app on Windows
 
-- **What was wrong.** Choosing **Secure notes**, **SSH and PGP keys** or
-  another category in the desktop app's sidebar did filter the list, but
-  the window hardly changed: an empty category still said "No items yet.",
-  and an item you had open stayed on the right. On Windows and Linux alike
-  it looked as if the click did nothing.
-- **What you see now.** The item list starts with the category's name
-  (for example **Secure notes**). An empty category says so in its own
-  words, such as "No secure notes yet.", and offers a button to make the
-  first one: **New secure note**, **New card**, **New identity**,
-  **New login**, or **New SSH key** and **New OpenPGP key** under
-  **SSH and PGP keys**. Switching category closes an open item that isn't
-  in the new category; a form you are filling in stays open, so nothing
-  you typed is lost. Opening an item from the Ctrl K palette switches the
-  list to **All items** if the item is in another category.
+- **No PIN box on Windows.** On Windows, Secret Vault reaches security keys
+  through Windows' own security key service, which shows its own window for
+  the touch and the key's PIN. The desktop app now leaves out the **PIN**
+  box for security keys there, on the lock screen and under **Add a
+  method**, and says that Windows will ask. Before, the box was shown but
+  what you typed in it was ignored.
+- **A hint for keys with a PIN.** Under **Add a method**, **Security key**
+  now explains on Windows that a key with a PIN needs **Also ask for the
+  key's PIN every time** ticked, because Windows always checks that PIN and
+  a touch-only method then can't work.
 - **How to use it:**
-  [Browse by category](user-guide/05-desktop-app.md#browse-by-category).
-- **Platforms.** The same on Linux and Windows. The app does not run on
-  macOS yet.
+  [Add a security key](user-guide/02-unlocking.md#add-a-security-key-fido2)
+  and [Unlock methods](user-guide/05-desktop-app.md#unlock-methods).
+- **Platforms.** Windows only. Linux keeps the PIN box, because there
+  Secret Vault talks to the key directly and passes the PIN itself. The app
+  does not run on macOS yet.
+- **Not yet.** On Windows 10 builds too old for Windows' security key
+  service (WebAuthn API version 4), vaultd falls back to direct USB access,
+  which needs administrator rights and the PIN from the app; use the
+  `vault` command there for slots with a PIN.
 
 ### Make SSH and OpenPGP keys in the desktop app
 
