@@ -687,11 +687,11 @@ mod tests {
         assert!(!item.subtitle().contains("41111111"));
         item.kind = ItemKind::Identity;
         item.identity = Some(Identity {
-            given_name: "Ada".into(),
-            family_name: "Lovelace".into(),
+            given_name: "Alex".into(),
+            family_name: "Example".into(),
             ..Identity::default()
         });
-        assert_eq!(item.subtitle(), "Ada Lovelace");
+        assert_eq!(item.subtitle(), "Alex Example");
         let mut note = ItemData::new(ItemKind::Note, "");
         note.notes = "secret".into();
         assert_eq!(note.subtitle(), "");

@@ -128,6 +128,39 @@ enum Filter {
 }
 
 impl Filter {
+    /// The sidebar's item categories, in order, with their names.
+    const NAV: [(Filter, &'static str); 7] = [
+        (Filter::All, "All items"),
+        (Filter::Kind(ItemKind::Login), "Logins"),
+        (Filter::Kind(ItemKind::Note), "Secure notes"),
+        (Filter::Kind(ItemKind::Card), "Cards"),
+        (Filter::Kind(ItemKind::Identity), "Identities"),
+        (Filter::Codes, "One-time codes"),
+        (Filter::Keys, "SSH and PGP keys"),
+    ];
+
+    fn name(self) -> &'static str {
+        Self::NAV
+            .iter()
+            .find(|(f, _)| *f == self)
+            .map_or("Items", |(_, name)| name)
+    }
+
+    /// What the list says when this category has nothing in it.
+    fn empty(self) -> &'static str {
+        match self {
+            Filter::All => "No items yet.",
+            Filter::Kind(ItemKind::Login) => "No logins yet.",
+            Filter::Kind(ItemKind::Note) => "No secure notes yet.",
+            Filter::Kind(ItemKind::Card) => "No cards yet.",
+            Filter::Kind(ItemKind::Identity) => "No identities yet.",
+            Filter::Codes => {
+                "No one-time codes yet. Edit a login and paste its 2FA setup key to add one."
+            }
+            Filter::Keys => "No SSH or PGP keys yet.",
+        }
+    }
+
     fn admits(self, i: &ItemSummary) -> bool {
         match self {
             Filter::All => true,
@@ -137,6 +170,13 @@ impl Filter {
             Filter::Keys => i.key.is_some(),
         }
     }
+}
+
+/// What an empty category's shortcut button starts.
+#[derive(Clone, Copy)]
+enum Quick {
+    Item(ItemKind),
+    Key(bool),
 }
 
 /// A secret to copy once the daemon sends it.
@@ -1469,15 +1509,7 @@ impl App {
         ui.add_space(10.0);
         let mut go = None;
         ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
-            for (f, name) in [
-                (Filter::All, "All items"),
-                (Filter::Kind(ItemKind::Login), "Logins"),
-                (Filter::Kind(ItemKind::Note), "Secure notes"),
-                (Filter::Kind(ItemKind::Card), "Cards"),
-                (Filter::Kind(ItemKind::Identity), "Identities"),
-                (Filter::Codes, "One-time codes"),
-                (Filter::Keys, "SSH and PGP keys"),
-            ] {
+            for (f, name) in Filter::NAV {
                 let on = self.view == View::Items && self.filter == f;
                 if nav_button(ui, on, name).clicked() {
                     go = Some((View::Items, f));
@@ -1514,8 +1546,29 @@ impl App {
             self.act("Locking…", Op::Lock, Request::Lock);
         }
         if let Some((v, f)) = go {
-            self.filter = f;
+            self.show_category(f);
             self.go(v);
+        }
+    }
+
+    /// Switch the list to another category. An open item that isn't in it
+    /// is closed, so the right-hand pane follows the list; a form being
+    /// filled in stays, so no typing is lost.
+    fn show_category(&mut self, f: Filter) {
+        self.filter = f;
+        if self.edit.is_some() || self.new_key.is_some() {
+            return;
+        }
+        let inside = self
+            .selected
+            .and_then(|id| self.items.iter().find(|i| i.id == id))
+            .is_some_and(|i| f.admits(i));
+        if !inside {
+            self.selected = None;
+            self.open = None;
+            self.totp = None;
+            self.reveal = false;
+            self.confirm_delete = false;
         }
     }
 
@@ -1527,6 +1580,13 @@ impl App {
     }
 
     fn item_list(&mut self, ui: &mut Ui) {
+        ui.label(
+            RichText::new(self.filter.name())
+                .strong()
+                .size(18.0)
+                .color(theme::INK),
+        );
+        ui.add_space(6.0);
         ui.horizontal(|ui| {
             let l = ui.label("Search");
             ui.add(
@@ -1590,8 +1650,35 @@ impl App {
                         pick = Some(i.id);
                     }
                 }
-                if self.items.is_empty() {
-                    ui.label("No items yet.");
+                let in_category = self.items.iter().any(|i| self.filter.admits(i));
+                if !in_category {
+                    ui.add_space(6.0);
+                    ui.label(RichText::new(self.filter.empty()).color(theme::MUTED));
+                    ui.add_space(6.0);
+                    // A shortcut to the obvious next step, under its own name.
+                    let quick: &[(&str, Quick)] = match self.filter {
+                        Filter::All | Filter::Codes => {
+                            &[("New login", Quick::Item(ItemKind::Login))]
+                        }
+                        Filter::Kind(k) => match k {
+                            ItemKind::Login => &[("New login", Quick::Item(k))],
+                            ItemKind::Note => &[("New secure note", Quick::Item(k))],
+                            ItemKind::Card => &[("New card", Quick::Item(k))],
+                            ItemKind::Identity => &[("New identity", Quick::Item(k))],
+                        },
+                        Filter::Keys => &[
+                            ("New SSH key", Quick::Key(false)),
+                            ("New OpenPGP key", Quick::Key(true)),
+                        ],
+                    };
+                    for (label, q) in quick {
+                        if ui.button(*label).clicked() {
+                            match *q {
+                                Quick::Item(k) => new = Some(k),
+                                Quick::Key(pgp) => new_key = Some(pgp),
+                            }
+                        }
+                    }
                 } else if shown.is_empty() {
                     ui.label(RichText::new("Nothing matches.").color(theme::MUTED));
                 }
@@ -2176,6 +2263,14 @@ impl App {
             }
             Action::Open(id) => {
                 self.go(View::Items);
+                // Show the item in the list too, even if it's in another category.
+                if !self
+                    .items
+                    .iter()
+                    .any(|i| i.id == id && self.filter.admits(i))
+                {
+                    self.filter = Filter::All;
+                }
                 self.select(id);
             }
             Action::NewItem => {

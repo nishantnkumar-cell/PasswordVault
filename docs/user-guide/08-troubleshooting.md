@@ -59,6 +59,17 @@ Start the daemon: `vaultd`, `systemctl --user start vaultd`, or
 On Windows, `%LOCALAPPDATA%\vault\state\vaultd.log` says why it stopped. If it runs as the Linux system user, set
 `VAULT_SOCKET=/run/vault/$USER/vaultd.sock`.
 
+**Clicking a sidebar category seems to do nothing**
+
+Look at the top of the middle column: it names the category you chose,
+such as **Secure notes**. If the category is empty, the list says so, for
+example "No secure notes yet.", with a button to make one. If the
+heading doesn't change and the entry in the sidebar doesn't turn blue,
+the click didn't reach the app: on Windows, check that no other window
+(such as the vault's approval window) is on top, and update the app from
+the latest installer. Releases before this fix looked the same in every
+category; see the [release notes](../release-notes.md).
+
 **"no vault; run `vault init`"**
 There is no vault file at the expected path. Create one, or start `vaultd
 --vault PATH` with the path of your existing file.

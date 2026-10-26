@@ -313,7 +313,7 @@ mod tests {
             {"type":2,"name":"Wifi","notes":"pass: abc"},
             {"type":3,"name":"Travel","card":{"cardholderName":"A Person","brand":"Visa",
              "number":"4111 1111 1111 1111","expMonth":"7","expYear":"31","code":"123"}},
-            {"type":4,"name":"Home","identity":{"firstName":"Ada","lastName":"Lovelace",
+            {"type":4,"name":"Home","identity":{"firstName":"Alex","lastName":"Example",
              "address1":"1 Main St","city":"London","postalCode":"N1","country":"GB","passportNumber":"P1"}},
             {"type":5,"name":"SSH key"}]}"#;
         let (items, skipped) = bitwarden_json(json, 7).unwrap();
@@ -330,7 +330,7 @@ mod tests {
         assert_eq!(card.number, "4111111111111111");
         assert_eq!((card.exp_month, card.exp_year), (7, 2031));
         let id = items[3].identity.as_ref().unwrap();
-        assert_eq!(id.full_name(), "Ada Lovelace");
+        assert_eq!(id.full_name(), "Alex Example");
         assert_eq!(id.postcode, "N1");
         assert_eq!(items[3].fields[0].name, "Passport number");
         assert_eq!(

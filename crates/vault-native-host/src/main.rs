@@ -458,13 +458,13 @@ mod tests {
             assert!(matches!(r, Request::IdentityForFill { .. }));
             let mut item = ItemData::new(ItemKind::Identity, "Home");
             item.identity = Some(Identity {
-                given_name: "Ada".into(),
-                family_name: "Lovelace".into(),
+                given_name: "Alex".into(),
+                family_name: "Example".into(),
                 ..Identity::default()
             });
             Response::Item { id: [0; 16], item }
         });
-        assert_eq!(out["identity"]["fullName"], "Ada Lovelace");
+        assert_eq!(out["identity"]["fullName"], "Alex Example");
 
         let req: HostRequest =
             serde_json::from_value(json!({ "type": "forms", "origin": "https://shop.example" }))

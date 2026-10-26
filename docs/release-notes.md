@@ -14,6 +14,27 @@ to work yet.
 
 ## Unreleased
 
+### Sidebar categories now visibly change the screen
+
+- **What was wrong.** Choosing **Secure notes**, **SSH and PGP keys** or
+  another category in the desktop app's sidebar did filter the list, but
+  the window hardly changed: an empty category still said "No items yet.",
+  and an item you had open stayed on the right. On Windows and Linux alike
+  it looked as if the click did nothing.
+- **What you see now.** The item list starts with the category's name
+  (for example **Secure notes**). An empty category says so in its own
+  words, such as "No secure notes yet.", and offers a button to make the
+  first one: **New secure note**, **New card**, **New identity**,
+  **New login**, or **New SSH key** and **New OpenPGP key** under
+  **SSH and PGP keys**. Switching category closes an open item that isn't
+  in the new category; a form you are filling in stays open, so nothing
+  you typed is lost. Opening an item from the Ctrl K palette switches the
+  list to **All items** if the item is in another category.
+- **How to use it:**
+  [Browse by category](user-guide/05-desktop-app.md#browse-by-category).
+- **Platforms.** The same on Linux and Windows. The app does not run on
+  macOS yet.
+
 ### Make SSH and OpenPGP keys in the desktop app
 
 - **New keys without the command line.** **New item** now also offers

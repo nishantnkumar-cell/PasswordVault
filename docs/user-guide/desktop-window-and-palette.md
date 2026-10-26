@@ -51,7 +51,9 @@ Once unlocked, the window has three columns.
    - **All items**, **Logins**, **Secure notes**, **Cards**,
      **Identities**, **One-time codes** and **SSH and PGP keys** filter the
      item list. *One-time codes* shows only items with a two-factor code
-     set up; *SSH and PGP keys* shows only keys.
+     set up; *SSH and PGP keys* shows only keys. The chosen category's
+     name heads the item list, and an empty category says so and offers a
+     button to make its first item.
    - **Tools**: **Generator** (make a strong password), **Import** (bring
      items in from Bitwarden or a browser export), **Unlock methods**
      (add or remove ways to unlock) and **Sync** (keep the vault in step

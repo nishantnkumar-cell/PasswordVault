@@ -105,9 +105,43 @@ it; the app follows within two seconds and forgets everything it showed.
 ## Items
 
 The middle column lists your items, with a **Search** box above it.
-**All items**, **Logins**, **Secure notes**, **Cards**, **Identities**,
-**One-time codes** and **SSH and PGP keys** in the sidebar filter the list.
 Select an item to see it on the right.
+
+### Browse by category
+
+![An empty category with its New buttons](images/desktop-10-empty-category.png)
+
+The sidebar's top group picks which items the middle column shows:
+
+| Sidebar entry | Shows |
+| --- | --- |
+| **All items** | Everything |
+| **Logins** | Website and app logins (not keys) |
+| **Secure notes** | Notes |
+| **Cards** | Payment cards |
+| **Identities** | Names and addresses for filling forms |
+| **One-time codes** | Logins with a two-factor code set up |
+| **SSH and PGP keys** | Keys only |
+
+1. Click an entry in the sidebar. It turns blue, and the name at the top
+   of the middle column changes to match, for example **Secure notes**.
+2. The list shows only that kind of item. The line under **Search** says
+   how many of all your items are shown, such as "2 of 7 items".
+3. If the category is empty, the list says so ("No secure notes yet.")
+   and offers a button to make the first one, such as **New secure note**.
+   Under **SSH and PGP keys** there are two: **New SSH key** and
+   **New OpenPGP key** (see [Make a new key](#make-a-new-key)).
+   *One-time codes* has no button of its own: add a code by editing a
+   login and pasting its 2FA setup key.
+4. If an item was open on the right and it isn't in the new category, it
+   closes, so the right side shows "Pick an item on the left". A form you
+   are filling in (a new or edited item, or a new key) stays open until
+   you save or cancel it.
+
+**Search** works inside the chosen category. To search everything, choose
+**All items** first. Opening an item from the **Ctrl K** palette switches
+to **All items** when the item is in another category, so you can see it
+in the list.
 
 - Each value has its own copy button, such as **Copy username**, **Copy
   password**, **Copy number** or **Copy code** (when the item has a
