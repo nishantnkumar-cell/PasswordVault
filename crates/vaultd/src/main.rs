@@ -21,6 +21,9 @@ OPTIONS:
   --socket PATH      Unix socket or Windows pipe [default: see docs/vaultd.md]
   --ssh-agent PATH   ssh-agent socket or pipe for SSH_AUTH_SOCK [default: see docs/ssh.md]
   --no-ssh-agent     do not serve the ssh-agent protocol
+  --secret-service   serve the freedesktop Secret Service on the session bus,
+                     for apps that keep passwords through libsecret (Linux;
+                     stop GNOME Keyring's or KWallet's first)
   --owner-uid UID    the only UID allowed to connect [default: this process's UID] (Unix)
   --owner-user NAME  same, by user name (for a system unit running as its own user) (Unix)
   --idle-secs N      lock after N idle seconds [default: 900]
@@ -71,6 +74,8 @@ fn main() {
     let mut idle = 900u64;
     let mut cost = KdfCost::DEFAULT;
     let mut prompt = true;
+    #[cfg_attr(not(target_os = "linux"), allow(unused_mut, unused_variables))]
+    let mut secret_service = false;
     let mut agent = Some(local::ssh_agent_endpoint().unwrap_or_else(|e| die(&e.to_string())));
 
     let mut args = std::env::args().skip(1);
@@ -106,6 +111,8 @@ fn main() {
             }
             "--fast-kdf" => cost = KdfCost::MINIMUM,
             "--no-prompt" => prompt = false,
+            #[cfg(target_os = "linux")]
+            "--secret-service" => secret_service = true,
             "-h" | "--help" => {
                 println!("{HELP}");
                 return;
@@ -177,6 +184,20 @@ fn main() {
     {
         let d = daemon.clone();
         std::thread::spawn(move || vaultd::winsession::run(d));
+    }
+    #[cfg(target_os = "linux")]
+    if secret_service {
+        #[cfg(feature = "secret-service")]
+        if shared {
+            eprintln!(
+                "vaultd: warning: a daemon running as its own user has no session bus; not serving the Secret Service"
+            );
+        } else {
+            let d = daemon.clone();
+            std::thread::spawn(move || vaultd::secret_service::run(d, owner));
+        }
+        #[cfg(not(feature = "secret-service"))]
+        eprintln!("vaultd: warning: built without the secret-service feature");
     }
     if let (Some(l), Some(p)) = (agent_listener, &agent) {
         let d = daemon.clone();

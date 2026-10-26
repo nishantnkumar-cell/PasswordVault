@@ -1,6 +1,6 @@
 //! The approval window `vaultd` opens: a program asking to pair, to fill a
-//! card into a web page, or to use a key held in the vault (an SSH login, a
-//! git signature). Who is asking, what they would get, Deny or Allow. Deny
+//! card into a web page, to use a key held in the vault (an SSH login, a
+//! git signature), or an application asking to use the Secret Service. Who is asking, what they would get, Deny or Allow. Deny
 //! has the focus, Escape denies, and the window denies by itself after a
 //! minute.
 
@@ -31,12 +31,16 @@ pub enum Ask {
     FillCard { card: String, origin: String },
     /// Use the key titled `key`, for `purpose`.
     Use { key: String, purpose: String },
+    /// Let the program read and store app passwords through the Secret
+    /// Service; `command` is its command line, if known.
+    App { command: Option<String> },
 }
 
 impl Request {
     /// Parse `--client NAME --scope full|autofill [--program PATH]`,
     /// `--client NAME --fill-card DESCRIPTION --origin ORIGIN [--program PATH]`
-    /// or `--use --key TITLE --purpose TEXT [--program PATH]`.
+    /// `--use --key TITLE --purpose TEXT [--program PATH]` or
+    /// `--secret-service [--command LINE] [--program PATH]`.
     pub fn from_args(args: &[String]) -> Result<Request, String> {
         let mut client = None;
         let mut scope = None;
@@ -46,6 +50,8 @@ impl Request {
         let mut key = None;
         let mut purpose = None;
         let mut use_key = false;
+        let mut app = false;
+        let mut command = None;
         let mut it = args.iter();
         while let Some(a) = it.next() {
             let mut val = || it.next().cloned().ok_or(format!("{a} needs a value"));
@@ -58,8 +64,26 @@ impl Request {
                 "--use" => use_key = true,
                 "--key" => key = Some(val()?),
                 "--purpose" => purpose = Some(val()?),
+                "--secret-service" => app = true,
+                "--command" => command = Some(val()?),
                 _ => return Err(format!("unknown argument {a}")),
             }
+        }
+        if app {
+            if use_key || client.is_some() || scope.is_some() || card.is_some() {
+                return Err("--secret-service takes only --command and --program".into());
+            }
+            if origin.is_some() || key.is_some() || purpose.is_some() {
+                return Err("--secret-service takes only --command and --program".into());
+            }
+            return Ok(Request {
+                client: String::new(),
+                ask: Ask::App { command },
+                program,
+            });
+        }
+        if command.is_some() {
+            return Err("--command needs --secret-service".into());
         }
         if use_key {
             if client.is_some() || scope.is_some() || card.is_some() || origin.is_some() {
@@ -99,6 +123,7 @@ impl Request {
             Ask::Pair { .. } => "Secret Vault: approve pairing",
             Ask::FillCard { .. } => "Secret Vault: fill a card?",
             Ask::Use { .. } => "Secret Vault: approve key use",
+            Ask::App { .. } => "Secret Vault: approve app passwords",
         }
     }
 }
@@ -157,6 +182,7 @@ impl Prompt {
                 }
                 Ask::FillCard { card, .. } => format!("Fill {card}?"),
                 Ask::Use { key, .. } => format!("Use the key \u{201c}{key}\u{201d}?"),
+                Ask::App { .. } => "Let this program use its saved app passwords?".into(),
             };
             wrap(ui, theme::title(heading, 19.0));
             ui.add_space(2.0);
@@ -191,6 +217,21 @@ impl Prompt {
                         RichText::new(format!("To {purpose}.")).color(theme::TEXT),
                     );
                 }
+                Ask::App { command } => {
+                    wrap(
+                        ui,
+                        RichText::new(
+                            "It asked the Secret Service for passwords that apps keep in \
+                             your vault, such as mail, chat and Wi-Fi passwords. If you \
+                             allow it, it can read, change and delete those until vaultd \
+                             restarts, but none of your other items.",
+                        )
+                        .color(theme::TEXT),
+                    );
+                    if let Some(c) = command {
+                        wrap(ui, RichText::new(c).monospace().color(theme::INK));
+                    }
+                }
             }
             ui.add_space(8.0);
             egui::Frame::new()
@@ -224,6 +265,10 @@ impl Prompt {
                         "If you didn't just ask to fill a card on this site, choose Deny."
                     }
                     Ask::Use { .. } => "If you didn't just start this, choose Deny.",
+                    Ask::App { .. } => {
+                        "Allowing one program allows every copy of it: for python3 or \
+                         another interpreter, that is every script it runs."
+                    }
                 })
                 .size(13.0)
                 .color(theme::MUTED),
@@ -304,6 +349,25 @@ mod tests {
                 program: Some("/usr/bin/ssh".into()),
             })
         );
+        assert_eq!(
+            Request::from_args(&args("--secret-service --program /usr/bin/x")),
+            Ok(Request {
+                client: String::new(),
+                ask: Ask::App { command: None },
+                program: Some("/usr/bin/x".into()),
+            })
+        );
+        assert_eq!(
+            Request::from_args(&args("--secret-service --command x"))
+                .unwrap()
+                .ask,
+            Ask::App {
+                command: Some("x".into())
+            }
+        );
+        assert!(Request::from_args(&args("--secret-service --client x")).is_err());
+        assert!(Request::from_args(&args("--secret-service --scope full")).is_err());
+        assert!(Request::from_args(&args("--client x --scope full --command c")).is_err());
         assert!(Request::from_args(&args("--client x --fill-card Travel")).is_err());
         assert!(
             Request::from_args(&args(

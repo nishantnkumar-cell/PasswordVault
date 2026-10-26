@@ -81,6 +81,29 @@ Platform differences:
   added on Windows still cannot be opened under Linux on the same PC, or
   the other way round.
 
+### Keep apps' passwords in the vault (Secret Service, Linux)
+
+- **What's new.** On Linux, vaultd can now stand in for GNOME Keyring or
+  KWallet as the desktop's *Secret Service*. Apps that save passwords
+  through it (mail and chat clients, `secret-tool`, many GNOME and KDE
+  apps, Python's `keyring`) then keep them in your vault, encrypted like
+  everything else, and folder sync carries them to your other computers.
+- **Safe by default.** It is off until you turn it on. Each program must be
+  allowed once in Secret Vault's approval window, which names the program
+  and its command line. Apps only ever see the passwords apps saved, never
+  your own logins, cards, identities or keys. Nothing can be read while the
+  vault is locked; an app that asks to unlock opens the desktop app. Secrets
+  travel over the encrypted session apps use by default.
+- **How to use it:** [Keep apps' passwords in the vault](user-guide/12-secret-service.md).
+- **Platforms.** Linux only. Windows (Credential Manager) and macOS
+  (Keychain) have their own stores that are not replaced.
+- **Not yet.** Approvals last until vaultd restarts and can't be listed or
+  revoked yet. While the vault is locked, apps find no saved passwords (they
+  can't see that there are any), so some apps ask you to type the password
+  again; unlock the vault first. There is one collection: apps that create
+  their own collections are refused. Passwords already in GNOME Keyring or
+  KWallet are not moved over.
+
 ### One search bar and a New button that follows you
 
 - **Search at the top.** One search field runs across the top of the
