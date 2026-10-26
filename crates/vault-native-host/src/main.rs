@@ -340,6 +340,10 @@ fn install(chrome_id: &str, firefox_id: Option<&str>) -> Result<(), String> {
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.first().map(String::as_str) {
+        Some("--version") => {
+            println!("vault-native-host {}", vault_ipc::VERSION);
+            Ok(())
+        }
         Some("--pair") => pair(args.iter().any(|a| a == "--password")),
         Some("--install") => match args.get(1) {
             Some(id) => install(id, args.get(2).map(String::as_str)),

@@ -14,6 +14,42 @@ to work yet.
 
 ## Unreleased
 
+### Version numbers, release downloads and in-place upgrades
+
+- **One version for everything.** The daemon, the `vault` command, the
+  desktop app, the browser host, `vault-gpg`, the extension and the
+  installers now share one version number, starting at **0.2.0**. Releases
+  with new features raise the middle number, fix-only releases the last.
+- **See your version.** `vault --version`, `vaultd --version`,
+  `vault-native-host --version` and `vault-gpg --version` print it, and the
+  desktop app shows it at the bottom of the sidebar. Builds that are not
+  releases say so: `0.2.0-dev.1a2b3c4` (the commit they were built from).
+- **Release downloads.** Each release is published on the project's GitHub
+  Releases page, no account needed, with the Windows installer, a Debian /
+  Ubuntu package (`.deb`), a Linux archive (`.tar.gz`) and the browser
+  extension (`.zip`), all named with the version. Every CI run also keeps
+  development builds of the same files.
+- **Upgrades in place.** Running a newer Windows installer upgrades the
+  existing install: same folder, mode and choices, closes the app and
+  vaultd, and starts vaultd again. Its last page says *Upgrade Secret Vault
+  from X to Y*. The `.deb` upgrades with `apt install`, and the archive's
+  `install.sh` upgrades a `~/.local` install and restarts vaultd. The vault,
+  unlock methods and paired apps are always kept.
+- **Going back asks first.** An older Windows installer or `install.sh`
+  over a newer version asks before going ahead, with No as the default,
+  since an older version may not read a vault a newer one saved; apt
+  refuses unless told `--allow-downgrades`.
+- **Windows Installed apps** shows the version, and the installer file's
+  properties carry it too.
+
+Platform notes: Windows has the installer; Linux has the `.deb` (Debian 13,
+Ubuntu 24.04 and newer) and the `.tar.gz` (any 64-bit distribution). After
+a `.deb` upgrade, each user runs `systemctl --user restart vaultd`; the
+installer and `install.sh` restart vaultd themselves. macOS has no package
+yet because the daemon does not run there.
+
+How to use it: [Versions, downloads and upgrading](user-guide/11-versions-and-upgrades.md).
+
 ### Make SSH and OpenPGP keys in the desktop app
 
 - **New keys without the command line.** **New item** now also offers

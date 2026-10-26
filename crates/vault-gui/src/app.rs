@@ -1499,6 +1499,11 @@ impl App {
         let mut lock = false;
         ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
             ui.label(
+                RichText::new(format!("Version {}", vault_ipc::VERSION))
+                    .small()
+                    .color(theme::MUTED),
+            );
+            ui.label(
                 RichText::new("Ctrl K finds items and actions")
                     .small()
                     .color(theme::MUTED),

@@ -1,6 +1,6 @@
 [package]
 name = "vaultd"
-version = "0.1.0"
+version.workspace = true
 description = "Vault daemon: holds keys, owns the vault file and hardware factors, serves clients over a Unix socket."
 edition.workspace = true
 license.workspace = true
