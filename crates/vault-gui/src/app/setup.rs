@@ -11,7 +11,10 @@ use eframe::egui::{
 };
 use vault_ipc::{Request, Response, Secret, StatusInfo};
 
-use super::{App, CLIENT_NAME, Op, Screen, View, WINDOWS_ASKS_KEY_PIN, opt, stacked_secret};
+use super::{
+    App, CLIENT_NAME, HELLO, HELLO_CONFIRM, HELLO_WAYS, Op, Screen, View, WINDOWS_ASKS_KEY_PIN,
+    opt, stacked_secret,
+};
 use crate::theme::{self, Icon};
 
 /// Where the wizard is.
@@ -58,7 +61,7 @@ impl Extra {
 
     fn name(self) -> &'static str {
         match self {
-            Extra::Hello => "Windows Hello",
+            Extra::Hello => HELLO,
             Extra::Tpm => "This computer's TPM chip",
             Extra::SecurityKey => "Security key",
         }
@@ -89,7 +92,7 @@ fn extras() -> &'static [Extra] {
     if cfg!(windows) {
         &[Extra::Hello, Extra::Tpm, Extra::SecurityKey]
     } else if cfg!(target_os = "macos") {
-        &[Extra::SecurityKey]
+        &[Extra::Hello, Extra::SecurityKey]
     } else {
         &[Extra::Tpm, Extra::SecurityKey]
     }
@@ -133,7 +136,7 @@ impl App {
             (Op::SetupHello, Response::Status(st)) => {
                 s.added.push(Extra::Hello);
                 s.open = None;
-                self.notice = Some("Windows Hello quick unlock is on.".into());
+                self.notice = Some(format!("{HELLO} quick unlock is on."));
                 self.on_status(st);
             }
             _ => self.error = Some("Unexpected answer from vaultd.".into()),
@@ -300,8 +303,12 @@ impl App {
             (
                 Icon::Key,
                 "Opens your way",
-                "Your master password, plus this computer's chip, a security key or \
-                 Windows Hello if you like.",
+                if cfg!(target_os = "macos") {
+                    "Your master password, plus a security key or Touch ID if you like."
+                } else {
+                    "Your master password, plus this computer's chip, a security key or \
+                     Windows Hello if you like."
+                },
             ),
             (
                 Icon::Shield,
@@ -523,12 +530,12 @@ impl App {
                 ui.add_space(8.0);
                 match e {
                     Extra::Hello => {
-                        ui.label(
-                            "After you unlock with your password, Windows Hello (face, \
-                             fingerprint or your Windows PIN) can unlock the vault again for \
-                             the next 8 hours, until the computer restarts. You can change \
-                             the hours later.",
-                        );
+                        ui.label(format!(
+                            "After you unlock with your password, {HELLO} can unlock the \
+                             vault again for the next 8 hours, until the computer restarts. \
+                             You can change the hours later. {HELLO_WAYS}: any of these \
+                             confirms it's you."
+                        ));
                     }
                     Extra::Tpm => {
                         ui.label(
@@ -572,7 +579,7 @@ impl App {
                     if theme::primary(ui, ok, label).clicked() && ok {
                         request = Some(match e {
                             Extra::Hello => (
-                                "Confirm it's you in the Windows Security window…",
+                                HELLO_CONFIRM,
                                 Op::SetupHello,
                                 Request::SetQuickUnlock { hours: 8 },
                             ),
@@ -607,9 +614,12 @@ impl App {
         }
         if cfg!(target_os = "macos") {
             ui.label(
-                RichText::new("Touch ID and the Secure Enclave are not supported on macOS yet.")
-                    .small()
-                    .color(theme::MUTED),
+                RichText::new(
+                    "Macs have no TPM chip. Touch ID quick unlock re-opens the vault after a \
+                     full unlock; unlocking with the Secure Enclave alone is not supported yet.",
+                )
+                .small()
+                .color(theme::MUTED),
             );
         }
         let any = !s.added.is_empty();
@@ -637,75 +647,60 @@ impl App {
              only on the website each login belongs to.",
         );
         let Some(s) = &mut self.setup else { return };
-        if cfg!(target_os = "macos") {
-            note(
-                ui,
-                theme::GROUND,
-                "Browser autofill is not available on macOS yet. Copy logins from this app \
-                 instead.",
+        numbered(ui, 1, "Add the extension to your browser", |ui| {
+            ui.label(
+                "It isn't in the browser stores yet. In Chrome or Edge, open the \
+                 extensions page (chrome://extensions or edge://extensions), turn on \
+                 Developer mode, click Load unpacked and choose the extension folder \
+                 from your Secret Vault download. In Firefox, open about:debugging, \
+                 choose This Firefox and load extension/manifest.json.",
             );
-        } else {
-            numbered(ui, 1, "Add the extension to your browser", |ui| {
-                ui.label(
-                    "It isn't in the browser stores yet. In Chrome or Edge, open the \
-                     extensions page (chrome://extensions or edge://extensions), turn on \
-                     Developer mode, click Load unpacked and choose the extension folder \
-                     from your Secret Vault download. In Firefox, open about:debugging, \
-                     choose This Firefox and load extension/manifest.json.",
-                );
-            });
-            numbered(ui, 2, "Let the browser talk to the vault", |ui| {
-                ui.label(
-                    "Copy the extension's ID from its card on the extensions page (32 \
-                     letters) and paste it here.",
-                );
-                egui::Grid::new("setup-browser")
-                    .num_columns(2)
-                    .show(ui, |ui| {
-                        let l = ui.label("Chrome or Edge extension ID");
-                        ui.add(
-                            egui::TextEdit::singleline(&mut s.chrome_id)
-                                .desired_width(300.0)
-                                .hint_text("32 letters, a to p"),
-                        )
-                        .labelled_by(l.id);
-                        ui.end_row();
-                    });
-                ui.checkbox(&mut s.firefox, "I also use Firefox");
-                let id = s.chrome_id.trim().to_owned();
-                if s.browser_done {
-                    done_badge(ui, "Registered with your browsers");
-                } else if theme::primary_icon(ui, !id.is_empty(), Icon::Shield, "Register")
-                    .clicked()
-                {
-                    match register_browsers(&id, s.firefox) {
-                        Ok(()) => {
-                            s.browser_done = true;
-                            s.browser_error = None;
-                        }
-                        Err(e) => s.browser_error = Some(e),
+        });
+        numbered(ui, 2, "Let the browser talk to the vault", |ui| {
+            ui.label(
+                "Copy the extension's ID from its card on the extensions page (32 \
+                 letters) and paste it here.",
+            );
+            egui::Grid::new("setup-browser")
+                .num_columns(2)
+                .show(ui, |ui| {
+                    let l = ui.label("Chrome or Edge extension ID");
+                    ui.add(
+                        egui::TextEdit::singleline(&mut s.chrome_id)
+                            .desired_width(300.0)
+                            .hint_text("32 letters, a to p"),
+                    )
+                    .labelled_by(l.id);
+                    ui.end_row();
+                });
+            ui.checkbox(&mut s.firefox, "I also use Firefox");
+            let id = s.chrome_id.trim().to_owned();
+            if s.browser_done {
+                done_badge(ui, "Registered with your browsers");
+            } else if theme::primary_icon(ui, !id.is_empty(), Icon::Shield, "Register").clicked() {
+                match register_browsers(&id, s.firefox) {
+                    Ok(()) => {
+                        s.browser_done = true;
+                        s.browser_error = None;
                     }
+                    Err(e) => s.browser_error = Some(e),
                 }
-                if let Some(e) = &s.browser_error {
-                    ui.colored_label(theme::ERROR, e);
-                }
-            });
-            numbered(ui, 3, "Connect the extension", |ui| {
-                ui.label(
-                    "Click the Secret Vault icon in the browser's toolbar, then Connect. A \
-                     Secret Vault window asks whether to allow the browser: press Allow.",
-                );
-            });
-        }
+            }
+            if let Some(e) = &s.browser_error {
+                ui.colored_label(theme::ERROR, e);
+            }
+        });
+        numbered(ui, 3, "Connect the extension", |ui| {
+            ui.label(
+                "Click the Secret Vault icon in the browser's toolbar, then Connect. A \
+                 Secret Vault window asks whether to allow the browser: press Allow.",
+            );
+        });
         let done = s.browser_done;
         ui.add_space(8.0);
         self.messages(ui);
         nav(ui, |ui| {
-            let label = if done || cfg!(target_os = "macos") {
-                "Continue"
-            } else {
-                "Skip for now"
-            };
+            let label = if done { "Continue" } else { "Skip for now" };
             if next(ui, true, label).clicked() {
                 self.go_step(Step::Done);
             }
@@ -733,16 +728,14 @@ impl App {
             ));
         }
         rows.extend(s.added.iter().map(|e| (true, e.name().to_string())));
-        if !cfg!(target_os = "macos") {
-            rows.push(if s.browser_done {
-                (true, "Browser extension registered".into())
-            } else {
-                (
-                    false,
-                    "Browser not connected yet: see Browser autofill in the guide".into(),
-                )
-            });
-        }
+        rows.push(if s.browser_done {
+            (true, "Browser extension registered".into())
+        } else {
+            (
+                false,
+                "Browser not connected yet: see Browser autofill in the guide".into(),
+            )
+        });
         theme::card()
             .inner_margin(Margin::symmetric(16, 4))
             .show(ui, |ui| {
@@ -870,6 +863,9 @@ fn wide_secret(ui: &mut Ui, label: &str, text: &mut Secret) -> bool {
 
 fn about(e: Extra) -> &'static str {
     match e {
+        Extra::Hello if cfg!(target_os = "macos") => {
+            "Unlock again with your fingerprint, Apple Watch or Mac password"
+        }
         Extra::Hello => "Unlock again with your face, fingerprint or Windows PIN",
         Extra::Tpm => "Ties the vault to this computer, together with your password",
         Extra::SecurityKey => "Your password plus a touch on a USB or NFC key",

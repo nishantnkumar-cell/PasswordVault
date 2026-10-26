@@ -10,11 +10,21 @@ fn home(rel: &str) -> PathBuf {
     PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(rel)
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "macos")))]
 fn xdg(var: &str, fallback: &str) -> PathBuf {
     std::env::var_os(var)
         .map(PathBuf::from)
         .unwrap_or_else(|| home(fallback))
+        .join("vault")
+}
+
+/// `~/Library/Application Support/vault`, unless an XDG variable says
+/// otherwise (for people who keep dotfiles the Linux way).
+#[cfg(target_os = "macos")]
+fn xdg(var: &str, _fallback: &str) -> PathBuf {
+    std::env::var_os(var)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home("Library/Application Support"))
         .join("vault")
 }
 
@@ -46,6 +56,10 @@ pub fn data_dir() -> PathBuf {
 
 /// The daemon's own state (lock file, client list, generation).
 pub fn state_dir() -> PathBuf {
+    #[cfg(target_os = "macos")]
+    if std::env::var_os("XDG_STATE_HOME").is_none() {
+        return data_dir().join("state");
+    }
     #[cfg(unix)]
     return xdg("XDG_STATE_HOME", ".local/state");
     #[cfg(windows)]

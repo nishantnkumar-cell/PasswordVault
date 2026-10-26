@@ -62,7 +62,7 @@ pub enum UnlockMethod {
     },
     /// The recovery slot.
     Recovery { code: Secret },
-    /// Quick unlock: re-open a vault this daemon locked, after Windows Hello
+    /// Quick unlock: re-open a vault this daemon locked, after Windows Hello or Touch ID
     /// confirms the user. Works only while quick unlock is on and within its
     /// time limit since the last unlock with another method; never for
     /// pairing, revoking or a vault this daemon has not unlocked.
@@ -134,13 +134,13 @@ pub enum Request {
     /// Unlock the vault.
     Unlock { method: UnlockMethod },
     /// Lock the vault and zeroize keys. With quick unlock on, the daemon
-    /// keeps the vault key wrapped in memory so Windows Hello can re-open it.
+    /// keeps the vault key wrapped in memory so Windows Hello or Touch ID can re-open it.
     Lock,
     /// Lock the vault and also forget the quick unlock key, so the next
     /// unlock needs a full method.
     LockFully,
-    /// Turn quick unlock with Windows Hello on for `hours` after each full
-    /// unlock (1 to 24), or off with 0. Turning it on asks for Windows Hello
+    /// Turn quick unlock with Windows Hello or Touch ID on for `hours` after each full
+    /// unlock (1 to 24), or off with 0. Turning it on asks for Windows Hello or Touch ID
     /// once, so a client cannot enable it without the user.
     SetQuickUnlock { hours: u32 },
     /// List keyslots.
@@ -321,14 +321,14 @@ pub struct StatusInfo {
     pub idle_lock_in: Option<u64>,
     /// Folder sync, if it is on.
     pub sync: Option<SyncInfo>,
-    /// Quick unlock with Windows Hello.
+    /// Quick unlock with Windows Hello or Touch ID.
     pub quick_unlock: QuickUnlockInfo,
 }
 
 /// Quick unlock state.
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct QuickUnlockInfo {
-    /// This daemon can use Windows Hello.
+    /// This daemon can use Windows Hello or Touch ID.
     pub supported: bool,
     /// Hours quick unlock lasts after a full unlock; 0 means off.
     pub hours: u32,

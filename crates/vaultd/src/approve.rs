@@ -194,7 +194,9 @@ pub fn program_of(pid: u32) -> Option<String> {
         .map(|p| p.display().to_string());
     #[cfg(windows)]
     return vault_ipc::win::process_path(pid).ok();
-    #[cfg(not(any(target_os = "linux", windows)))]
+    #[cfg(target_os = "macos")]
+    return mac_pidpath(pid);
+    #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
     {
         let _ = pid;
         None
@@ -216,11 +218,49 @@ pub fn command_of(pid: u32) -> Option<String> {
         let line: String = line.chars().filter(|c| !c.is_control()).take(200).collect();
         (!line.is_empty()).then_some(line)
     }
-    #[cfg(not(target_os = "linux"))]
+    // macOS keeps no /proc; ps reads the arguments through sysctl.
+    #[cfg(target_os = "macos")]
+    {
+        let out = std::process::Command::new("/bin/ps")
+            .args(["-o", "command=", "-p", &pid.to_string()])
+            .stderr(std::process::Stdio::null())
+            .output()
+            .ok()?;
+        let line = String::from_utf8_lossy(&out.stdout);
+        let line: String = line
+            .trim()
+            .chars()
+            .filter(|c| !c.is_control())
+            .take(200)
+            .collect();
+        (out.status.success() && !line.is_empty()).then_some(line)
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     {
         let _ = pid;
         None
     }
+}
+
+/// The executable of process `pid`, from the kernel.
+#[cfg(target_os = "macos")]
+#[allow(unsafe_code)]
+fn mac_pidpath(pid: u32) -> Option<String> {
+    let mut buf = vec![0u8; nix::libc::PROC_PIDPATHINFO_MAXSIZE as usize];
+    // SAFETY: the buffer is writable for the length passed, and the kernel
+    // writes at most that many bytes.
+    let n = unsafe {
+        nix::libc::proc_pidpath(
+            pid.try_into().ok()?,
+            buf.as_mut_ptr().cast(),
+            buf.len() as u32,
+        )
+    };
+    if n <= 0 {
+        return None;
+    }
+    buf.truncate(n as usize);
+    String::from_utf8(buf).ok()
 }
 
 /// A client name fit to show: printable, single-line, at most 64 characters.
@@ -245,7 +285,7 @@ mod tests {
         assert_eq!(clean_name(&"x".repeat(100)).len(), 64);
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
     fn finds_our_own_program() {
         let me = program_of(std::process::id()).unwrap();
