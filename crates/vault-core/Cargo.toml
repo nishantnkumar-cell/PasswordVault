@@ -1,6 +1,6 @@
 [package]
 name = "vault-core"
-version = "0.1.0"
+version.workspace = true
 description = "Vault file format, key hierarchy and keyslots. Pure: no I/O, no unsafe."
 edition.workspace = true
 license.workspace = true

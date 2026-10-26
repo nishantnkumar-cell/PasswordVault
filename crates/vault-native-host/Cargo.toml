@@ -1,6 +1,6 @@
 [package]
 name = "vault-native-host"
-version = "0.1.0"
+version.workspace = true
 description = "Browser native messaging host: relays the autofill extension to vaultd."
 edition.workspace = true
 license.workspace = true
