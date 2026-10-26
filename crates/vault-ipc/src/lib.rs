@@ -312,6 +312,10 @@ pub struct SlotInfo {
     pub kind: String,
     /// User label.
     pub label: String,
+    /// Set when the slot relies on public-key cryptography that a quantum
+    /// computer could break (a Windows TPM slot made by earlier versions); says what
+    /// to do about it.
+    pub warning: Option<String>,
 }
 
 /// Item summary for listings: no password, card number or TOTP secret.

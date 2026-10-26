@@ -3203,6 +3203,13 @@ impl App {
                             }
                         });
                         ui.label(RichText::new(about).small().color(theme::MUTED));
+                        if let Some(w) = &s.warning {
+                            ui.label(
+                                RichText::new(format!("Not post-quantum: {w}"))
+                                    .small()
+                                    .color(theme::WARN),
+                            );
+                        }
                     });
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if self.confirm_remove == Some(s.id) {

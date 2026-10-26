@@ -267,6 +267,7 @@ fn full_lifecycle() {
     let kinds: Vec<_> = slots.iter().map(|s| s.kind.as_str()).collect();
     assert_eq!(kinds, ["password", "recovery", "fido2", "tpm"]);
     assert_eq!(slots[2].label, "blue key");
+    assert!(slots.iter().all(|s| s.warning.is_none()));
 
     // Lock, then unlock with each factor.
     c.ok(Request::Lock);

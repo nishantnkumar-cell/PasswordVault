@@ -125,24 +125,39 @@ agree, run in an administrator terminal:
 
 ## TPM
 
-`vault-hw/src/wintpm.rs` uses the Microsoft Platform Crypto Provider
-(CNG, `ncrypt.dll`), which any user may call. Windows does not offer user
-programs TPM sealing, so the slot's random secret is wrapped instead: the
-TPM creates an ephemeral RSA-2048 decryption key (no name, so Windows does
-not save it), the secret is encrypted to it with RSA-OAEP (SHA-256), and
-the slot keeps the ciphertext and the key's opaque blob. The blob is the
-TPM's own wrapped private key: only this TPM can load it. The PIN is the
-key's usage authorization (`NCRYPT_PIN_PROPERTY`), so the TPM's
-dictionary-attack lockout applies, and `--pcr7` sets
-`PCP_PLATFORM_BINDING_PCRMASK` to bind the key to the current PCR 7. Every
-call that can show UI passes `NCRYPT_SILENT_FLAG`, except export and import
-of the opaque blob, which the provider refuses with it (`NTE_BAD_FLAGS`)
-and which show no UI.
+`vault-hw/src/wintpm.rs` seals the slot's random secret in the TPM the same
+way Linux does, through TPM Base Services (`tbs.dll`), which any user may
+call: no administrator rights and no TPM driver of our own. A small TPM 2.0
+client (`vault-hw/src/tpm2.rs`) builds the commands itself. It seals the
+secret as a keyed-hash object under the storage key Windows creates at
+`0x81000001` when it sets up the TPM, so nothing new persists in the TPM.
+The object's private part is encrypted by the TPM's own symmetric key, and
+only this TPM can load it.
 
-The slot blob starts with `VWTPM1`, so the Linux and Windows backends can
+- The PIN is the object's authValue, so the TPM's dictionary-attack lockout
+  limits guesses. An object without a PIN is exempt (nothing to guess).
+- `--pcr7` makes the object policy-only: `PolicyPCR(sha256:7) +
+  PolicyAuthValue`, as on Linux.
+- Every command that carries the secret or the PIN runs in a session salted
+  to the storage key (RSA-OAEP through CNG, `bcrypt.dll`), with AES-128-CFB
+  parameter encryption both ways, and the TPM's response HMAC is checked.
+
+The slot blob starts with `VWTPM2`, so the Linux and Windows backends can
 tell each other's slots apart and say so instead of failing obscurely.
-Checked on a real TPM (Windows 11) with
-`cargo run -p vault-hw --example tpm-check -- 1234`; CI runners have no TPM.
+
+**Older slots (`VWTPM1`).** These wrapped the secret instead:
+an RSA-2048 key of the Microsoft Platform Crypto Provider (CNG,
+`ncrypt.dll`) and RSA-OAEP (SHA-256), with the key's opaque blob and the
+ciphertext in the slot. They still unlock. The key blob includes the RSA
+public key, so a future quantum computer could recover the secret from a
+copy of the vault file and leave only the password. `vault slots` and the
+desktop app mark these slots; the user guide explains how to replace them
+([Post-quantum protection](user-guide/02-unlocking.md#post-quantum-protection)).
+
+If a group policy blocks TPM commands for programs ("Configure the list of
+blocked TPM commands"), enrolling fails with a message that says so.
+CI runners have no TPM; `tpm2.rs` is tested against swtpm on Linux. Check a
+real machine with `cargo run -p vault-hw --example tpm-check -- 1234`.
 
 ## Windows Hello quick unlock
 

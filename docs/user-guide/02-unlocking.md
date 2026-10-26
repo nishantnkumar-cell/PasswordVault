@@ -160,8 +160,8 @@ the vault file is useless elsewhere even if someone knows your password.
 
 1. Make sure your user can use the TPM.
    - **Linux:** on most distributions, membership of the `tss` group.
-   - **Windows:** nothing to do. vaultd uses Windows' own TPM service (the
-     Platform Crypto Provider) and needs no administrator rights. If you
+   - **Windows:** nothing to do. vaultd uses Windows' own TPM service (TPM
+     Base Services) and needs no administrator rights. If you
      are not sure the PC has a TPM, press Win+R and run `tpm.msc`: it
      should say "The TPM is ready for use" and "Specification Version: 2.0".
 2. Run:
@@ -195,6 +195,69 @@ under the other, even though the chip is the same: each system uses the TPM
 in its own way. Add one TPM slot from each system if you want both.
 
 On a Mac there is no TPM; Secure Enclave support is planned.
+
+### Post-quantum protection
+
+Someone could copy your vault file today, for example from a sync folder
+or a backup, and keep it until quantum computers can break the public-key
+cryptography in use today. Secret Vault is built so that such a copy stays
+useless:
+
+| Unlock method | Safe against a future quantum computer? |
+| --- | --- |
+| Password, recovery code | Yes |
+| Security key (FIDO2) | Yes |
+| TPM on Linux | Yes |
+| TPM on Windows, added with this update or later | Yes |
+| TPM on Windows, added before this update | **No**: the TPM part can be broken, so only your password protects that copy |
+
+To find an old Windows TPM slot, run `vault slots`. It shows a note under
+such a slot:
+
+```
+5d20aa31  tpm       this laptop
+          note: made with an RSA key a future quantum computer could break; ...
+```
+
+In the desktop app, open **Unlock methods**: the slot says **Not
+post-quantum** in orange.
+
+To replace it, on that Windows PC:
+
+1. Add the TPM again, with the same options you used before:
+
+   ```sh
+   vault add-slot tpm --pin --label "this laptop"
+   ```
+
+   or in the desktop app, **Unlock methods > Add a method > This device
+   (TPM)**.
+2. Lock and unlock once with the new TPM slot to be sure it works
+   (`vault unlock --tpm`).
+3. Get rid of the old slot:
+   - If the vault file never left this PC (no sync folder, no backups),
+     remove it: `vault rm-slot 5d20` (use your slot's ID), or **Remove** in
+     the desktop app.
+   - If the file was ever synced or backed up, **revoke** instead and keep
+     every slot except the old one:
+
+     ```sh
+     vault revoke --keep 3fa9,8be4,c0a1,9e77
+     ```
+
+     Revoking gives the vault a new key, so an old copy of the file that
+     still has the old slot cannot open copies made from now on. Delete
+     old copies and backups you no longer need.
+
+Other things that use public-key cryptography:
+
+- **OpenPGP keys**: make new keys with `--pq` (or **Post-quantum** in the
+  desktop app) when the people you write to can use them. See
+  [OpenPGP keys](07-openpgp.md).
+- **SSH keys** (Ed25519, ECDSA): a future quantum computer could not read
+  past sessions through your key, but could pretend to be you with it. No
+  post-quantum SSH key type exists in OpenSSH yet; Secret Vault will offer
+  one when it does.
 
 ## Quick unlock with Windows Hello (Windows)
 

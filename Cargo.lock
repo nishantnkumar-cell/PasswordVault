@@ -6417,12 +6417,19 @@ dependencies = [
 name = "vault-hw"
 version = "0.2.0"
 dependencies = [
+ "aes 0.9.3",
  "base64-url",
  "ctap-hid-fido2",
+ "data-encoding",
+ "hmac 0.13.0",
  "libwebauthn",
+ "rand 0.8.8",
  "rpassword",
+ "rsa",
  "serde_bytes",
+ "sha2 0.10.9",
  "sha2 0.11.1",
+ "subtle",
  "tokio",
  "tss-esapi",
  "vault-core",

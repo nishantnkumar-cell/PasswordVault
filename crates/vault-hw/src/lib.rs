@@ -14,10 +14,16 @@ pub mod protect;
 pub mod soft;
 #[cfg(all(feature = "tpm", target_os = "linux"))]
 pub mod tpm;
+#[cfg(all(feature = "tpm", any(windows, test)))]
+pub mod tpm2;
 #[cfg(all(feature = "fido2", windows))]
 pub mod webauthn;
 #[cfg(all(feature = "tpm", windows))]
 pub mod wintpm;
+
+/// The TPM tests share one simulator, and one of them changes PCR 7.
+#[cfg(test)]
+pub(crate) static TPM_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 pub type HwResult<T> = Result<T, String>;
 
@@ -25,9 +31,22 @@ pub type HwResult<T> = Result<T, String>;
 /// vault makes; fixed, since changing it changes the derived secret.
 pub const RP_ID: &str = "vault.local";
 
-/// Starts a TPM slot blob made on Windows (`wintpm`). Blobs made on Linux
-/// (`tpm`) start with a small length instead, so the two never collide.
+/// Starts every TPM slot blob made on Windows (`wintpm`). Blobs made on
+/// Linux (`tpm`) start with a small length instead, so the two never collide.
+pub const WIN_TPM_PREFIX: &[u8] = b"VWTPM";
+/// A Windows blob made by earlier versions: the secret wrapped with a TPM RSA key,
+/// which a quantum computer could unwrap from the vault file alone.
 pub const WIN_TPM_MAGIC: &[u8] = b"VWTPM1";
+/// A Windows blob sealed by the TPM under Windows' storage key (`tpm2`).
+pub const WIN_TPM_SEALED: &[u8] = b"VWTPM2";
+
+/// Whether a TPM slot blob depends on public-key cryptography that a quantum
+/// computer could break (an old Windows slot). Such a slot still works;
+/// enrolling the TPM again replaces it with a sealed one.
+pub fn tpm_blob_is_classical(blob: &[u8]) -> bool {
+    blob.starts_with(WIN_TPM_MAGIC)
+}
+
 pub const LINUX_TPM_HINT: &str =
     "this TPM slot was made on Linux; Windows cannot use it, even on the same computer";
 pub const WIN_TPM_HINT: &str =
@@ -120,4 +139,17 @@ pub fn prf_salt(prf_input: &[u8; 32]) -> [u8; 32] {
         .chain_update(prf_input)
         .finalize()
         .into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_rsa_wrapped_windows_blobs_are_classical() {
+        assert!(tpm_blob_is_classical(b"VWTPM1\x01\x00\x00"));
+        assert!(!tpm_blob_is_classical(b"VWTPM2\x00\x00"));
+        // Linux blobs start with a small length.
+        assert!(!tpm_blob_is_classical(&[0x4e, 0x00, 0x00, 0x08]));
+    }
 }
