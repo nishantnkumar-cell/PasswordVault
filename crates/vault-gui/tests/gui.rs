@@ -269,8 +269,12 @@ fn setup_wizard_steps_back_reports_failures_and_ends_on_import() {
         .last()
         .unwrap()
         .click();
-    h.step();
-    h.step();
+    // The options open inside the centered card, which settles over a few
+    // frames; on Windows the key's text is longer, so give it time before
+    // clicking where Add ends up.
+    for _ in 0..5 {
+        h.step();
+    }
     click(&mut h, "Add");
     settle(&mut h);
     assert!(h.state().error().is_some());
