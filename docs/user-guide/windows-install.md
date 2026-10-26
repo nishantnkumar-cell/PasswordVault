@@ -27,11 +27,11 @@ from the programs, so updating or removing the app never touches it.
 - **Windows 10 version 1903 or later, 64-bit.** Windows 11 is best: on
   Windows 11 (and Windows 10 with current updates) security keys work
   without administrator rights.
-- **The installer file**, `SecretVault-Setup-<version>.exe`, from the
-  project's [Releases page](https://github.com/nishantnkumar-cell/PasswordVault/releases).
-  Development builds (versions ending in `-dev.<commit>`) are under each CI
-  run's *Artifacts* instead; see
-  [Versions, downloads and upgrading](11-versions-and-upgrades.md#where-to-download).
+- **The installer file**, `SecretVault-Setup-<version>.exe`. Until there are
+  published releases, download it from the project's GitHub page: open the
+  **Actions** tab, pick the latest green **CI** run on `main`, and download
+  **windows-installer** under *Artifacts* (it is a zip with the installer
+  inside).
 
 ## Which install to choose
 
@@ -177,17 +177,8 @@ rights, whichever install mode you chose.
 
 ## Updating
 
-Run the newer installer. It finds the installed version and upgrades it in
-place: same folder, same install mode, same choices, so it skips those
-pages. The **Ready to install** page says *Upgrade Secret Vault from 0.2.0
-to 0.3.0*. It closes the desktop app and vaultd, replaces the programs and
-starts vaultd again. Your vault, unlock methods and paired apps are not
-touched. Unlock again after the update.
-
-An installer older than what is installed asks first, with **No** as the
-default. To see which version you have, look in *Settings > Apps* or run
-`vault --version`. Details:
-[Versions, downloads and upgrading](11-versions-and-upgrades.md).
+Run the newer installer. It stops vaultd, replaces the programs and starts
+vaultd again. Your vault is not touched. Unlock again after the update.
 
 ## Uninstalling
 

@@ -20,24 +20,6 @@ command works on Linux, Windows and macOS.
 
 ## Linux
 
-### The easy way: a package
-
-Download a release from the project's
-[Releases page](https://github.com/nishantnkumar-cell/PasswordVault/releases):
-
-- **Debian 13, Ubuntu 24.04 or newer:**
-  `sudo apt install ./secret-vault_<version>_amd64.deb`
-- **Any other 64-bit distribution:** unpack
-  `secret-vault-<version>-linux-x86_64.tar.gz` and run `./install.sh` in it
-  (installs into `~/.local`, no root).
-
-Then start the daemon with `systemctl --user enable --now vaultd` and go to
-[Create your vault](#create-your-vault). Upgrading later is the same
-command with the newer file; see
-[Versions, downloads and upgrading](11-versions-and-upgrades.md).
-
-The rest of this section builds the programs from source instead.
-
 ### 1. Install the build tools
 
 Install Rust from [rustup.rs](https://rustup.rs), then the libraries that the

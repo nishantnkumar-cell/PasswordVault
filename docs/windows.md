@@ -6,9 +6,8 @@ vault file can be copied between machines.
 
 ## Install
 
-Download `SecretVault-Setup-<version>.exe` from the GitHub Releases page (or
-a development build: the `windows-installer` artifact of a CI run) and run
-it. "Install for me only"
+Download `SecretVault-Setup-<version>.exe` (the `windows-installer` artifact
+of a CI run, until there are releases) and run it. "Install for me only"
 needs no administrator rights; "Install for all users" asks once, during
 setup. Step by step: [user-guide/windows-install.md](user-guide/windows-install.md).
 
@@ -17,19 +16,9 @@ To build the installer yourself, build the programs and compile
 Inno Setup 6.x if that is what you have):
 
     cargo build --release --locked
-    iscc contrib\windows\vault.iss /DAppVersion=0.2.0
+    iscc contrib\windows\vault.iss /DAppVersion=0.1.0
 
-It lands in `target\installer\`. CI and the release workflow
-(`.github/workflows/package.yml`) pass `/DAppVersion` from
-`contrib/release/version.sh --build` and `/DNumVersion` (its numeric part,
-for the file's version resource).
-
-A newer installer upgrades in place: Inno Setup keeps the previous folder,
-install mode (`UsePreviousPrivileges`) and tasks, the script stops vaultd,
-vault-gui and vault-prompt before copying, and `[Run]` starts vaultd again.
-The script reads the installed version from the uninstall key
-(`DisplayVersion`) to name the upgrade on the Ready page and to ask before
-installing an older version over a newer one.
+It lands in `target\installer\`.
 
 ## Build
 
