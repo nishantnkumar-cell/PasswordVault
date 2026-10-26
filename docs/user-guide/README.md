@@ -50,8 +50,6 @@ random program on your computer cannot just ask for your passwords.
    `pass`, and NeoMutt, through `vault-gpg`.
 10. [Sync between devices](10-sync.md): one vault on several computers
     through OneDrive, Google Drive, Dropbox or any synced folder.
-11. [Versions, downloads and upgrading](11-versions-and-upgrades.md): which
-    version you have, where to download one, and upgrading in place.
 
 ## What works where
 
@@ -62,7 +60,7 @@ random program on your computer cannot just ask for your passwords.
 | Secure notes, cards, identities | Yes | Yes | Not yet |
 | Card and address autofill | Yes (card fill needs a desktop session) | Yes | Not yet |
 | Unlock: password, recovery code | Yes | Yes | Not yet |
-| Packages and in-place upgrades | `.deb`, and `.tar.gz` with `install.sh` | Installer, no administrator rights needed | Not yet |
+| Installer | Not yet (build, then the systemd unit) | Yes, no administrator rights needed | Not yet |
 | Unlock: password + FIDO2 security key | Yes | Yes (Windows 11, or Windows 10 with current updates) | Not yet |
 | Unlock: password + TPM | Yes | Yes | Not applicable |
 | Quick unlock with Windows Hello (after a full unlock) | Not applicable | Yes | Not applicable |
