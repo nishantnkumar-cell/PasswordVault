@@ -953,6 +953,9 @@ impl Daemon {
                 },
                 UnlockMethod::Fido2 { password, pin },
             ) => {
+                // Every slot's password has 8 or more characters, so a
+                // shorter one can't open it: don't ask for a PIN and touch.
+                check_password(password)?;
                 let dev = self
                     .hw
                     .fido2

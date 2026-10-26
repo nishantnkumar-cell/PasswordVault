@@ -26,6 +26,11 @@ const TIMEOUT_MS: u32 = 60_000;
 
 pub struct WinFido2;
 
+const TOUCH_ONLY_WITH_UV: &str = "this security key has a PIN or fingerprint, and Windows \
+     always checks it, which gives a different secret than a touch alone; on Windows use a \
+     slot that asks for the PIN with this key (`--uv`, or tick \"Also ask for the key's PIN \
+     every time\" in the app)";
+
 /// The API version that added hmac-secret to GetAssertion (Windows 11, and
 /// Windows 10 with recent updates).
 pub fn available() -> bool {
@@ -38,7 +43,9 @@ fn wide(s: &str) -> Vec<u16> {
 }
 
 fn error(what: &str, hr: HRESULT) -> String {
-    if hr == NTE_USER_CANCELLED {
+    // Cancel in Windows' window gives HRESULT_FROM_WIN32(ERROR_CANCELLED).
+    const CANCELLED: HRESULT = 0x8007_04C7_u32 as HRESULT;
+    if hr == NTE_USER_CANCELLED || hr == CANCELLED {
         return format!("{what}: cancelled or timed out");
     }
     // SAFETY: returns a static string for any HRESULT.
@@ -151,14 +158,21 @@ impl Fido2 for WinFido2 {
             return Err(error("registration failed", hr));
         }
         // SAFETY: on success `att` points to a structure webauthn.dll owns
-        // until it is freed below; the ID is copied out first.
-        let id = unsafe {
+        // until it is freed below; the ID and flags are copied out first.
+        let (id, flags) = unsafe {
             let a = &*att;
             let id =
                 std::slice::from_raw_parts(a.pbCredentialId, a.cbCredentialId as usize).to_vec();
+            let flags = (a.cbAuthenticatorData > 32).then(|| *a.pbAuthenticatorData.add(32));
             WebAuthNFreeCredentialAttestation(att);
-            id
+            (id, flags)
         };
+        // Windows verifies a key that has a PIN or fingerprint set whatever
+        // was asked for. If it did so here, it will at unlock too, and a
+        // touch-only slot can never open: say so now, before the second touch.
+        if !require_uv && flags.is_some_and(|f| f & 0x04 != 0) {
+            return Err(TOUCH_ONLY_WITH_UV.into());
+        }
         // Windows does not always echo the hmac-secret extension back; the
         // caller asks for a secret right away, which fails on a key without it.
         Ok(id)
@@ -252,8 +266,7 @@ impl Fido2 for WinFido2 {
         let verified = flags.ok_or("security key returned no authenticator data")? & 0x04 != 0;
         if verified != require_uv {
             return Err(if verified {
-                "Windows checked the key's PIN for a touch-only slot, so the key gave a \
-                 different secret; use a slot that asks for the PIN (--uv) with this key"
+                TOUCH_ONLY_WITH_UV
             } else {
                 "the security key did not check its PIN for a slot that requires it"
             }

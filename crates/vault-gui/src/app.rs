@@ -1331,6 +1331,21 @@ impl App {
         let label = if pair { "Pair" } else { "Unlock" };
         submit |= theme::primary(ui, ok, label).clicked();
         if submit && ok {
+            // Nothing typed yet: don't start a security key or TPM check.
+            let f = &self.unlock;
+            let empty = if f.method == Method::Recovery {
+                f.code.trim().is_empty()
+            } else {
+                f.password.is_empty()
+            };
+            if empty {
+                self.error = Some(if f.method == Method::Recovery {
+                    "Type the recovery code first.".into()
+                } else {
+                    "Type your master password first.".into()
+                });
+                return;
+            }
             let busy = match self.unlock.method {
                 Method::SecurityKey => "Touch your security key when it blinks…",
                 _ if pair => "Pairing…",

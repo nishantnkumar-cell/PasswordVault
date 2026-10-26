@@ -238,6 +238,11 @@ fn line_from_stdin() -> String {
         .read_line(&mut s)
         .unwrap_or_else(|e| die(e));
     s.truncate(s.trim_end_matches(['\n', '\r']).len());
+    // Windows PowerShell 5.1 starts piped text with a byte-order mark, which
+    // would otherwise become part of the password and never match a typed one.
+    if s.starts_with('\u{feff}') {
+        s.drain(..'\u{feff}'.len_utf8());
+    }
     s
 }
 
