@@ -11,8 +11,8 @@ use eframe::egui::{
 };
 use vault_ipc::{Request, Response, Secret, StatusInfo};
 
-use super::{App, CLIENT_NAME, Op, Screen, View, WINDOWS_ASKS_KEY_PIN, opt};
-use crate::theme;
+use super::{App, CLIENT_NAME, Op, Screen, View, WINDOWS_ASKS_KEY_PIN, opt, stacked_secret};
+use crate::theme::{self, Icon};
 
 /// Where the wizard is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -27,14 +27,17 @@ pub(super) enum Step {
     Done,
 }
 
-/// The steps shown in the progress bar, in order.
-const TRACK: [(Step, &str); 5] = [
-    (Step::Password, "Password"),
-    (Step::Recovery, "Recovery code"),
-    (Step::Unlock, "Unlock methods"),
-    (Step::Browser, "Browser"),
-    (Step::Done, "Finish"),
+/// The steps shown in the step list, in order, with a line under each.
+const TRACK: [(Step, &str, &str); 5] = [
+    (Step::Password, "Password", "Opens the vault"),
+    (Step::Recovery, "Recovery code", "If you forget it"),
+    (Step::Unlock, "Unlock methods", "Optional"),
+    (Step::Browser, "Browser", "Optional"),
+    (Step::Done, "Finish", ""),
 ];
+
+/// Width of the step list on the left of the wizard's card.
+const RAIL: f32 = 250.0;
 
 /// An extra unlock method the wizard can add.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,6 +48,14 @@ pub(super) enum Extra {
 }
 
 impl Extra {
+    fn icon(self) -> Icon {
+        match self {
+            Extra::Hello => Icon::Identity,
+            Extra::Tpm => Icon::Chip,
+            Extra::SecurityKey => Icon::Key,
+        }
+    }
+
     fn name(self) -> &'static str {
         match self {
             Extra::Hello => "Windows Hello",
@@ -140,7 +151,8 @@ impl App {
         self.send(Op::ListSlots, vault_ipc::Request::ListSlots);
     }
 
-    /// The wizard's window: a wide card in the middle of the ground.
+    /// The wizard's window: a card in the middle of the ground, with the
+    /// steps listed down its left side when there is room.
     pub(super) fn setup_window(&mut self, ui: &mut Ui) {
         self.begin_setup();
         egui::CentralPanel::default()
@@ -153,13 +165,28 @@ impl App {
                         let last: f32 = ui.data(|d| d.get_temp(id)).unwrap_or(0.0);
                         let room = ui.available_height();
                         ui.add_space(((room - last) / 2.0).max(16.0));
-                        let width = (ui.available_width() - 32.0).clamp(320.0, 600.0);
+                        let free = ui.available_width() - 32.0;
+                        let wide = free >= 720.0;
+                        let width = if wide {
+                            free.min(880.0)
+                        } else {
+                            free.clamp(320.0, 600.0)
+                        };
                         let card = theme::card()
-                            .inner_margin(Margin::symmetric(36, 30))
+                            .inner_margin(Margin::ZERO)
                             .corner_radius(CornerRadius::same(16))
                             .show(ui, |ui| {
                                 ui.set_width(width);
-                                ui.vertical(|ui| self.setup_card(ui));
+                                if wide {
+                                    self.setup_panes(ui, width);
+                                } else {
+                                    egui::Frame::new()
+                                        .inner_margin(Margin::symmetric(36, 30))
+                                        .show(ui, |ui| {
+                                            ui.set_width(width - 72.0);
+                                            ui.vertical(|ui| self.setup_card(ui, false));
+                                        });
+                                }
                             });
                         let h = card.response.rect.height();
                         if (h - last).abs() > 0.5 {
@@ -172,11 +199,69 @@ impl App {
             });
     }
 
-    fn setup_card(&mut self, ui: &mut Ui) {
+    /// The wide card: the step list on a grey strip, the step on the right.
+    fn setup_panes(&mut self, ui: &mut Ui, width: f32) {
         let step = self.setup.as_ref().map_or(Step::Welcome, |s| s.step);
-        if !matches!(step, Step::Welcome | Step::Join) {
-            progress(ui, step);
-            ui.add_space(22.0);
+        let strip = ui.painter().add(egui::Shape::Noop);
+        let row = ui.horizontal_top(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            egui::Frame::new()
+                .inner_margin(Margin::symmetric(22, 28))
+                .show(ui, |ui| {
+                    ui.set_width(RAIL - 44.0);
+                    ui.spacing_mut().item_spacing.x = 10.0;
+                    ui.vertical(|ui| rail(ui, step));
+                });
+            egui::Frame::new()
+                .inner_margin(Margin::symmetric(40, 32))
+                .show(ui, |ui| {
+                    ui.set_width(width - RAIL - 80.0);
+                    ui.set_min_height(420.0);
+                    ui.spacing_mut().item_spacing.x = 8.0;
+                    ui.vertical(|ui| self.setup_card(ui, true));
+                });
+        });
+        let full = row.response.rect;
+        let left =
+            egui::Rect::from_min_max(full.min, egui::pos2(full.left() + RAIL, full.bottom()));
+        ui.painter().set(
+            strip,
+            egui::Shape::rect_filled(
+                left,
+                CornerRadius {
+                    nw: 16,
+                    sw: 16,
+                    ne: 0,
+                    se: 0,
+                },
+                theme::GROUND,
+            ),
+        );
+        ui.painter().vline(
+            left.right(),
+            left.y_range(),
+            Stroke::new(1.0, theme::DIVIDER),
+        );
+    }
+
+    fn setup_card(&mut self, ui: &mut Ui, wide: bool) {
+        let step = self.setup.as_ref().map_or(Step::Welcome, |s| s.step);
+        if let Some(at) = TRACK.iter().position(|(s, _, _)| *s == step) {
+            if wide {
+                if step != Step::Done {
+                    ui.label(
+                        RichText::new(format!("STEP {} OF {}", at + 1, TRACK.len() - 1))
+                            .size(11.0)
+                            .family(theme::semibold())
+                            .extra_letter_spacing(0.6)
+                            .color(theme::ACCENT),
+                    );
+                    ui.add_space(6.0);
+                }
+            } else {
+                progress(ui, step);
+                ui.add_space(22.0);
+            }
         }
         match step {
             Step::Welcome => self.welcome(ui),
@@ -198,51 +283,51 @@ impl App {
     }
 
     fn welcome(&mut self, ui: &mut Ui) {
-        ui.horizontal(|ui| {
-            theme::lock_tile(ui, 48.0);
-            ui.add_space(4.0);
-            ui.vertical(|ui| {
-                ui.add_space(2.0);
-                ui.label(
-                    RichText::new("Welcome to Secret Vault")
-                        .family(theme::semibold())
-                        .size(22.0)
-                        .color(theme::INK),
-                );
-                ui.label(
-                    RichText::new("A few minutes of setup, then your passwords are ready.")
-                        .color(theme::MUTED),
-                );
-            });
-        });
-        ui.add_space(20.0);
-        for (title, about) in [
+        ui.add_space(4.0);
+        ui.label(theme::title("Welcome to Secret Vault", 26.0));
+        ui.label(
+            RichText::new("A few minutes of setup, then your passwords are ready.")
+                .size(15.0)
+                .color(theme::TEXT),
+        );
+        ui.add_space(22.0);
+        for (icon, title, about) in [
             (
+                Icon::Lock,
                 "Stays on your computer",
                 "Your vault is one encrypted file here. Nothing is sent to a server.",
             ),
             (
+                Icon::Key,
                 "Opens your way",
                 "Your master password, plus this computer's chip, a security key or \
                  Windows Hello if you like.",
             ),
             (
+                Icon::Shield,
                 "Fills only the right site",
                 "The browser extension fills a login only on the website it belongs to.",
             ),
         ] {
-            feature(ui, title, about);
-            ui.add_space(6.0);
+            feature(ui, icon, title, about);
+            ui.add_space(8.0);
         }
         ui.add_space(14.0);
         self.messages(ui);
         let ok = self.busy.is_none();
         ui.with_layout(Layout::top_down_justified(Align::Center), |ui| {
-            if big_primary(ui, ok, "Create a new vault").clicked() {
+            if big_primary(ui, ok, Icon::Plus, "Create a new vault").clicked() {
                 self.go_step(Step::Password);
             }
             ui.add_space(2.0);
-            if big_secondary(ui, ok, "I already use Secret Vault on another device").clicked() {
+            if big_secondary(
+                ui,
+                ok,
+                Icon::Sync,
+                "I already use Secret Vault on another device",
+            )
+            .clicked()
+            {
                 self.go_step(Step::Join);
             }
         });
@@ -264,7 +349,7 @@ impl App {
         }
         ui.add_space(16.0);
         let ok = self.busy.is_none();
-        if ui.add_enabled(ok, egui::Button::new("Back")).clicked() {
+        if back(ui, ok).clicked() {
             self.go_step(Step::Welcome);
         }
     }
@@ -277,18 +362,27 @@ impl App {
              clever: four or five random words are easy to remember and hard to guess.",
         );
         let mut submit = false;
-        egui::Grid::new("setup-password")
-            .num_columns(2)
-            .spacing([14.0, 10.0])
-            .show(ui, |ui| {
-                wide_secret(ui, "Master password", &mut self.new_password);
-                ui.end_row();
-                ui.label("");
-                strength(ui, &self.new_password);
-                ui.end_row();
-                submit |= wide_secret(ui, "Repeat it", &mut self.new_password2);
-                ui.end_row();
+        submit |= stacked_secret(ui, "Master password", &mut self.new_password);
+        ui.add_space(-4.0);
+        strength(ui, &self.new_password);
+        ui.add_space(8.0);
+        submit |= stacked_secret(ui, "Repeat it", &mut self.new_password2);
+        if !self.new_password2.is_empty() {
+            let same = *self.new_password == *self.new_password2;
+            ui.add_space(-6.0);
+            ui.horizontal(|ui| {
+                if same {
+                    Icon::Check.show(ui, 14.0, theme::OK);
+                    ui.label(RichText::new("They match").small().color(theme::OK));
+                } else {
+                    ui.label(
+                        RichText::new("Not the same yet")
+                            .small()
+                            .color(theme::MUTED),
+                    );
+                }
             });
+        }
         ui.add_space(10.0);
         note(
             ui,
@@ -299,12 +393,12 @@ impl App {
         ui.add_space(12.0);
         self.messages(ui);
         let ok = self.busy.is_none();
-        let mut back = false;
+        let mut go_back = false;
         nav(ui, |ui| {
-            submit |= theme::primary(ui, ok, "Create vault").clicked();
-            back = ui.add_enabled(ok, egui::Button::new("Back")).clicked();
+            submit |= next(ui, ok, "Create vault").clicked();
+            go_back = left(ui, |ui| back(ui, ok).clicked());
         });
-        if back {
+        if go_back {
             self.go_step(Step::Welcome);
             return;
         }
@@ -339,18 +433,11 @@ impl App {
             egui::Frame::new()
                 .fill(theme::GROUND)
                 .stroke(Stroke::new(1.0, theme::BORDER))
-                .corner_radius(CornerRadius::same(10))
-                .inner_margin(Margin::symmetric(18, 16))
+                .corner_radius(CornerRadius::same(12))
+                .inner_margin(Margin::same(14))
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
-                    ui.vertical_centered(|ui| {
-                        ui.label(
-                            RichText::new(code_lines(code).as_str())
-                                .monospace()
-                                .size(20.0)
-                                .color(theme::INK),
-                        );
-                    });
+                    code_boxes(ui, code);
                 });
         }
         ui.add_space(12.0);
@@ -370,7 +457,7 @@ impl App {
         ui.add_space(12.0);
         self.messages(ui);
         nav(ui, |ui| {
-            if theme::primary(ui, ready, "Continue").clicked() && ready {
+            if next(ui, ready, "Continue").clicked() && ready {
                 self.go_step(Step::Unlock);
             }
         });
@@ -398,7 +485,14 @@ impl App {
             let open = s.open == Some(e);
             option_card(ui, open, |ui| {
                 ui.horizontal(|ui| {
-                    theme::monogram(ui, e.name(), 36.0);
+                    let (tile, _) = ui.allocate_exact_size(Vec2::splat(38.0), Sense::hover());
+                    let (fill, ink) = if added {
+                        (theme::OK_WEAK, theme::OK)
+                    } else {
+                        (theme::GROUND, theme::TEXT)
+                    };
+                    ui.painter().rect_filled(tile, CornerRadius::same(10), fill);
+                    e.icon().paint(ui.painter(), tile.shrink(9.0), ink);
                     ui.vertical(|ui| {
                         ui.spacing_mut().item_spacing.y = 2.0;
                         ui.label(
@@ -411,7 +505,11 @@ impl App {
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if added {
                             done_badge(ui, "Added");
-                        } else if !open && ui.add_enabled(ok, egui::Button::new("Set up")).clicked()
+                        } else if !open
+                            && ui
+                                .add_enabled_ui(ok, |ui| theme::button(ui, Icon::Plus, "Set up"))
+                                .inner
+                                .clicked()
                         {
                             s.open = Some(e);
                             s.pin = Secret::default();
@@ -521,11 +619,11 @@ impl App {
         ui.add_space(8.0);
         self.messages(ui);
         nav(ui, |ui| {
-            let next = if any { "Continue" } else { "Skip for now" };
-            if theme::primary(ui, ok, next).clicked() && ok {
+            let label = if any { "Continue" } else { "Skip for now" };
+            if next(ui, ok, label).clicked() && ok {
                 self.go_step(Step::Browser);
             }
-            if ui.add_enabled(ok, egui::Button::new("Back")).clicked() {
+            if left(ui, |ui| back(ui, ok).clicked()) {
                 self.go_step(Step::Recovery);
             }
         });
@@ -577,7 +675,9 @@ impl App {
                 let id = s.chrome_id.trim().to_owned();
                 if s.browser_done {
                     done_badge(ui, "Registered with your browsers");
-                } else if theme::primary(ui, !id.is_empty(), "Register").clicked() {
+                } else if theme::primary_icon(ui, !id.is_empty(), Icon::Shield, "Register")
+                    .clicked()
+                {
                     match register_browsers(&id, s.firefox) {
                         Ok(()) => {
                             s.browser_done = true;
@@ -601,15 +701,15 @@ impl App {
         ui.add_space(8.0);
         self.messages(ui);
         nav(ui, |ui| {
-            let next = if done || cfg!(target_os = "macos") {
+            let label = if done || cfg!(target_os = "macos") {
                 "Continue"
             } else {
                 "Skip for now"
             };
-            if theme::primary(ui, true, next).clicked() {
+            if next(ui, true, label).clicked() {
                 self.go_step(Step::Done);
             }
-            if ui.button("Back").clicked() {
+            if left(ui, |ui| back(ui, true).clicked()) {
                 self.go_step(Step::Unlock);
             }
         });
@@ -643,22 +743,34 @@ impl App {
                 )
             });
         }
-        for (ok, text) in rows {
-            ui.horizontal(|ui| {
-                if ok {
-                    check(ui, theme::OK);
-                } else {
-                    let (rect, _) = ui.allocate_exact_size(Vec2::splat(18.0), Sense::hover());
-                    ui.painter().circle_stroke(
-                        rect.center(),
-                        7.0,
-                        Stroke::new(1.5, theme::BORDER_STRONG),
-                    );
+        theme::card()
+            .inner_margin(Margin::symmetric(16, 4))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.spacing_mut().item_spacing.y = 0.0;
+                for (i, (ok, text)) in rows.into_iter().enumerate() {
+                    if i > 0 {
+                        theme::divider(ui);
+                    }
+                    ui.add_space(10.0);
+                    ui.horizontal(|ui| {
+                        if ok {
+                            check(ui, theme::OK);
+                        } else {
+                            let (rect, _) =
+                                ui.allocate_exact_size(Vec2::splat(18.0), Sense::hover());
+                            ui.painter().circle_stroke(
+                                rect.center(),
+                                7.0,
+                                Stroke::new(1.5, theme::BORDER_STRONG),
+                            );
+                        }
+                        let colour = if ok { theme::INK } else { theme::MUTED };
+                        ui.label(RichText::new(text).color(colour));
+                    });
+                    ui.add_space(10.0);
                 }
-                let colour = if ok { theme::INK } else { theme::MUTED };
-                ui.label(RichText::new(text).color(colour));
             });
-        }
         ui.add_space(14.0);
         note(
             ui,
@@ -669,13 +781,13 @@ impl App {
         ui.add_space(12.0);
         let mut go = None;
         nav(ui, |ui| {
-            if theme::primary(ui, true, "Open my vault").clicked() {
+            if next(ui, true, "Open my vault").clicked() {
                 go = Some(View::Items);
             }
-            if ui.button("Import passwords").clicked() {
+            if theme::button(ui, Icon::Import, "Import passwords").clicked() {
                 go = Some(View::Import);
             }
-            if ui.button("Back").clicked() {
+            if left(ui, |ui| back(ui, true).clicked()) {
                 self.go_step(Step::Browser);
             }
         });
@@ -702,18 +814,45 @@ impl App {
     }
 }
 
-/// The recovery code on two even lines, broken between groups.
-fn code_lines(code: &str) -> Secret {
+/// The recovery code's groups, each in a white box, in even rows. A
+/// screen reader reads the whole code at once.
+fn code_boxes(ui: &mut Ui, code: &str) {
     let groups: Vec<&str> = code.split('-').collect();
-    let half = groups.len().div_ceil(2);
-    let mut out = Secret::default();
-    for (i, g) in groups.iter().enumerate() {
-        if i > 0 {
-            out.push_str(if i == half { "-\n" } else { "-" });
-        }
-        out.push_str(g);
+    let per_row = if groups.len() > 8 {
+        groups.len().div_ceil(2)
+    } else {
+        groups.len()
     }
-    out
+    .max(1);
+    let gap = 8.0;
+    let w = ((ui.available_width() - gap * (per_row - 1) as f32) / per_row as f32).max(40.0);
+    let rows = groups.len().div_ceil(per_row);
+    let height = rows as f32 * 40.0 + (rows - 1) as f32 * gap;
+    let (rect, resp) =
+        ui.allocate_exact_size(Vec2::new(ui.available_width(), height), Sense::hover());
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, code));
+    let p = ui.painter();
+    for (i, g) in groups.iter().enumerate() {
+        let (r, c) = (i / per_row, i % per_row);
+        let b = egui::Rect::from_min_size(
+            rect.min + Vec2::new(c as f32 * (w + gap), r as f32 * (40.0 + gap)),
+            Vec2::new(w, 40.0),
+        );
+        p.rect(
+            b,
+            CornerRadius::same(8),
+            theme::SURFACE,
+            Stroke::new(1.0, theme::DIVIDER),
+            egui::StrokeKind::Inside,
+        );
+        p.text(
+            b.center(),
+            egui::Align2::CENTER_CENTER,
+            *g,
+            egui::FontId::monospace(16.0),
+            theme::INK,
+        );
+    }
 }
 
 /// A labelled password box, wider than the app's own. True on Enter.
@@ -806,7 +945,8 @@ pub(super) fn rate(pw: &str) -> (f32, &'static str, Color32) {
 
 fn strength(ui: &mut Ui, pw: &str) {
     ui.horizontal(|ui| {
-        let (rect, _) = ui.allocate_exact_size(Vec2::new(150.0, 6.0), Sense::hover());
+        let w = (ui.available_width() - 150.0).max(150.0);
+        let (rect, _) = ui.allocate_exact_size(Vec2::new(w, 6.0), Sense::hover());
         let p = ui.painter();
         p.rect_filled(rect, CornerRadius::same(3), theme::BORDER);
         if pw.is_empty() {
@@ -825,9 +965,97 @@ fn strength(ui: &mut Ui, pw: &str) {
     });
 }
 
+/// The step list down the left of the wide card: done steps ticked in
+/// green, the current one in blue, joined by a line.
+fn rail(ui: &mut Ui, step: Step) {
+    ui.horizontal(|ui| {
+        theme::lock_tile(ui, 34.0);
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+            ui.label(theme::title("Secret Vault", 15.0));
+            ui.label(
+                RichText::new("First-time setup")
+                    .small()
+                    .color(theme::MUTED),
+            );
+        });
+    });
+    ui.add_space(30.0);
+    let at = TRACK.iter().position(|(s, _, _)| *s == step);
+    for (i, (_, name, sub)) in TRACK.iter().enumerate() {
+        let done = at.is_some_and(|a| i < a);
+        let on = at == Some(i);
+        let (rect, _) =
+            ui.allocate_exact_size(Vec2::new(ui.available_width(), 58.0), Sense::hover());
+        let p = ui.painter();
+        let c = egui::pos2(rect.left() + 12.0, rect.top() + 12.0);
+        if i + 1 < TRACK.len() {
+            let colour = if done { theme::OK } else { theme::BORDER };
+            p.line_segment(
+                [
+                    c + Vec2::new(0.0, 16.0),
+                    egui::pos2(c.x, rect.bottom() - 4.0),
+                ],
+                Stroke::new(2.0, colour),
+            );
+        }
+        if done {
+            p.circle_filled(c, 12.0, theme::OK);
+            tick(p, c, 4.5, Color32::WHITE);
+        } else if on {
+            p.circle_filled(c, 16.0, theme::ACCENT_WEAK);
+            p.circle_filled(c, 12.0, theme::ACCENT);
+        } else {
+            p.circle_filled(c, 12.0, theme::SURFACE);
+            p.circle_stroke(c, 11.0, Stroke::new(1.5, theme::BORDER_STRONG));
+        }
+        if !done {
+            p.text(
+                c,
+                egui::Align2::CENTER_CENTER,
+                (i + 1).to_string(),
+                egui::FontId::new(12.0, theme::semibold()),
+                if on { Color32::WHITE } else { theme::MUTED },
+            );
+        }
+        let x = c.x + 24.0;
+        let font = if on || done {
+            egui::FontId::new(14.0, theme::semibold())
+        } else {
+            egui::FontId::proportional(14.0)
+        };
+        let ink = if on || done { theme::INK } else { theme::MUTED };
+        p.text(
+            egui::pos2(x, c.y),
+            egui::Align2::LEFT_CENTER,
+            *name,
+            font,
+            ink,
+        );
+        if !sub.is_empty() {
+            p.text(
+                egui::pos2(x, c.y + 18.0),
+                egui::Align2::LEFT_CENTER,
+                *sub,
+                egui::FontId::proportional(12.0),
+                theme::MUTED,
+            );
+        }
+    }
+    ui.add_space(14.0);
+    ui.label(
+        RichText::new(
+            "Takes about three minutes. Everything except the password and recovery code \
+             can be changed later.",
+        )
+        .small()
+        .color(theme::MUTED),
+    );
+}
+
 /// Five dots joined by a line, the current one ringed, done ones ticked.
 fn progress(ui: &mut Ui, step: Step) {
-    let at = TRACK.iter().position(|(s, _)| *s == step).unwrap_or(0);
+    let at = TRACK.iter().position(|(s, _, _)| *s == step).unwrap_or(0);
     let width = ui.available_width();
     let (rect, _) = ui.allocate_exact_size(Vec2::new(width, 46.0), Sense::hover());
     let p = ui.painter();
@@ -841,7 +1069,7 @@ fn progress(ui: &mut Ui, step: Step) {
             Stroke::new(2.0, colour),
         );
     }
-    for (i, (_, name)) in TRACK.iter().enumerate() {
+    for (i, (_, name, _)) in TRACK.iter().enumerate() {
         let c = egui::pos2(x(i), y);
         if i < at {
             p.circle_filled(c, 9.0, theme::ACCENT);
@@ -915,9 +1143,14 @@ fn heading(ui: &mut Ui, title: &str, about: &str) {
     ui.add_space(18.0);
 }
 
-fn feature(ui: &mut Ui, title: &str, about: &str) {
-    ui.horizontal(|ui| {
-        check(ui, theme::ACCENT);
+/// A promise on the welcome step: an icon on a blue tile, a name and a line.
+fn feature(ui: &mut Ui, icon: Icon, title: &str, about: &str) {
+    ui.horizontal_top(|ui| {
+        let (tile, _) = ui.allocate_exact_size(Vec2::splat(36.0), Sense::hover());
+        ui.painter()
+            .rect_filled(tile, CornerRadius::same(10), theme::ACCENT_WEAK);
+        icon.paint(ui.painter(), tile.shrink(9.0), theme::ACCENT);
+        ui.add_space(4.0);
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = 1.0;
             ui.label(
@@ -934,7 +1167,7 @@ fn bullet(ui: &mut Ui, text: &str) {
     ui.horizontal_top(|ui| {
         let (rect, _) = ui.allocate_exact_size(Vec2::new(14.0, 18.0), Sense::hover());
         ui.painter().circle_filled(rect.center(), 2.5, theme::MUTED);
-        ui.label(RichText::new(text).color(theme::TEXT));
+        ui.add(egui::Label::new(RichText::new(text).color(theme::TEXT)).wrap());
     });
 }
 
@@ -992,31 +1225,69 @@ fn option_card(ui: &mut Ui, open: bool, body: impl FnOnce(&mut Ui)) {
         });
 }
 
-/// The row of buttons at the bottom of a step: the main one on the right.
+/// The row of buttons at the bottom of a step, under a soft line: the main
+/// one on the right.
 fn nav(ui: &mut Ui, buttons: impl FnOnce(&mut Ui)) {
-    ui.add_space(6.0);
-    let size = Vec2::new(ui.available_width(), 36.0);
+    ui.add_space(10.0);
+    theme::divider(ui);
+    ui.add_space(14.0);
+    let size = Vec2::new(ui.available_width(), 38.0);
     ui.allocate_ui_with_layout(size, Layout::right_to_left(Align::Center), buttons);
 }
 
-fn big_primary(ui: &mut Ui, enabled: bool, text: &str) -> egui::Response {
+/// The blue button that moves the wizard on, with an arrow after its name.
+fn next(ui: &mut Ui, enabled: bool, text: &str) -> egui::Response {
     ui.add_enabled(
         enabled,
-        egui::Button::new(
+        egui::Button::new((
+            RichText::new(text)
+                .family(theme::semibold())
+                .color(Color32::WHITE),
+            Icon::ArrowRight.atom_in(14.0, Color32::WHITE),
+        ))
+        .fill(theme::ACCENT)
+        .stroke(Stroke::NONE)
+        .min_size(Vec2::new(0.0, 38.0)),
+    )
+}
+
+/// Lay out `add` from the left of the room that is left: Back sits at the
+/// far left of the button row while the others line up on the right.
+fn left<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
+    ui.with_layout(Layout::left_to_right(Align::Center), add)
+        .inner
+}
+
+/// Back to the step before, with an arrow.
+fn back(ui: &mut Ui, enabled: bool) -> egui::Response {
+    ui.add_enabled(
+        enabled,
+        egui::Button::new((Icon::ArrowLeft.atom(14.0), theme::bold("Back").size(13.0)))
+            .fill(theme::SURFACE)
+            .stroke(Stroke::new(1.0, theme::BORDER_STRONG))
+            .min_size(Vec2::new(0.0, 38.0)),
+    )
+}
+
+fn big_primary(ui: &mut Ui, enabled: bool, icon: Icon, text: &str) -> egui::Response {
+    ui.add_enabled(
+        enabled,
+        egui::Button::new((
+            icon.atom_in(16.0, Color32::WHITE),
             RichText::new(text)
                 .color(Color32::WHITE)
                 .family(theme::semibold()),
-        )
+        ))
         .fill(theme::ACCENT)
         .stroke(Stroke::NONE)
         .min_size(Vec2::new(0.0, 42.0)),
     )
 }
 
-fn big_secondary(ui: &mut Ui, enabled: bool, text: &str) -> egui::Response {
+fn big_secondary(ui: &mut Ui, enabled: bool, icon: Icon, text: &str) -> egui::Response {
     ui.add_enabled(
         enabled,
-        egui::Button::new(theme::bold(text))
+        egui::Button::new((icon.atom(16.0), theme::bold(text)))
             .fill(theme::SURFACE)
             .stroke(Stroke::new(1.0, theme::BORDER_STRONG))
             .min_size(Vec2::new(0.0, 42.0)),
@@ -1034,13 +1305,6 @@ mod tests {
         assert_eq!(rate("abcdefghijkl").1, "Good");
         assert_eq!(rate("Abcdefgh1!").1, "Good");
         assert_eq!(rate("correct horse battery staple").1, "Strong");
-    }
-
-    #[test]
-    fn splits_the_recovery_code_between_groups() {
-        assert_eq!(code_lines("AAA-BBB-CCC-DDD").as_str(), "AAA-BBB-\nCCC-DDD");
-        assert_eq!(code_lines("AAA-BBB-CCC").as_str(), "AAA-BBB-\nCCC");
-        assert_eq!(code_lines("AAA").as_str(), "AAA");
     }
 
     #[test]
