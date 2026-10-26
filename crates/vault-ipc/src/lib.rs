@@ -5,6 +5,14 @@
 #![deny(unsafe_code)]
 
 pub mod local;
+
+/// This build's version: the workspace version for a release, or with a
+/// `-dev.<commit>` suffix for other builds, which CI sets through
+/// `VAULT_VERSION` (docs/user-guide/11-versions-and-upgrades.md).
+pub const VERSION: &str = match option_env!("VAULT_VERSION") {
+    Some(v) => v,
+    None => env!("CARGO_PKG_VERSION"),
+};
 #[cfg(windows)]
 pub mod win;
 

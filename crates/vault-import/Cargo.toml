@@ -1,6 +1,6 @@
 [package]
 name = "vault-import"
-version = "0.1.0"
+version.workspace = true
 description = "Import items from other password managers' exports."
 edition.workspace = true
 license.workspace = true

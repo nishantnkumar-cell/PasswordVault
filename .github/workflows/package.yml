@@ -1,0 +1,95 @@
+# Builds everything a release ships, versioned by contrib/release/version.sh
+# --build: X.Y.Z for a v* tag, X.Y.Z-dev.<commit> otherwise. CI runs it on
+# every push and pull request (downloads under the run's Artifacts); the
+# release workflow runs it for a tag and publishes the results.
+name: Packages
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  # For pull requests, name the PR's own commit rather than the merge commit.
+  VAULT_COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  windows-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Version
+        shell: bash
+        run: |
+          export VAULT_COMMIT=${VAULT_COMMIT_SHA::7}
+          echo "VAULT_VERSION=$(contrib/release/version.sh --build)" >> "$GITHUB_ENV"
+          echo "VAULT_NUMBER=$(contrib/release/version.sh --number)" >> "$GITHUB_ENV"
+      - run: cargo build --release --locked
+      # Chocolatey has the newest Inno Setup 6 (6.7.1); the script also builds with 7.
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          choco upgrade innosetup --no-progress -y
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build the installer
+        shell: pwsh
+        run: |
+          $iscc = Get-ChildItem "$env:ProgramFiles\Inno Setup 7\ISCC.exe", "${env:ProgramFiles(x86)}\Inno Setup 7\ISCC.exe",
+              "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" -ErrorAction SilentlyContinue |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $iscc) { throw "Inno Setup (ISCC.exe) not found" }
+          Write-Host "Using $iscc for $env:VAULT_VERSION"
+          & $iscc "/DAppVersion=$env:VAULT_VERSION" "/DNumVersion=$env:VAULT_NUMBER" contrib\windows\vault.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Check the version
+        shell: bash
+        run: |
+          test "$(target/release/vaultd.exe --version)" = "vaultd $VAULT_VERSION"
+          test -f "target/installer/SecretVault-Setup-$VAULT_VERSION.exe"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-installer
+          path: target/installer/*.exe
+
+  linux-packages:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - run: sudo apt-get update && sudo apt-get install -y libtss2-dev libudev-dev libhidapi-dev pkg-config dpkg-dev
+      - name: Version
+        run: |
+          export VAULT_COMMIT=${VAULT_COMMIT_SHA::7}
+          echo "VAULT_VERSION=$(contrib/release/version.sh --build)" >> "$GITHUB_ENV"
+      - run: cargo build --release --locked
+      - run: contrib/linux/package.sh "$VAULT_VERSION"
+      - name: Check the packages
+        run: |
+          test "$(target/release/vaultd --version)" = "vaultd $VAULT_VERSION"
+          dpkg-deb --info target/packages/*.deb
+          dpkg-deb --contents target/packages/*.deb | grep -q ./usr/bin/vaultd
+          sudo apt-get install -y ./target/packages/*.deb
+          test "$(/usr/bin/vault --version)" = "vault $VAULT_VERSION"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux-packages
+          path: |
+            target/packages/*.deb
+            target/packages/*.tar.gz
+
+  extension:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Package the extension
+        run: |
+          version=$(contrib/release/version.sh)
+          mkdir -p target/packages
+          cd extension
+          zip -r "../target/packages/secret-vault-extension-$version.zip" manifest.json background.js popup.html popup.css popup.js lib
+      - uses: actions/upload-artifact@v7
+        with:
+          name: browser-extension
+          path: target/packages/*.zip

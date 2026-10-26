@@ -1891,6 +1891,14 @@ impl App {
             ui.horizontal(|ui| {
                 ui.add_space(8.0);
                 ui.label(
+                    RichText::new(format!("Version {}", vault_ipc::VERSION))
+                        .small()
+                        .color(theme::MUTED),
+                );
+            });
+            ui.horizontal(|ui| {
+                ui.add_space(8.0);
+                ui.label(
                     RichText::new("Ctrl K finds items and actions")
                         .small()
                         .color(theme::MUTED),
