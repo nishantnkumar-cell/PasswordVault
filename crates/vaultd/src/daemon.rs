@@ -151,6 +151,18 @@ fn kind(f: &Factor) -> &'static str {
     }
 }
 
+/// See [`SlotInfo::warning`].
+fn slot_warning(f: &Factor) -> Option<String> {
+    match f {
+        Factor::PasswordTpm { blob, .. } if vault_hw::tpm_blob_is_classical(blob) => Some(
+            "made with an RSA key a future quantum computer could break; add the TPM again \
+             and remove this one for post-quantum protection"
+                .into(),
+        ),
+        _ => None,
+    }
+}
+
 fn token(rng: &mut OsRandom) -> R<ClientToken> {
     let mut t = Zeroizing::new([0u8; 32]);
     rng.fill(&mut t[..]).map_err(e)?;
@@ -1147,6 +1159,7 @@ impl Daemon {
                             id: m.id,
                             kind: kind(&m.factor).into(),
                             label: v.slot_label(&m.id).unwrap_or("").into(),
+                            warning: slot_warning(&m.factor),
                         })
                         .collect(),
                 ))
