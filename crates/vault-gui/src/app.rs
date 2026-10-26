@@ -977,17 +977,144 @@ impl App {
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(theme::SIDEBAR))
             .show(ui, |ui| {
+                // Roughly centered on tall windows, near the top on short ones.
+                let top = ((ui.available_height() - 520.0) / 2.0).clamp(24.0, 120.0);
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     ui.vertical_centered(|ui| {
-                        ui.add_space(48.0);
-                        theme::card().inner_margin(Margin::same(28)).show(ui, |ui| {
-                            ui.set_width(420.0);
-                            ui.vertical(|ui| self.front(ui));
-                        });
+                        ui.add_space(top);
+                        if matches!(self.screen, Screen::Locked | Screen::Pair) {
+                            self.unlock_card(ui);
+                        } else {
+                            theme::card().inner_margin(Margin::same(32)).show(ui, |ui| {
+                                ui.set_width(440.0);
+                                ui.vertical(|ui| self.front(ui));
+                            });
+                        }
                         ui.add_space(24.0);
                     });
                 });
             });
+    }
+
+    /// The locked screen: the ways to unlock on the left, the chosen one's
+    /// form on the right.
+    fn unlock_card(&mut self, ui: &mut Ui) {
+        const LEFT: f32 = 248.0;
+        const WIDTH: f32 = 800.0;
+        let pair = self.screen == Screen::Pair;
+        let shadow = egui::Shadow {
+            offset: [0, 12],
+            blur: 40,
+            spread: 0,
+            color: egui::Color32::from_black_alpha(18),
+        };
+        theme::card()
+            .inner_margin(Margin::ZERO)
+            .corner_radius(16)
+            .shadow(shadow)
+            .show(ui, |ui| {
+                ui.set_width(WIDTH);
+                ui.spacing_mut().item_spacing = Vec2::ZERO;
+                ui.horizontal_top(|ui| {
+                    let left = egui::Frame::new()
+                        .fill(theme::GROUND)
+                        .corner_radius(egui::CornerRadius {
+                            nw: 16,
+                            sw: 16,
+                            ne: 0,
+                            se: 0,
+                        })
+                        .inner_margin(Margin::symmetric(16, 26))
+                        .show(ui, |ui| {
+                            ui.set_width(LEFT - 32.0);
+                            ui.set_min_height(460.0 - 52.0);
+                            ui.spacing_mut().item_spacing = Vec2::new(8.0, 8.0);
+                            ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                                self.unlock_methods(ui, pair);
+                            });
+                        });
+                    let r = left.response.rect;
+                    ui.painter()
+                        .vline(r.right(), r.y_range(), Stroke::new(1.0, theme::DIVIDER));
+                    egui::Frame::new()
+                        .inner_margin(Margin::symmetric(44, 40))
+                        .show(ui, |ui| {
+                            ui.set_width(WIDTH - LEFT - 88.0);
+                            ui.spacing_mut().item_spacing = Vec2::new(8.0, 8.0);
+                            ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                                self.messages(ui);
+                                self.pair_or_unlock(ui, pair);
+                            });
+                        });
+                });
+            });
+    }
+
+    /// The left column of the locked screen.
+    fn unlock_methods(&mut self, ui: &mut Ui, pair: bool) {
+        ui.horizontal(|ui| {
+            ui.add_space(4.0);
+            theme::lock_tile(ui, 36.0);
+            ui.add_space(2.0);
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = 1.0;
+                ui.add_space(1.0);
+                ui.label(theme::title("Secret Vault", 15.0));
+                ui.label(
+                    RichText::new(if pair {
+                        "Not paired with this app"
+                    } else {
+                        "Locked"
+                    })
+                    .small()
+                    .color(theme::MUTED),
+                );
+            });
+        });
+        ui.add_space(14.0);
+        ui.horizontal(|ui| {
+            ui.add_space(6.0);
+            theme::caption(ui, "Unlock with");
+        });
+        ui.spacing_mut().item_spacing.y = 4.0;
+        for (m, name, how) in [
+            (
+                Method::Password,
+                "Master password",
+                "The password you chose",
+            ),
+            (
+                Method::SecurityKey,
+                "Security key",
+                "Password, then touch the key",
+            ),
+            (
+                Method::Tpm,
+                "This device",
+                "Password and this computer's chip",
+            ),
+            (Method::Recovery, "Recovery code", "From your printed sheet"),
+        ] {
+            if theme::choice_row(ui, self.unlock.method == m, name, how).clicked() {
+                self.unlock.method = m;
+                self.error = None;
+            }
+        }
+        ui.add_space(18.0);
+        ui.horizontal(|ui| {
+            ui.add_space(6.0);
+            ui.add(
+                egui::Label::new(
+                    RichText::new(
+                        "Any one of these unlocks the vault. Each keeps its own locked \
+                         copy of the vault key.",
+                    )
+                    .small()
+                    .color(theme::MUTED),
+                )
+                .wrap(),
+            );
+        });
     }
 
     /// The card shown before the vault is unlocked.
@@ -999,18 +1126,16 @@ impl App {
             Screen::Locked | Screen::Unlocked => "Locked",
         };
         ui.horizontal(|ui| {
-            theme::monogram(ui, "Secret Vault", 40.0);
+            theme::lock_tile(ui, 40.0);
+            ui.add_space(2.0);
             ui.vertical(|ui| {
-                ui.label(
-                    RichText::new("Secret Vault")
-                        .strong()
-                        .size(17.0)
-                        .color(theme::INK),
-                );
+                ui.spacing_mut().item_spacing.y = 1.0;
+                ui.add_space(2.0);
+                ui.label(theme::title("Secret Vault", 17.0));
                 ui.label(RichText::new(sub).small().color(theme::MUTED));
             });
         });
-        ui.add_space(12.0);
+        ui.add_space(16.0);
         self.messages(ui);
         match self.screen.clone() {
             Screen::Connecting => {
@@ -1042,18 +1167,24 @@ impl App {
         let pill = |fill| {
             egui::Frame::new()
                 .fill(fill)
-                .corner_radius(8)
-                .inner_margin(Margin::symmetric(12, 8))
+                .corner_radius(10)
+                .inner_margin(Margin::symmetric(14, 10))
         };
         if let Some(e) = &self.error {
-            pill(egui::Color32::from_rgb(0xFD, 0xEC, 0xEA)).show(ui, |ui| {
-                ui.colored_label(theme::ERROR, e);
+            pill(theme::ERROR_WEAK).show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.add(egui::Label::new(RichText::new(e).color(theme::ERROR)).wrap());
             });
+            ui.add_space(4.0);
         }
         if let Some(n) = &self.notice {
             pill(theme::INK).show(ui, |ui| {
-                ui.label(RichText::new(n).color(egui::Color32::WHITE));
+                ui.add(
+                    egui::Label::new(RichText::new(n).size(13.0).color(egui::Color32::WHITE))
+                        .wrap(),
+                );
             });
+            ui.add_space(4.0);
         }
         if let Some(b) = self.busy {
             ui.horizontal(|ui| {
@@ -1090,7 +1221,12 @@ impl App {
                 ui.set_width(ui.available_width());
                 ui.horizontal(|ui| {
                     status_dot(ui, theme::MUTED);
-                    ui.label(RichText::new("Sync is off").strong().color(theme::INK));
+                    ui.label(
+                        RichText::new("Sync is off")
+                            .family(theme::semibold())
+                            .color(theme::INK)
+                            .color(theme::INK),
+                    );
                 });
                 ui.add_space(8.0);
                 ui.label(
@@ -1124,7 +1260,12 @@ impl App {
             };
             ui.horizontal(|ui| {
                 status_dot(ui, colour);
-                ui.label(RichText::new(state).strong().color(theme::INK));
+                ui.label(
+                    RichText::new(state)
+                        .family(theme::semibold())
+                        .color(theme::INK)
+                        .color(theme::INK),
+                );
             });
             ui.add_space(10.0);
             egui::Grid::new("sync")
@@ -1188,9 +1329,6 @@ impl App {
     }
 
     fn pair_or_unlock(&mut self, ui: &mut Ui, pair: bool) {
-        if pair {
-            ui.label("Pair this app with your vault by unlocking it once.");
-        }
         let quick = self
             .status
             .as_ref()
@@ -1198,7 +1336,7 @@ impl App {
             .filter(|_| !pair);
         if quick.is_some() {
             let ok = self.busy.is_none();
-            if theme::primary(ui, ok, "Unlock with Windows Hello").clicked() && ok {
+            if wide_primary(ui, ok, "Unlock with Windows Hello").clicked() && ok {
                 self.act(
                     "Confirm it's you in the Windows Security window…",
                     Op::Unlock,
@@ -1212,48 +1350,50 @@ impl App {
                     .small()
                     .color(theme::MUTED),
             );
-            ui.add_space(12.0);
+            ui.add_space(8.0);
+            theme::divider(ui);
+            ui.add_space(16.0);
         }
         let f = &mut self.unlock;
-        theme::caption(ui, "Unlock with");
-        ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
-            for (m, name, how) in [
-                (Method::Password, "Password", "your master password"),
-                (
-                    Method::SecurityKey,
-                    "Security key",
-                    "password, then touch the key",
-                ),
-                (
-                    Method::Tpm,
-                    "This device (TPM)",
-                    "password and this computer's chip",
-                ),
-                (Method::Recovery, "Recovery code", "from your printed sheet"),
-            ] {
-                let b = egui::Button::selectable(f.method == m, RichText::new(name).strong())
-                    .right_text(RichText::new(how).small().color(theme::MUTED))
-                    .min_size(Vec2::new(0.0, 34.0));
-                if ui.add(b).clicked() {
-                    f.method = m;
-                }
-            }
-        });
-        ui.add_space(8.0);
+        let (heading, about) = match f.method {
+            Method::Password => (
+                "Enter your master password",
+                "The password you chose when you made the vault.",
+            ),
+            Method::SecurityKey => (
+                "Use your security key",
+                "Type your master password, then touch the key when it blinks.",
+            ),
+            Method::Tpm => (
+                "Unlock with this device",
+                "Your master password together with this computer's security chip.",
+            ),
+            Method::Recovery => (
+                "Enter your recovery code",
+                "The code from the sheet you printed or wrote down when you made the vault.",
+            ),
+        };
+        ui.label(theme::title(heading, 22.0));
+        ui.add(egui::Label::new(RichText::new(about).color(theme::TEXT)).wrap());
+        if pair {
+            ui.add(
+                egui::Label::new(
+                    RichText::new("This app isn't paired yet: unlocking once pairs it.")
+                        .color(theme::MUTED),
+                )
+                .wrap(),
+            );
+        }
+        ui.add_space(12.0);
         let mut submit = false;
-        egui::Grid::new("unlock").num_columns(2).show(ui, |ui| {
-            if f.method == Method::Recovery {
-                submit |= secret_field(ui, "Recovery code", &mut f.code);
-                ui.end_row();
-            } else {
-                submit |= secret_field(ui, "Master password", &mut f.password);
-                ui.end_row();
-            }
-            if f.method == Method::Tpm || f.method == Method::SecurityKey && !WINDOWS_ASKS_KEY_PIN {
-                submit |= secret_field(ui, "PIN (if set)", &mut f.pin);
-                ui.end_row();
-            }
-        });
+        if f.method == Method::Recovery {
+            submit |= stacked_secret(ui, "Recovery code", &mut f.code);
+        } else {
+            submit |= stacked_secret(ui, "Master password", &mut f.password);
+        }
+        if f.method == Method::Tpm || f.method == Method::SecurityKey && !WINDOWS_ASKS_KEY_PIN {
+            submit |= stacked_secret(ui, "PIN (if set)", &mut f.pin);
+        }
         if f.method == Method::SecurityKey && WINDOWS_ASKS_KEY_PIN {
             ui.label(
                 RichText::new(
@@ -1263,9 +1403,10 @@ impl App {
                 .color(theme::MUTED),
             );
         }
+        ui.add_space(8.0);
         let ok = self.busy.is_none();
         let label = if pair { "Pair" } else { "Unlock" };
-        submit |= theme::primary(ui, ok, label).clicked();
+        submit |= wide_primary(ui, ok, label).clicked();
         if submit && ok {
             // Nothing typed yet: don't start a security key or TPM check.
             let f = &self.unlock;
@@ -1303,8 +1444,19 @@ impl App {
             }
         }
         if pair {
+            ui.add_space(16.0);
+            theme::divider(ui);
             ui.add_space(12.0);
-            ui.label("Or approve this app in a window vaultd opens, without typing anything here.");
+            ui.add(
+                egui::Label::new(
+                    RichText::new(
+                        "Or approve this app in a window vaultd opens, without typing \
+                         anything here.",
+                    )
+                    .color(theme::TEXT),
+                )
+                .wrap(),
+            );
             if ui
                 .add_enabled(ok, egui::Button::new("Ask for approval"))
                 .clicked()
@@ -1334,25 +1486,26 @@ impl App {
         }
         egui::Panel::left("nav")
             .resizable(false)
-            .exact_size(210.0)
+            .exact_size(236.0)
             .frame(
                 egui::Frame::new()
                     .fill(theme::SIDEBAR)
-                    .inner_margin(Margin::symmetric(12, 16)),
+                    .inner_margin(Margin::symmetric(14, 20)),
             )
             .show(ui, |ui| self.sidebar(ui));
         let page = egui::Frame::new()
             .fill(theme::GROUND)
-            .inner_margin(Margin::symmetric(28, 22));
+            .inner_margin(Margin::symmetric(32, 26));
         match self.view {
             View::Items => {
                 egui::Panel::left("list")
                     .resizable(true)
-                    .default_size(300.0)
+                    .default_size(340.0)
+                    .size_range(280.0..=480.0)
                     .frame(
                         egui::Frame::new()
                             .fill(theme::SURFACE)
-                            .inner_margin(Margin::symmetric(12, 16)),
+                            .inner_margin(Margin::symmetric(12, 18)),
                     )
                     .show(ui, |ui| self.item_list(ui));
                 egui::CentralPanel::default().frame(page).show(ui, |ui| {
@@ -1371,13 +1524,13 @@ impl App {
             View::Generator => {
                 egui::CentralPanel::default().frame(page).show(ui, |ui| {
                     self.messages(ui);
-                    theme::card().show(ui, |ui| self.generator(ui));
+                    self.generator(ui);
                 });
             }
             View::Import => {
                 egui::CentralPanel::default().frame(page).show(ui, |ui| {
                     self.messages(ui);
-                    theme::card().show(ui, |ui| self.import(ui));
+                    self.import(ui);
                 });
             }
             View::Slots => {
@@ -1417,15 +1570,14 @@ impl App {
 
     fn sidebar(&mut self, ui: &mut Ui) {
         ui.horizontal(|ui| {
-            theme::monogram(ui, "Secret Vault", 30.0);
-            ui.label(
-                RichText::new("Secret Vault")
-                    .strong()
-                    .size(16.0)
-                    .color(theme::INK),
-            );
+            theme::lock_tile(ui, 32.0);
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = 0.0;
+                ui.label(theme::title("Secret Vault", 15.0));
+                ui.label(RichText::new("Personal vault").small().color(theme::MUTED));
+            });
         });
-        ui.add_space(4.0);
+        ui.add_space(8.0);
         let mut idle = None;
         let mut rollback = false;
         let mut sync = None;
@@ -1449,15 +1601,18 @@ impl App {
             .fill(theme::SURFACE)
             .stroke(Stroke::new(1.0, theme::BORDER))
             .corner_radius(8)
-            .inner_margin(Margin::symmetric(10, 6))
+            .inner_margin(Margin::symmetric(10, 8))
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
+                ui.spacing_mut().item_spacing.y = 2.0;
+                ui.spacing_mut().interact_size.y = 18.0;
                 ui.horizontal(|ui| {
-                    let (r, _) = ui.allocate_exact_size(Vec2::splat(8.0), egui::Sense::hover());
-                    ui.painter().circle_filled(r.center(), 4.0, theme::OK);
-                    ui.label(RichText::new("Unlocked").strong().color(theme::INK));
+                    status_dot(ui, theme::OK);
+                    ui.label(RichText::new("Unlocked").size(13.0).color(theme::TEXT));
                     if let Some(t) = idle {
-                        ui.label(RichText::new(t).small().color(theme::MUTED));
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(RichText::new(t).small().color(theme::MUTED));
+                        });
                     }
                 });
                 if let Some((text, color)) = sync {
@@ -1470,30 +1625,35 @@ impl App {
                 "WARNING: the vault file is older than one seen before, so saving is off.",
             );
         }
-        ui.add_space(10.0);
+        ui.add_space(12.0);
         let mut go = None;
-        ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
-            for (f, name) in Filter::NAV {
-                let on = self.view == View::Items && self.filter == f;
-                if nav_button(ui, on, name).clicked() {
-                    go = Some((View::Items, f));
-                }
+        ui.spacing_mut().item_spacing.y = 2.0;
+        for (f, name) in Filter::NAV {
+            let on = self.view == View::Items && self.filter == f;
+            let count = self.items.iter().filter(|i| f.admits(i)).count();
+            if theme::nav_row(ui, on, name, Some(count)).clicked() {
+                go = Some((View::Items, f));
             }
+        }
+        ui.add_space(14.0);
+        ui.horizontal(|ui| {
             ui.add_space(10.0);
             theme::caption(ui, "Tools");
-            for (v, name) in [
-                (View::Generator, "Generator"),
-                (View::Import, "Import"),
-                (View::Slots, "Unlock methods"),
-                (View::Sync, "Sync"),
-            ] {
-                if nav_button(ui, self.view == v, name).clicked() {
-                    go = Some((v, self.filter));
-                }
-            }
         });
+        ui.add_space(2.0);
+        for (v, name) in [
+            (View::Generator, "Generator"),
+            (View::Import, "Import"),
+            (View::Slots, "Unlock methods"),
+            (View::Sync, "Sync"),
+        ] {
+            if theme::nav_row(ui, self.view == v, name, None).clicked() {
+                go = Some((v, self.filter));
+            }
+        }
         let mut lock = false;
         ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
+            ui.spacing_mut().item_spacing.y = 8.0;
             ui.label(
                 RichText::new("Ctrl K finds items and actions")
                     .small()
@@ -1501,8 +1661,12 @@ impl App {
             );
             lock = ui
                 .add(
-                    egui::Button::new((egui::Atom::grow(), "Lock", egui::Atom::grow()))
-                        .min_size(Vec2::new(ui.available_width(), 34.0)),
+                    egui::Button::new((
+                        egui::Atom::grow(),
+                        theme::bold("Lock").size(13.0),
+                        egui::Atom::grow(),
+                    ))
+                    .min_size(Vec2::new(ui.available_width(), 38.0)),
                 )
                 .clicked();
         });
@@ -1544,22 +1708,20 @@ impl App {
     }
 
     fn item_list(&mut self, ui: &mut Ui) {
-        ui.label(
-            RichText::new(self.filter.name())
-                .strong()
-                .size(18.0)
-                .color(theme::INK),
-        );
-        ui.add_space(6.0);
         ui.horizontal(|ui| {
-            let l = ui.label("Search");
-            ui.add(
-                TextEdit::singleline(&mut self.search)
-                    .hint_text("Title, user or site")
-                    .desired_width(f32::INFINITY),
-            )
-            .labelled_by(l.id);
+            ui.add_space(4.0);
+            ui.label(theme::title(self.filter.name(), 18.0));
         });
+        ui.add_space(4.0);
+        let r = ui.add(
+            TextEdit::singleline(&mut self.search)
+                .hint_text("Search titles, users and sites")
+                .background_color(theme::GROUND)
+                .margin(Margin::symmetric(12, 9))
+                .desired_width(f32::INFINITY),
+        );
+        ui.ctx()
+            .accesskit_node_builder(r.id, |n| n.set_label("Search"));
         let q = self.search.to_lowercase();
         let shown: Vec<&ItemSummary> = self
             .items
@@ -1569,13 +1731,23 @@ impl App {
         let mut new = None;
         let mut new_key = None;
         ui.horizontal(|ui| {
+            ui.add_space(4.0);
             ui.label(
                 RichText::new(format!("{} of {} items", shown.len(), self.items.len()))
                     .small()
                     .color(theme::MUTED),
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.menu_button(RichText::new("New item").strong(), |ui| {
+                let new_button = egui::Button::new(
+                    RichText::new("New item")
+                        .family(theme::semibold())
+                        .size(13.0)
+                        .color(egui::Color32::WHITE),
+                )
+                .fill(theme::ACCENT)
+                .stroke(Stroke::NONE)
+                .min_size(Vec2::new(0.0, 32.0));
+                egui::containers::menu::MenuButton::from_button(new_button).ui(ui, |ui| {
                     for k in ItemKind::ALL {
                         if ui.button(k.label()).clicked() {
                             new = Some(k);
@@ -1591,12 +1763,14 @@ impl App {
                 });
             });
         });
-        ui.separator();
+        ui.add_space(2.0);
+        theme::divider(ui);
         let mut pick = None;
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
+                ui.spacing_mut().item_spacing.y = 2.0;
+                ui.add_space(4.0);
                 for i in &shown {
-                    let text = two_lines(&i.title, &i.subtitle);
                     let mut tags = Vec::new();
                     if i.has_totp {
                         tags.push("2FA");
@@ -1604,13 +1778,8 @@ impl App {
                     if i.key.is_some() {
                         tags.push("Key");
                     }
-                    let mut row = egui::Button::selectable(self.selected == Some(i.id), text)
-                        .right_text(egui::Atom::grow())
-                        .min_size(Vec2::new(0.0, 44.0));
-                    if !tags.is_empty() {
-                        row = row.right_text(theme::badge(&tags.join(" · "), theme::ACCENT_DARK));
-                    }
-                    if ui.add(row).clicked() {
+                    let on = self.selected == Some(i.id);
+                    if theme::item_row(ui, on, &i.title, &i.subtitle, &tags).clicked() {
                         pick = Some(i.id);
                     }
                 }
@@ -1697,9 +1866,12 @@ impl App {
         let mut set_confirm = None;
 
         ui.horizontal(|ui| {
-            theme::monogram(ui, &item.title, 52.0);
+            theme::monogram(ui, &item.title, 56.0);
+            ui.add_space(6.0);
             ui.vertical(|ui| {
-                ui.heading(RichText::new(&item.title).strong().color(theme::INK));
+                ui.spacing_mut().item_spacing.y = 2.0;
+                ui.add_space(6.0);
+                ui.label(theme::title(&item.title, 22.0));
                 let kind = if let Some(k) = &key {
                     if k.starts_with("OpenPGP") {
                         "OpenPGP key"
@@ -1709,7 +1881,7 @@ impl App {
                 } else {
                     item.kind.label()
                 };
-                ui.label(RichText::new(kind).color(theme::MUTED));
+                ui.label(RichText::new(kind).size(13.0).color(theme::MUTED));
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if self.confirm_delete {
@@ -1738,38 +1910,55 @@ impl App {
                 }
             });
         });
-        ui.add_space(12.0);
+        ui.add_space(18.0);
 
-        // A row: label, value, and a Copy button when the value is not empty.
-        // Secret values stay dotted until shown.
+        // A row: the label over the value, and on the right a Copy button.
+        // Rows are split by soft lines; empty values are left out. Secret
+        // values stay dotted until shown.
+        let first = std::cell::Cell::new(true);
+        let line = |ui: &mut Ui| {
+            if !first.replace(false) {
+                theme::divider(ui);
+            }
+        };
         let mut row = |ui: &mut Ui, label: &str, value: &str, secret: bool| {
             if value.is_empty() {
                 return;
             }
-            ui.label(RichText::new(label).color(theme::MUTED));
-            // Code font only for secrets, where telling 0 from O matters.
-            if secret && !reveal {
-                ui.label(RichText::new("••••••••••••").monospace());
-            } else if secret {
-                ui.label(RichText::new(value).monospace().color(theme::INK));
-            } else {
-                ui.label(RichText::new(value).color(theme::INK));
-            }
-            ui.horizontal(|ui| {
-                if secret && ui.button(if reveal { "Hide" } else { "Show" }).clicked() {
-                    toggle_reveal = true;
-                }
-                let text = format!("Copy {}", label.to_lowercase());
-                let clicked = if secret {
-                    theme::primary(ui, true, &text).clicked()
-                } else {
-                    ui.button(text).clicked()
-                };
-                if clicked {
-                    copy = Some((Zeroizing::new(value.to_owned()), label.to_owned()));
-                }
-            });
-            ui.end_row();
+            line(ui);
+            detail_row(
+                ui,
+                |ui| {
+                    ui.label(RichText::new(label).size(12.0).color(theme::MUTED));
+                    // Code font only for secrets, where telling 0 from O matters.
+                    if secret && !reveal {
+                        ui.label(RichText::new("••••••••••••").monospace().size(15.0));
+                    } else if secret {
+                        ui.label(
+                            RichText::new(value)
+                                .monospace()
+                                .size(15.0)
+                                .color(theme::INK),
+                        );
+                    } else {
+                        ui.label(RichText::new(value).size(15.0).color(theme::INK));
+                    }
+                },
+                |ui| {
+                    let text = format!("Copy {}", label.to_lowercase());
+                    let clicked = if secret {
+                        theme::primary(ui, true, &text).clicked()
+                    } else {
+                        theme::soft(ui, &text).clicked()
+                    };
+                    if clicked {
+                        copy = Some((Zeroizing::new(value.to_owned()), label.to_owned()));
+                    }
+                    if secret && theme::soft(ui, if reveal { "Hide" } else { "Show" }).clicked() {
+                        toggle_reveal = true;
+                    }
+                },
+            );
         };
         // Keys and secure notes keep their content in cards of their own.
         let has_rows = match item.kind {
@@ -1778,60 +1967,95 @@ impl App {
             _ => true,
         };
         if has_rows {
-            theme::card().show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                egui::Grid::new("detail")
-                    .num_columns(3)
-                    .spacing([16.0, 12.0])
-                    .show(ui, |ui| {
+            theme::card()
+                .inner_margin(Margin::symmetric(20, 4))
+                .show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    {
                         match item.kind {
                             ItemKind::Login => {
                                 row(ui, "Username", &item.username, false);
                                 row(ui, "Password", &item.password, true);
                                 if let Some(cfg) = &item.totp {
-                                    ui.label(RichText::new("One-time code").color(theme::MUTED));
-                                    match &self.totp {
-                                        Some((tid, code, until)) if *tid == id => {
-                                            let left =
-                                                until.saturating_duration_since(Instant::now());
-                                            ui.horizontal(|ui| {
-                                                theme::countdown(
-                                                    ui,
-                                                    left.as_secs_f32(),
-                                                    cfg.period as f32,
-                                                );
-                                                ui.label(
-                                                    RichText::new(spaced(code))
-                                                        .monospace()
-                                                        .size(20.0)
-                                                        .color(theme::INK),
-                                                );
-                                                ui.label(
-                                                    RichText::new(format!("{}s", left.as_secs()))
-                                                        .small()
-                                                        .color(theme::MUTED),
-                                                );
-                                            });
-                                            if ui.button("Copy code").clicked() {
+                                    line(ui);
+                                    let now = match &self.totp {
+                                        Some((tid, code, until)) if *tid == id => Some((
+                                            code,
+                                            until.saturating_duration_since(Instant::now()),
+                                        )),
+                                        _ => None,
+                                    };
+                                    detail_row(
+                                        ui,
+                                        |ui| {
+                                            ui.label(
+                                                RichText::new(format!(
+                                                    "One-time code ({} s)",
+                                                    cfg.period
+                                                ))
+                                                .size(12.0)
+                                                .color(theme::MUTED),
+                                            );
+                                            match now {
+                                                Some((code, left)) => {
+                                                    ui.horizontal(|ui| {
+                                                        theme::countdown(
+                                                            ui,
+                                                            left.as_secs_f32(),
+                                                            cfg.period as f32,
+                                                        );
+                                                        ui.label(
+                                                            RichText::new(spaced(code))
+                                                                .monospace()
+                                                                .size(22.0)
+                                                                .extra_letter_spacing(1.5)
+                                                                .color(theme::INK),
+                                                        );
+                                                        ui.label(
+                                                            RichText::new(format!(
+                                                                "{} s left",
+                                                                left.as_secs()
+                                                            ))
+                                                            .small()
+                                                            .color(theme::MUTED),
+                                                        );
+                                                    });
+                                                }
+                                                None => {
+                                                    ui.spinner();
+                                                }
+                                            }
+                                        },
+                                        |ui| {
+                                            if let Some((code, _)) = now
+                                                && theme::soft(ui, "Copy code").clicked()
+                                            {
                                                 copy_code = Some(code.clone());
                                             }
-                                        }
-                                        _ => {
-                                            ui.spinner();
-                                            ui.label("");
-                                        }
-                                    }
-                                    ui.end_row();
+                                        },
+                                    );
                                 }
                             }
                             ItemKind::Note => {}
                             ItemKind::Card => {
                                 let c = item.card.clone().unwrap_or_default();
                                 row(ui, "Name on card", &c.holder, false);
-                                ui.label(RichText::new("Card").color(theme::MUTED));
-                                ui.label(RichText::new(c.describe()).color(theme::INK));
-                                ui.label("");
-                                ui.end_row();
+                                line(ui);
+                                detail_row(
+                                    ui,
+                                    |ui| {
+                                        ui.label(
+                                            RichText::new("Card").size(12.0).color(theme::MUTED),
+                                        );
+                                        ui.label(
+                                            RichText::new(c.describe())
+                                                .size(15.0)
+                                                .color(theme::INK),
+                                        );
+                                    },
+                                    |_| {},
+                                );
                                 row(ui, "Number", &c.number, true);
                                 row(ui, "Expires", &c.expiry(), false);
                                 row(ui, "Security code", &c.cvv, true);
@@ -1869,8 +2093,8 @@ impl App {
                         for f in &item.fields {
                             row(ui, &f.name, &f.value, f.kind == FieldKind::Hidden);
                         }
-                    });
-            });
+                    }
+                });
         }
 
         if item.kind == ItemKind::Login && key.is_none() {
@@ -2120,22 +2344,31 @@ impl App {
         let area = egui::Modal::default_area(id).anchor(egui::Align2::CENTER_TOP, [0.0, 72.0]);
         let modal = egui::Modal::new(id)
             .area(area)
-            .frame(theme::card().inner_margin(Margin::same(14)))
+            .backdrop_color(egui::Color32::from_rgba_unmultiplied(21, 23, 28, 90))
+            .frame(
+                theme::card()
+                    .inner_margin(Margin::symmetric(8, 8))
+                    .corner_radius(14)
+                    .stroke(Stroke::new(1.0, theme::BORDER_STRONG))
+                    .shadow(egui::Shadow {
+                        offset: [0, 24],
+                        blur: 64,
+                        spread: 0,
+                        color: egui::Color32::from_black_alpha(60),
+                    }),
+            )
             .show(&ctx, |ui| {
-                ui.set_width(560.0);
-                let l = ui.label(
-                    RichText::new("Find an item or action")
-                        .small()
-                        .color(theme::MUTED),
+                ui.set_width(620.0);
+                let r = ui.add(
+                    TextEdit::singleline(&mut p.query)
+                        .hint_text("Search items and actions")
+                        .font(egui::FontId::proportional(17.0))
+                        .frame(egui::Frame::NONE)
+                        .margin(Margin::symmetric(12, 10))
+                        .desired_width(f32::INFINITY),
                 );
-                let r = ui
-                    .add(
-                        TextEdit::singleline(&mut p.query)
-                            .hint_text("Type to search")
-                            .font(egui::TextStyle::Heading)
-                            .desired_width(f32::INFINITY),
-                    )
-                    .labelled_by(l.id);
+                ui.ctx()
+                    .accesskit_node_builder(r.id, |n| n.set_label("Find an item or action"));
                 if !p.focused {
                     r.request_focus();
                     p.focused = true;
@@ -2145,40 +2378,45 @@ impl App {
                     p.sel = 0;
                     ui.ctx().request_repaint();
                 }
-                ui.separator();
+                theme::divider(ui);
                 if rows.is_empty() {
-                    ui.label(RichText::new("Nothing matches.").color(theme::MUTED));
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        ui.add_space(12.0);
+                        ui.label(RichText::new("Nothing matches.").color(theme::MUTED));
+                    });
                 }
                 egui::ScrollArea::vertical()
                     .max_height(380.0)
                     .show(ui, |ui| {
-                        ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
-                            let mut group = "";
-                            for (n, (g, text, action)) in rows.iter().enumerate() {
-                                if *g != group {
-                                    group = g;
+                        ui.spacing_mut().item_spacing.y = 2.0;
+                        let mut group = "";
+                        for (n, (g, text, action)) in rows.iter().enumerate() {
+                            if *g != group {
+                                group = g;
+                                ui.add_space(8.0);
+                                ui.horizontal(|ui| {
+                                    ui.add_space(10.0);
                                     theme::caption(ui, g);
-                                }
-                                let mut b = egui::Button::selectable(n == p.sel, text.as_str())
-                                    .right_text(egui::Atom::grow())
-                                    .min_size(Vec2::new(0.0, 34.0));
-                                if n == p.sel {
-                                    b = b.right_text(
-                                        RichText::new("Enter").small().color(theme::MUTED),
-                                    );
-                                }
-                                if ui.add(b).clicked() {
-                                    run = Some(*action);
-                                }
+                                });
                             }
-                        });
+                            if theme::palette_row(ui, n == p.sel, text).clicked() {
+                                run = Some(*action);
+                            }
+                        }
+                        ui.add_space(4.0);
                     });
-                ui.separator();
-                ui.label(
-                    RichText::new("Up and down to move · Enter to run · Esc to close")
-                        .small()
-                        .color(theme::MUTED),
-                );
+                theme::divider(ui);
+                ui.add_space(2.0);
+                ui.horizontal(|ui| {
+                    ui.add_space(10.0);
+                    ui.label(
+                        RichText::new("Up and down to move · Enter to run · Esc to close")
+                            .monospace()
+                            .size(11.0)
+                            .color(theme::MUTED),
+                    );
+                });
             });
         if esc || modal.should_close() {
             self.palette = None;
@@ -2260,14 +2498,17 @@ impl App {
     fn edit_form(&mut self, ui: &mut Ui) {
         let Some(e) = &mut self.edit else { return };
         let mut generate = false;
-        ui.heading(match (e.id.is_some(), e.kind) {
-            (true, _) => "Edit item".to_owned(),
-            (false, k) => format!("New {}", k.label().to_lowercase()),
-        });
-        ui.add_space(8.0);
+        ui.label(theme::title(
+            match (e.id.is_some(), e.kind) {
+                (true, _) => "Edit item".to_owned(),
+                (false, k) => format!("New {}", k.label().to_lowercase()),
+            },
+            20.0,
+        ));
+        ui.add_space(10.0);
         egui::Grid::new("edit")
             .num_columns(2)
-            .spacing([12.0, 8.0])
+            .spacing([16.0, 10.0])
             .show(ui, |ui| {
                 text_field(ui, "Title", &mut e.title);
                 ui.end_row();
@@ -2282,7 +2523,7 @@ impl App {
                             ui.add(
                                 TextEdit::singleline(&mut *e.number)
                                     .password(!e.reveal)
-                                    .desired_width(240.0),
+                                    .desired_width(300.0),
                             )
                             .labelled_by(l.id);
                             ui.checkbox(&mut e.reveal, "Show");
@@ -2342,22 +2583,26 @@ impl App {
                 let mut remove = None;
                 for (n, f) in e.fields.iter_mut().enumerate() {
                     ui.label(if n == 0 { "Custom fields" } else { "" });
-                    ui.horizontal(|ui| {
-                        ui.add(
-                            TextEdit::singleline(&mut f.name)
-                                .hint_text("Name")
-                                .desired_width(120.0),
-                        );
-                        ui.add(
-                            TextEdit::singleline(&mut *f.value)
-                                .hint_text("Value")
-                                .password(f.hidden && !e.reveal)
-                                .desired_width(180.0),
-                        );
-                        ui.checkbox(&mut f.hidden, "Hidden");
-                        if ui.button("Remove").clicked() {
-                            remove = Some(n);
-                        }
+                    ui.vertical(|ui| {
+                        ui.horizontal(|ui| {
+                            ui.add(
+                                TextEdit::singleline(&mut f.name)
+                                    .hint_text("Name")
+                                    .desired_width(110.0),
+                            );
+                            ui.add(
+                                TextEdit::singleline(&mut *f.value)
+                                    .hint_text("Value")
+                                    .password(f.hidden && !e.reveal)
+                                    .desired_width(182.0),
+                            );
+                        });
+                        ui.horizontal(|ui| {
+                            ui.checkbox(&mut f.hidden, "Hidden");
+                            if ui.button("Remove").clicked() {
+                                remove = Some(n);
+                            }
+                        });
                     });
                     ui.end_row();
                 }
@@ -2387,7 +2632,7 @@ impl App {
         let ok = self.busy.is_none();
         let (mut save, mut cancel) = (false, false);
         ui.horizontal(|ui| {
-            save = ui.add_enabled(ok, egui::Button::new("Save")).clicked();
+            save = theme::primary(ui, ok, "Save").clicked();
             cancel = ui.button("Cancel").clicked();
         });
         if generate {
@@ -2550,67 +2795,103 @@ impl App {
     }
 
     fn generator(&mut self, ui: &mut Ui) {
-        ui.heading("Password generator");
-        ui.add_space(8.0);
-        let o = &mut self.gen_options;
-        ui.add(egui::Slider::new(&mut o.length, 8..=64).text("characters"));
-        ui.checkbox(&mut o.symbols, "Symbols");
-        ui.checkbox(&mut o.avoid_ambiguous, "Avoid look-alike characters");
-        if ui.button("Generate").clicked() {
-            let options = *o;
-            self.send(Op::Generate, Request::Generate { options });
-        }
+        page_header(
+            ui,
+            "Password generator",
+            "Make a long random password. New items use these settings when you press \
+             Generate there.",
+        );
         let mut copy = None;
-        if let Some(p) = &self.generated {
-            ui.add_space(8.0);
-            ui.label(RichText::new(p.as_str()).monospace().size(16.0));
-            if ui.button("Copy password").clicked() {
-                copy = Some(p.clone());
+        theme::card().show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            let o = &mut self.gen_options;
+            ui.horizontal(|ui| {
+                ui.spacing_mut().slider_width = 260.0;
+                ui.add(egui::Slider::new(&mut o.length, 8..=64).text("characters"));
+            });
+            ui.checkbox(&mut o.symbols, "Symbols");
+            ui.checkbox(&mut o.avoid_ambiguous, "Avoid look-alike characters");
+            ui.add_space(4.0);
+            if theme::primary(ui, true, "Generate").clicked() {
+                let options = *o;
+                self.send(Op::Generate, Request::Generate { options });
             }
-        }
-        ui.add_space(8.0);
-        ui.label("New items use these settings when you press Generate there.");
+            if let Some(p) = &self.generated {
+                ui.add_space(8.0);
+                theme::divider(ui);
+                ui.add_space(4.0);
+                detail_row(
+                    ui,
+                    |ui| {
+                        ui.label(RichText::new("Password").size(12.0).color(theme::MUTED));
+                        ui.add(
+                            egui::Label::new(
+                                RichText::new(p.as_str())
+                                    .monospace()
+                                    .size(16.0)
+                                    .color(theme::INK),
+                            )
+                            .wrap(),
+                        );
+                    },
+                    |ui| {
+                        if theme::soft(ui, "Copy password").clicked() {
+                            copy = Some(p.clone());
+                        }
+                    },
+                );
+            }
+        });
         if let Some(p) = copy {
             self.copy(&p, "Password");
         }
     }
 
     fn import(&mut self, ui: &mut Ui) {
-        ui.heading("Import");
-        ui.add_space(8.0);
-        ui.radio_value(
-            &mut self.import_format,
-            ImportFormat::BitwardenJson,
-            "Bitwarden export (unencrypted .json)",
+        page_header(
+            ui,
+            "Import",
+            "Bring in logins from another password manager or your browser. Delete the \
+             export file afterwards: it holds your passwords in plain text.",
         );
-        ui.radio_value(
-            &mut self.import_format,
-            ImportFormat::BrowserCsv,
-            "Chrome, Edge or Firefox passwords (.csv)",
-        );
-        ui.add_space(8.0);
-        ui.horizontal(|ui| {
-            let l = ui.label("File");
-            ui.add(TextEdit::singleline(&mut self.import_path).desired_width(360.0))
-                .labelled_by(l.id);
-        });
-        let ok = self.busy.is_none() && !self.import_path.trim().is_empty();
-        if ui.add_enabled(ok, egui::Button::new("Import")).clicked() {
-            match std::fs::read_to_string(self.import_path.trim()) {
-                Ok(data) => {
-                    let format = self.import_format;
-                    self.act(
-                        "Importing…",
-                        Op::Import,
-                        Request::Import {
-                            format,
-                            data: Zeroizing::new(data),
-                        },
-                    );
+        theme::card().show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            theme::caption(ui, "Format");
+            ui.radio_value(
+                &mut self.import_format,
+                ImportFormat::BitwardenJson,
+                "Bitwarden export (unencrypted .json)",
+            );
+            ui.radio_value(
+                &mut self.import_format,
+                ImportFormat::BrowserCsv,
+                "Chrome, Edge or Firefox passwords (.csv)",
+            );
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                let l = ui.label("File");
+                ui.add(TextEdit::singleline(&mut self.import_path).desired_width(360.0))
+                    .labelled_by(l.id);
+            });
+            ui.add_space(4.0);
+            let ok = self.busy.is_none() && !self.import_path.trim().is_empty();
+            if theme::primary(ui, ok, "Import").clicked() {
+                match std::fs::read_to_string(self.import_path.trim()) {
+                    Ok(data) => {
+                        let format = self.import_format;
+                        self.act(
+                            "Importing…",
+                            Op::Import,
+                            Request::Import {
+                                format,
+                                data: Zeroizing::new(data),
+                            },
+                        );
+                    }
+                    Err(e) => self.error = Some(format!("{}: {e}", self.import_path.trim())),
                 }
-                Err(e) => self.error = Some(format!("{}: {e}", self.import_path.trim())),
             }
-        }
+        });
     }
 
     fn slots_page(&mut self, ui: &mut Ui) {
@@ -2634,7 +2915,12 @@ impl App {
                         ui.spacing_mut().item_spacing.y = 2.0;
                         ui.spacing_mut().interact_size.y = 0.0;
                         ui.horizontal(|ui| {
-                            ui.label(RichText::new(name).strong().color(theme::INK));
+                            ui.label(
+                                RichText::new(name)
+                                    .family(theme::semibold())
+                                    .color(theme::INK)
+                                    .color(theme::INK),
+                            );
                             if !s.label.is_empty() && !s.label.eq_ignore_ascii_case(name) {
                                 ui.label(RichText::new(&s.label).color(theme::MUTED));
                             }
@@ -2725,7 +3011,8 @@ impl App {
     fn add_slot_form(&mut self, ui: &mut Ui) {
         ui.label(
             RichText::new("Add a method")
-                .strong()
+                .family(theme::semibold())
+                .color(theme::INK)
                 .size(16.0)
                 .color(theme::INK),
         );
@@ -2866,7 +3153,8 @@ impl App {
             ui.set_width(ui.available_width());
             ui.label(
                 RichText::new("Quick unlock with Windows Hello")
-                    .strong()
+                    .family(theme::semibold())
+                    .color(theme::INK)
                     .size(16.0)
                     .color(theme::INK),
             );
@@ -2917,13 +3205,49 @@ impl Drop for App {
 }
 
 /// A labelled password box. True when Enter was pressed in it.
+/// A label over a full-width password box. True when Enter was pressed in it.
+fn stacked_secret(ui: &mut Ui, label: &str, text: &mut Secret) -> bool {
+    ui.spacing_mut().item_spacing.y = 6.0;
+    let l = ui.label(theme::bold(label).size(13.0));
+    let r = ui
+        .add(
+            TextEdit::singleline(&mut **text)
+                .password(true)
+                .margin(Margin::symmetric(12, 11))
+                .desired_width(f32::INFINITY),
+        )
+        .labelled_by(l.id);
+    ui.spacing_mut().item_spacing.y = 8.0;
+    ui.add_space(6.0);
+    r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter))
+}
+
+/// The main action of a form, as wide as the form.
+fn wide_primary(ui: &mut Ui, enabled: bool, text: &str) -> egui::Response {
+    ui.add_enabled(
+        enabled,
+        egui::Button::new((
+            egui::Atom::grow(),
+            RichText::new(text)
+                .family(theme::semibold())
+                .size(15.0)
+                .color(egui::Color32::WHITE),
+            egui::Atom::grow(),
+        ))
+        .fill(theme::ACCENT)
+        .stroke(Stroke::NONE)
+        .corner_radius(10)
+        .min_size(Vec2::new(ui.available_width(), 44.0)),
+    )
+}
+
 fn secret_field(ui: &mut Ui, label: &str, text: &mut Secret) -> bool {
     let l = ui.label(label);
     let r = ui
         .add(
             TextEdit::singleline(&mut **text)
                 .password(true)
-                .desired_width(240.0),
+                .desired_width(300.0),
         )
         .labelled_by(l.id);
     r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter))
@@ -2935,41 +3259,50 @@ fn login_fields(ui: &mut Ui, e: &mut Edit) -> bool {
     text_field(ui, "Username", &mut e.username);
     ui.end_row();
     let l = ui.label("Password");
-    ui.horizontal(|ui| {
+    ui.vertical(|ui| {
         ui.add(
             TextEdit::singleline(&mut *e.password)
                 .password(!e.reveal)
-                .desired_width(240.0),
+                .font(egui::TextStyle::Monospace)
+                .desired_width(300.0),
         )
         .labelled_by(l.id);
-        ui.checkbox(&mut e.reveal, "Show");
-        generate = ui.button("Generate").clicked();
+        ui.horizontal(|ui| {
+            ui.checkbox(&mut e.reveal, "Show");
+            generate = ui.button("Generate").clicked();
+        });
     });
     ui.end_row();
 
     let mut remove = None;
     for (n, u) in e.urls.iter_mut().enumerate() {
         let l = ui.label(if n == 0 { "Websites" } else { "" });
-        ui.horizontal(|ui| {
+        ui.vertical(|ui| {
             ui.add(
                 TextEdit::singleline(&mut u.url)
                     .hint_text("https://example.com")
-                    .desired_width(240.0),
+                    .desired_width(300.0),
             )
             .labelled_by(l.id);
-            egui::ComboBox::from_id_salt(("mode", n))
-                .selected_text(match u.mode {
-                    MatchMode::Origin => "This site only",
-                    MatchMode::RegistrableDomain => "Whole domain",
-                })
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut u.mode, MatchMode::Origin, "This site only");
-                    ui.selectable_value(&mut u.mode, MatchMode::RegistrableDomain, "Whole domain");
-                });
-            ui.checkbox(&mut u.allow_http, "Allow http");
-            if ui.button("Remove").clicked() {
-                remove = Some(n);
-            }
+            ui.horizontal(|ui| {
+                egui::ComboBox::from_id_salt(("mode", n))
+                    .selected_text(match u.mode {
+                        MatchMode::Origin => "This site only",
+                        MatchMode::RegistrableDomain => "Whole domain",
+                    })
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut u.mode, MatchMode::Origin, "This site only");
+                        ui.selectable_value(
+                            &mut u.mode,
+                            MatchMode::RegistrableDomain,
+                            "Whole domain",
+                        );
+                    });
+                ui.checkbox(&mut u.allow_http, "Allow http");
+                if ui.button("Remove").clicked() {
+                    remove = Some(n);
+                }
+            });
         });
         ui.end_row();
     }
@@ -3003,29 +3336,24 @@ fn login_fields(ui: &mut Ui, e: &mut Edit) -> bool {
     generate
 }
 
-/// A full-width entry in the sidebar.
-fn nav_button(ui: &mut Ui, on: bool, name: &str) -> egui::Response {
-    ui.add(
-        egui::Button::selectable(on, name)
-            .right_text(egui::Atom::grow())
-            .min_size(Vec2::new(0.0, 32.0)),
-    )
-}
-
-/// A list row: the title, and under it the username in a quieter colour.
-/// Reads as "title\nusername" to screen readers.
-fn two_lines(title: &str, username: &str) -> egui::text::LayoutJob {
-    let mut job = egui::text::LayoutJob::default();
-    let font = |size| egui::FontId::proportional(size);
-    job.append(title, 0.0, egui::TextFormat::simple(font(14.5), theme::INK));
-    if !username.is_empty() {
-        job.append(
-            &format!("\n{username}"),
-            0.0,
-            egui::TextFormat::simple(font(12.5), theme::MUTED),
-        );
-    }
-    job
+/// A row of the details card: `left` stacks a label over its value, `right`
+/// adds buttons from the right edge.
+fn detail_row(ui: &mut Ui, left: impl FnOnce(&mut Ui), right: impl FnOnce(&mut Ui)) {
+    ui.add_space(12.0);
+    let w = ui.available_width();
+    ui.allocate_ui_with_layout(
+        Vec2::new(w, 0.0),
+        egui::Layout::right_to_left(egui::Align::Center),
+        |ui| {
+            ui.spacing_mut().item_spacing.x = 8.0;
+            right(ui);
+            ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                ui.spacing_mut().item_spacing.y = 3.0;
+                left(ui);
+            });
+        },
+    );
+    ui.add_space(12.0);
 }
 
 /// A one-time code with a space in the middle, as sites print them.
@@ -3040,16 +3368,15 @@ fn spaced(code: &str) -> String {
 
 fn text_field(ui: &mut Ui, label: &str, text: &mut String) {
     let l = ui.label(label);
-    ui.add(TextEdit::singleline(text).desired_width(240.0))
+    ui.add(TextEdit::singleline(text).desired_width(300.0))
         .labelled_by(l.id);
 }
 
 /// A page's title and what the page is for.
 fn page_header(ui: &mut Ui, title: &str, about: &str) {
-    ui.label(RichText::new(title).strong().size(22.0).color(theme::INK));
-    ui.add_space(2.0);
-    ui.label(RichText::new(about).color(theme::MUTED));
-    ui.add_space(14.0);
+    ui.label(theme::title(title, 22.0));
+    ui.add(egui::Label::new(RichText::new(about).size(13.5).color(theme::MUTED)).wrap());
+    ui.add_space(16.0);
 }
 
 /// A small filled circle, as in the sidebar's lock status.

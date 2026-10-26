@@ -16,7 +16,7 @@ fn asking(ask: Ask) -> Harness<'static, Prompt> {
         ask,
         program: Some("/usr/lib/vault/vault-native-host".into()),
     });
-    let mut h = Harness::builder().with_size([460.0, 300.0]).build_ui_state(
+    let mut h = Harness::builder().with_size([480.0, 440.0]).build_ui_state(
         |ui, p: &mut Prompt| {
             p.show(ui);
         },

@@ -199,13 +199,13 @@ impl App {
 
     fn welcome(&mut self, ui: &mut Ui) {
         ui.horizontal(|ui| {
-            theme::monogram(ui, "Secret Vault", 48.0);
+            theme::lock_tile(ui, 48.0);
             ui.add_space(4.0);
             ui.vertical(|ui| {
                 ui.add_space(2.0);
                 ui.label(
                     RichText::new("Welcome to Secret Vault")
-                        .strong()
+                        .family(theme::semibold())
                         .size(22.0)
                         .color(theme::INK),
                 );
@@ -401,7 +401,11 @@ impl App {
                     theme::monogram(ui, e.name(), 36.0);
                     ui.vertical(|ui| {
                         ui.spacing_mut().item_spacing.y = 2.0;
-                        ui.label(RichText::new(e.name()).strong().color(theme::INK));
+                        ui.label(
+                            RichText::new(e.name())
+                                .family(theme::semibold())
+                                .color(theme::INK),
+                        );
                         ui.label(RichText::new(about(e)).small().color(theme::MUTED));
                     });
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -889,13 +893,23 @@ fn done_badge(ui: &mut Ui, text: &str) {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 4.0;
                 check(ui, theme::OK);
-                ui.label(RichText::new(text).small().strong().color(theme::OK));
+                ui.label(
+                    RichText::new(text)
+                        .small()
+                        .family(theme::semibold())
+                        .color(theme::OK),
+                );
             });
         });
 }
 
 fn heading(ui: &mut Ui, title: &str, about: &str) {
-    ui.label(RichText::new(title).strong().size(22.0).color(theme::INK));
+    ui.label(
+        RichText::new(title)
+            .family(theme::semibold())
+            .size(22.0)
+            .color(theme::INK),
+    );
     ui.add_space(4.0);
     ui.label(RichText::new(about).color(theme::MUTED));
     ui.add_space(18.0);
@@ -906,7 +920,11 @@ fn feature(ui: &mut Ui, title: &str, about: &str) {
         check(ui, theme::ACCENT);
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = 1.0;
-            ui.label(RichText::new(title).strong().color(theme::INK));
+            ui.label(
+                RichText::new(title)
+                    .family(theme::semibold())
+                    .color(theme::INK),
+            );
             ui.label(RichText::new(about).color(theme::MUTED));
         });
     });
@@ -945,7 +963,11 @@ fn numbered(ui: &mut Ui, n: u32, title: &str, body: impl FnOnce(&mut Ui)) {
             theme::ACCENT_DARK,
         );
         ui.vertical(|ui| {
-            ui.label(RichText::new(title).strong().color(theme::INK));
+            ui.label(
+                RichText::new(title)
+                    .family(theme::semibold())
+                    .color(theme::INK),
+            );
             body(ui);
         });
     });
@@ -980,17 +1002,21 @@ fn nav(ui: &mut Ui, buttons: impl FnOnce(&mut Ui)) {
 fn big_primary(ui: &mut Ui, enabled: bool, text: &str) -> egui::Response {
     ui.add_enabled(
         enabled,
-        egui::Button::new(RichText::new(text).color(Color32::WHITE).strong())
-            .fill(theme::ACCENT)
-            .stroke(Stroke::NONE)
-            .min_size(Vec2::new(0.0, 42.0)),
+        egui::Button::new(
+            RichText::new(text)
+                .color(Color32::WHITE)
+                .family(theme::semibold()),
+        )
+        .fill(theme::ACCENT)
+        .stroke(Stroke::NONE)
+        .min_size(Vec2::new(0.0, 42.0)),
     )
 }
 
 fn big_secondary(ui: &mut Ui, enabled: bool, text: &str) -> egui::Response {
     ui.add_enabled(
         enabled,
-        egui::Button::new(RichText::new(text).color(theme::INK))
+        egui::Button::new(theme::bold(text))
             .fill(theme::SURFACE)
             .stroke(Stroke::new(1.0, theme::BORDER_STRONG))
             .min_size(Vec2::new(0.0, 42.0)),

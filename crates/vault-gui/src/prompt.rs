@@ -6,7 +6,9 @@
 
 use std::time::{Duration, Instant};
 
-use eframe::egui::{self, Key, RichText, Ui};
+use eframe::egui::{self, Key, Margin, RichText, Ui};
+
+use crate::theme;
 
 /// How long the window waits before denying.
 pub const TIMEOUT: Duration = Duration::from_secs(60);
@@ -106,6 +108,9 @@ pub struct Prompt {
     request: Request,
     opened: Instant,
     focused: bool,
+    styled: bool,
+    /// The height the content needed on the last frame, in points.
+    pub height: f32,
     pub answer: Option<bool>,
 }
 
@@ -115,83 +120,144 @@ impl Prompt {
             request,
             opened: Instant::now(),
             focused: false,
+            styled: false,
+            height: 0.0,
             answer: None,
         }
     }
 
     /// Draw the window. Returns true once answered.
     pub fn show(&mut self, ui: &mut Ui) -> bool {
+        if !self.styled {
+            theme::apply(ui.ctx());
+            self.styled = true;
+        }
         if self.answer.is_none()
             && (ui.input(|i| i.key_pressed(Key::Escape)) || self.opened.elapsed() >= TIMEOUT)
         {
             self.answer = Some(false);
         }
         let r = &self.request;
-        egui::CentralPanel::default().show(ui, |ui| {
-            ui.add_space(4.0);
+        let frame = egui::Frame::new()
+            .fill(theme::SURFACE)
+            .inner_margin(Margin::symmetric(28, 24));
+        let panel = egui::CentralPanel::default().frame(frame).show(ui, |ui| {
+            let wrap = |ui: &mut Ui, text: RichText| {
+                ui.add(egui::Label::new(text).wrap());
+            };
+            ui.horizontal(|ui| {
+                theme::lock_tile(ui, 32.0);
+                ui.add_space(4.0);
+                ui.label(RichText::new("Secret Vault").size(13.0).color(theme::MUTED));
+            });
+            ui.add_space(10.0);
+            let heading = match &r.ask {
+                Ask::Pair { .. } => {
+                    format!("Allow \u{201c}{}\u{201d} to use your vault?", r.client)
+                }
+                Ask::FillCard { card, .. } => format!("Fill {card}?"),
+                Ask::Use { key, .. } => format!("Use the key \u{201c}{key}\u{201d}?"),
+            };
+            wrap(ui, theme::title(heading, 19.0));
+            ui.add_space(2.0);
             match &r.ask {
                 Ask::Pair { autofill } => {
-                    ui.heading(format!(
-                        "Allow \u{201c}{}\u{201d} to use your vault?",
-                        r.client
-                    ));
-                    ui.add_space(8.0);
-                    ui.label(if *autofill {
-                        "It will be able to fill your logins on websites that match them, \
-                         and your cards and addresses on secure pages, and nothing else."
-                    } else {
-                        "It will be able to read, change and delete every item in your vault."
-                    });
+                    wrap(
+                        ui,
+                        RichText::new(if *autofill {
+                            "It will be able to fill your logins on websites that match them, \
+                             and your cards and addresses on secure pages, and nothing else."
+                        } else {
+                            "It will be able to read, change and delete every item in your vault."
+                        })
+                        .color(theme::TEXT),
+                    );
                 }
-                Ask::FillCard { card, origin } => {
-                    ui.heading(format!("Fill {card}?"));
-                    ui.add_space(8.0);
-                    ui.label("Into a page on:");
-                    ui.label(RichText::new(origin).monospace().strong());
-                    ui.add_space(4.0);
-                    ui.label(format!(
-                        "\u{201c}{}\u{201d} asked for the card number, expiry and security code.",
-                        r.client
-                    ));
+                Ask::FillCard { origin, .. } => {
+                    wrap(
+                        ui,
+                        RichText::new(format!(
+                            "\u{201c}{}\u{201d} asked for the card number, expiry and \
+                             security code, to fill into a page on:",
+                            r.client
+                        ))
+                        .color(theme::TEXT),
+                    );
+                    wrap(ui, RichText::new(origin).monospace().color(theme::INK));
                 }
-                Ask::Use { key, purpose } => {
-                    ui.heading(format!("Use the key \u{201c}{key}\u{201d}?"));
-                    ui.add_space(8.0);
-                    ui.label(format!("To {purpose}."));
+                Ask::Use { purpose, .. } => {
+                    wrap(
+                        ui,
+                        RichText::new(format!("To {purpose}.")).color(theme::TEXT),
+                    );
                 }
             }
-            let program = &r.program;
             ui.add_space(8.0);
-            ui.label("Program asking:");
-            ui.label(RichText::new(program.as_deref().unwrap_or("unknown")).monospace());
-            ui.add_space(8.0);
-            ui.label(match r.ask {
-                Ask::Pair { .. } => {
-                    "If you didn't just connect something to your vault, choose Deny."
-                }
-                Ask::FillCard { .. } => {
-                    "If you didn't just ask to fill a card on this site, choose Deny."
-                }
-                Ask::Use { .. } => "If you didn't just start this, choose Deny.",
-            });
+            egui::Frame::new()
+                .fill(theme::GROUND)
+                .stroke(egui::Stroke::new(1.0, theme::DIVIDER))
+                .corner_radius(8)
+                .inner_margin(Margin::symmetric(12, 10))
+                .show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.spacing_mut().item_spacing.y = 3.0;
+                    ui.label(
+                        RichText::new("Program asking")
+                            .size(12.0)
+                            .color(theme::MUTED),
+                    );
+                    wrap(
+                        ui,
+                        RichText::new(r.program.as_deref().unwrap_or("unknown"))
+                            .monospace()
+                            .color(theme::INK),
+                    );
+                });
+            ui.add_space(4.0);
+            wrap(
+                ui,
+                RichText::new(match r.ask {
+                    Ask::Pair { .. } => {
+                        "If you didn't just connect something to your vault, choose Deny."
+                    }
+                    Ask::FillCard { .. } => {
+                        "If you didn't just ask to fill a card on this site, choose Deny."
+                    }
+                    Ask::Use { .. } => "If you didn't just start this, choose Deny.",
+                })
+                .size(13.0)
+                .color(theme::MUTED),
+            );
             ui.add_space(12.0);
             ui.horizontal(|ui| {
-                let deny = ui.button("Deny");
-                if !self.focused {
-                    deny.request_focus();
-                    self.focused = true;
-                }
-                if deny.clicked() {
-                    self.answer = Some(false);
-                }
-                if ui.button("Allow").clicked() {
-                    self.answer = Some(true);
-                }
+                let left = TIMEOUT.saturating_sub(self.opened.elapsed()).as_secs();
+                ui.label(
+                    RichText::new(format!("Denies by itself in {left} s."))
+                        .small()
+                        .color(theme::MUTED),
+                );
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if theme::primary(ui, true, "Allow").clicked() {
+                        self.answer = Some(true);
+                    }
+                    let deny = ui.add(
+                        egui::Button::new(theme::bold("Deny"))
+                            .min_size(egui::Vec2::new(84.0, 36.0)),
+                    );
+                    if !self.focused {
+                        deny.request_focus();
+                        self.focused = true;
+                    }
+                    if deny.clicked() {
+                        self.answer = Some(false);
+                    }
+                });
             });
-            let left = TIMEOUT.saturating_sub(self.opened.elapsed()).as_secs();
-            ui.add_space(8.0);
-            ui.label(RichText::new(format!("Denies by itself in {left} s.")).small());
+            ui.min_rect().height()
         });
+        // The window's height follows its text, which differs per request
+        // and with the display's text size.
+        self.height = panel.inner + 2.0 * 24.0;
         ui.ctx().request_repaint_after(Duration::from_millis(500));
         self.answer.is_some()
     }
