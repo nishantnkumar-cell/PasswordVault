@@ -126,9 +126,30 @@ fn type_into(h: &mut Harness<'_, App>, role: Role, label: &str, text: &str) {
 }
 
 fn click(h: &mut Harness<'_, App>, label: &str) {
-    h.get_by_role_and_label(Role::Button, label).click();
-    // A third frame lets the setup card settle at its new height.
-    h.step();
+    click_last(h, label);
+}
+
+/// Click the last button called `label` once it has stopped moving: the
+/// setup card re-centres a frame after its height changes, and a click
+/// aimed at where the button was a frame ago can miss.
+fn click_last(h: &mut Harness<'_, App>, label: &str) {
+    let rect = |h: &Harness<'_, App>| {
+        h.get_all_by_role_and_label(Role::Button, label)
+            .last()
+            .unwrap_or_else(|| panic!("no {label:?} button"))
+            .rect()
+    };
+    for _ in 0..20 {
+        let before = rect(h);
+        h.step();
+        if rect(h) == before {
+            break;
+        }
+    }
+    h.get_all_by_role_and_label(Role::Button, label)
+        .last()
+        .unwrap()
+        .click();
     h.step();
     h.step();
 }
@@ -265,15 +286,13 @@ fn setup_wizard_steps_back_reports_failures_and_ends_on_import() {
     click(&mut h, "Continue");
 
     // No security key support in this daemon: the wizard says so and stays.
-    h.get_all_by_role_and_label(Role::Button, "Set up")
-        .last()
-        .unwrap()
-        .click();
-    h.step();
-    h.step();
+    click_last(&mut h, "Set up");
     click(&mut h, "Add");
     settle(&mut h);
-    assert!(h.state().error().is_some());
+    assert!(
+        h.state().error().is_some(),
+        "adding a security key without support should fail"
+    );
     assert_eq!(*h.state().screen(), Screen::Setup);
     click(&mut h, "Cancel");
     click(&mut h, "Skip for now");
