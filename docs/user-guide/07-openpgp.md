@@ -16,6 +16,7 @@ Use cases:
 | | Linux | Windows | macOS |
 |---|---|---|---|
 | `vault pgp` | Yes (tested against GnuPG 2.4) | Yes | Not yet |
+| Desktop app: import, export, Encrypt and sign | Yes | Yes | Not yet |
 
 The vault must be unlocked for every command. Wherever a
 command takes a `FILE`, leaving it out reads standard input; leaving out
@@ -58,6 +59,11 @@ You are asked for the key's passphrase once; the vault then keeps it
 without one, protected by the vault's encryption. Delete `old.asc`
 afterwards. RSA, DSA and ElGamal secret keys are refused.
 
+**Import in the desktop app:** **SSH and PGP keys**, then the **▾** next to
+**New SSH key**, then **Import OpenPGP key**. Give the `.asc` file and type
+the passphrase when asked. See
+[Import a key you already have](05-desktop-app.md#import-a-key-you-already-have).
+
 List keys with `vault pgp ls`.
 
 ## 2. Share your public key
@@ -78,6 +84,9 @@ secret, so the vault itself does not store them.
 
 ## 3. Encrypt
 
+**In the desktop app:** use the **Encrypt and sign** page under Tools. See
+[Encrypt and sign](05-desktop-app.md#encrypt-and-sign).
+
 ```sh
 vault pgp encrypt -R friend.asc -r me letter.txt -o letter.txt.asc
 ```
@@ -97,6 +106,9 @@ vault pgp encrypt -r me secrets.tar -o secrets.tar.asc
 
 ## 4. Decrypt
 
+**In the desktop app:** use the **Encrypt and sign** page under Tools. See
+[Encrypt and sign](05-desktop-app.md#encrypt-and-sign).
+
 ```sh
 vault pgp decrypt letter.txt.asc -o letter.txt
 ```
@@ -106,6 +118,9 @@ need to say which. If the key asks for confirmation, approve the window
 `vaultd` opens.
 
 ## 5. Sign and verify
+
+**In the desktop app:** use the **Encrypt and sign** page under Tools. See
+[Encrypt and sign](05-desktop-app.md#encrypt-and-sign).
 
 Make a detached signature (a separate `.asc` file next to the original):
 
@@ -168,6 +183,9 @@ people whose software supports it.
   Thunderbird, not by the vault.
 
 ## Export a secret key
+
+**In the desktop app:** open the key and press **Export private key**. See
+[Export a private key](05-desktop-app.md#export-a-private-key).
 
 ```sh
 vault pgp export me > me-secret.asc

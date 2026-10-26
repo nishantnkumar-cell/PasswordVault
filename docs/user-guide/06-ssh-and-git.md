@@ -31,6 +31,10 @@ pick **ECDSA P-256**), and press **Make key**. The new key opens with its
 public key ready to copy. See
 [Make a new key](05-desktop-app.md#make-a-new-key).
 
+**Import a key file in the desktop app:** **SSH and PGP keys**, then the
+**▾** next to **New SSH key**, then **Import SSH key**. See
+[Import a key you already have](05-desktop-app.md#import-a-key-you-already-have).
+
 **Or on the command line** (Ed25519, the modern default):
 
 ```sh
@@ -167,6 +171,11 @@ git log --show-signature
 ## Export a key
 
 If you need the private key file again (for a machine without the vault):
+
+**In the desktop app:** open the key and press **Export private key**. See
+[Export a private key](05-desktop-app.md#export-a-private-key).
+
+**On the command line:**
 
 ```sh
 vault ssh export laptop > id_laptop

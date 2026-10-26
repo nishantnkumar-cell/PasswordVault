@@ -10,10 +10,13 @@ like the CLI: it never opens the vault file itself and holds no keys.
 | Desktop app | Yes (X11 or Wayland, OpenGL) | Yes | Not yet |
 | Copied secrets kept out of clipboard history and cloud clipboard | No such feature on Linux desktops | Yes | Not yet |
 
-Some things are only in the command line: creating, importing and using
-SSH and OpenPGP keys ([chapters 6](06-ssh-and-git.md) and
-[7](07-openpgp.md)), revoking unlock methods with key rotation, and finding
-items for a website. The app lists key items and shows their fingerprint.
+The app makes, imports and exports SSH and OpenPGP keys, and encrypts,
+decrypts, signs and verifies with OpenPGP keys
+([Encrypt and sign](#encrypt-and-sign)). Some things are only in the
+command line: pointing ssh and git at the vault's agent and the gpg
+shim ([chapters 6](06-ssh-and-git.md), [7](07-openpgp.md) and
+[9](09-gpg-programs.md)), revoking unlock methods with key rotation, and
+finding items for a website.
 
 For a tour of the window (sidebar, item list, details), the **Ctrl K**
 command palette and keyboard shortcuts, with screenshots, see
@@ -390,6 +393,69 @@ Every kind has **Custom fields**: **Add field** adds a row with a **Name**,
 a **Value** and a **Hidden** tick box that treats the value like a
 password. **Remove** deletes a row. See [Item types](03-items.md#item-types).
 
+### Import a key you already have
+
+Use this when you already have an SSH key (for example `~/.ssh/id_ed25519`)
+or an OpenPGP key from GnuPG, and you want the vault to hold it from now on.
+
+![The key menu with Import SSH key and Import OpenPGP key](images/desktop-key-menu.png)
+
+1. Click **SSH and PGP keys** in the sidebar.
+2. Click the small **▾** next to **New SSH key** at the top right. Choose
+   **Import SSH key** or **Import OpenPGP key**. (In All items, the same
+   entries are in the **New item** menu.)
+3. In **Key file**, type where the key is, such as `~/.ssh/id_ed25519` or
+   `~/secret-key.asc`. You can paste the key into **Or paste it** instead.
+   - To get an OpenPGP key out of GnuPG, run
+     `gpg --export-secret-keys --armor alex@example.com > ~/secret-key.asc`.
+4. **Title** is the key's name in the vault. If you leave it empty, the
+   file's name is used (for example "id_ed25519").
+5. Leave **Ask before each use** ticked unless a program must use the key
+   without you there.
+6. Press **Import key**. If the key has a passphrase, a **Passphrase** box
+   appears. Type the passphrase and press **Import key** again.
+
+![The Import an OpenPGP key form](images/desktop-import-key.png)
+
+The vault now has its own copy, without a passphrase, protected by the
+vault's encryption. Delete the old key file once nothing else needs it.
+RSA, DSA and ElGamal keys can't be imported: make a new Ed25519 key
+instead.
+
+### Export a private key
+
+You rarely need this. vaultd signs and decrypts for you, so programs never
+see the private key. Export a key only to move it to a computer that
+doesn't have this vault, or to keep an offline backup.
+
+1. Open the key in **SSH and PGP keys**.
+2. Press **Export private key** at the bottom.
+3. Prove it's you once more, even though the vault is open. Pick one of
+   your unlock methods (only the ones this vault has are shown), fill it in
+   and press **Export**. With a security key, touch it when it blinks.
+
+   ![Proving it's you before an export](images/desktop-export-prove.png)
+
+4. The key is ready. It is hidden until you press **Show**.
+   - **Copy private key** puts it on the clipboard for 30 seconds.
+   - Or type a file name in **Save to** (for example `~/.ssh/id_ed25519` for
+     an SSH key, or `~/secret-key.asc` for an OpenPGP key) and press **Save
+     key file**. The app won't replace an existing file.
+
+   ![The exported key, ready to copy or save](images/desktop-export-done.png)
+
+5. Press **Done**. Locking the vault also clears it from the window.
+
+The exported key has **no passphrase**. Anyone who gets the file can sign
+and decrypt as you. Keep it somewhere you trust, and delete copies you
+don't need.
+
+| | Linux | Windows | macOS |
+|---|---|---|---|
+| Saved key file | Readable only by you (600) | Gets the folder's permissions: save inside your user folder | Readable only by you (600), once the app runs on macOS |
+| Proving with a security key | PIN typed in the app | Windows asks for the touch and PIN | Not yet |
+| Proving with "This device" | TPM chip | TPM chip | Not available |
+
 ### Clipboard
 
 A copied value (username, password, code, card number and so on) is cleared from the clipboard after
@@ -472,6 +538,88 @@ and what to do about conflicts.
 | **PIN** box for a security key | Yes | Not shown: Windows asks in its own window | Not yet |
 | **Quick unlock with Windows Hello** box | Not shown | Yes | Not yet |
 | **Sync** page | Yes | Yes | Not yet |
+
+## Encrypt and sign
+
+Click **Encrypt and sign** under Tools to use your OpenPGP keys on files
+and messages. The secret keys never leave vaultd. If a key has **Ask before
+each use** on, vaultd opens a window for you to approve each use.
+
+Pick a task at the top: **Encrypt**, **Decrypt**, **Sign** or **Verify**.
+Each one works on **Text** (type or paste it) or a **File** (type its path,
+for example `~/Documents/report.pdf`). Files can be up to about 15 MiB.
+Switching tasks clears the form.
+
+The result appears below the form. **Copy** puts it on the clipboard, and
+**Save to file** writes it to the path shown. The app suggests a name, such
+as `report.pdf.asc`, and never replaces an existing file.
+
+### Encrypt
+
+Use this to send someone a message only they can read, or to keep a file
+only you can open.
+
+1. Type or paste the message, or choose **File** and give its path.
+2. Under **Who can read it**, tick your own keys. Tick yourself too if you
+   want to be able to open it later.
+3. For other people, paste their public key into **Other people's public
+   keys**. It starts with `-----BEGIN PGP PUBLIC KEY BLOCK-----`. Or type
+   the path of their key file, one per line. You can add several people.
+4. To prove the message is from you, pick a key in **Also sign with**.
+5. Leave **Binary output** off for mail or anything you paste. Turn it on
+   for smaller files.
+6. Press **Encrypt**, then copy or save the result.
+
+![An encrypted message](images/desktop-pgp-encrypt.png)
+
+### Decrypt
+
+1. Paste the message (it starts with `-----BEGIN PGP MESSAGE-----`), or
+   choose **File** and give its path (often ending `.asc` or `.gpg`).
+2. Press **Decrypt**. vaultd tries each of your OpenPGP keys and says which
+   one opened it.
+3. The text stays hidden until you press **Show**. **Copy text** clears the
+   clipboard after 30 seconds. **Save to file** suggests the name without
+   `.asc`/`.gpg`, and the saved file is readable only by you (on Windows,
+   keep it in your user folder).
+
+![A decrypted file, hidden until shown](images/desktop-pgp-decrypt.png)
+
+If no key fits, the message wasn't encrypted to any key in this vault.
+
+### Sign
+
+A signature lets others check that a text or file came from you and wasn't
+changed. The app makes a **detached** signature: a separate small file you
+send along with the original, which stays as it is.
+
+1. Type the text, or choose **File** and give its path.
+2. Pick your key in **Sign with**.
+3. Press **Sign**. Save the result next to the file (for example
+   `release-notes.txt.asc`) or copy it into your message.
+
+![A detached signature for a file](images/desktop-pgp-sign.png)
+
+Pasted text gets a "text" signature, so it still checks after a mail
+program changes its line endings.
+
+### Verify
+
+1. In **What was signed**, give the text or file.
+2. In **Signature**, paste the signature or give the path of its `.asc` or
+   `.sig` file.
+3. If someone else signed it, paste their public key (or its file path)
+   into **Signer's public key**. Leave it empty for your own signatures.
+4. Press **Verify**. "Good signature" in green names the key that signed
+   it. If the text was changed, or the signature is from a key you didn't
+   give, you see an error instead.
+
+![A good signature](images/desktop-pgp-verify.png)
+
+| | Linux | Windows | macOS |
+|---|---|---|---|
+| Encrypt and sign page | Yes | Yes | Not yet (no desktop app on macOS) |
+| Decrypted files saved | Readable only by you | Folder's permissions: keep in your user folder | — |
 
 ## Good to know
 
