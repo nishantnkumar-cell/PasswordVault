@@ -1002,7 +1002,12 @@ fn key_tools_encrypt_sign_export_and_import() {
     settle(&mut h);
     assert_eq!(h.state().error(), None);
     assert!(h.query_by_label("Good signature").is_some());
-    type_into(&mut h, Role::MultilineTextInput, "What was signed", " changed");
+    type_into(
+        &mut h,
+        Role::MultilineTextInput,
+        "What was signed",
+        " changed",
+    );
     click_last(&mut h, "Verify");
     settle(&mut h);
     assert!(h.state().error().is_some(), "a changed text doesn't verify");
