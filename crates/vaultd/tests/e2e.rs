@@ -597,8 +597,8 @@ fn cards_and_identities_fill_only_with_https_and_the_users_ok() {
 
     let mut home = ItemData::new(ItemKind::Identity, "Home");
     home.identity = Some(Identity {
-        given_name: "Ada".into(),
-        family_name: "Lovelace".into(),
+        given_name: "Alex".into(),
+        family_name: "Example".into(),
         postcode: "N1".into(),
         ..Identity::default()
     });

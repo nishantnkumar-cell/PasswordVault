@@ -403,13 +403,13 @@ fn cards_identities_and_notes() {
     click(&mut h, "New item");
     click(&mut h, "Identity");
     type_into(&mut h, Role::TextInput, "Title", "Home");
-    type_into(&mut h, Role::TextInput, "First name", "Ada");
-    type_into(&mut h, Role::TextInput, "Last name", "Lovelace");
+    type_into(&mut h, Role::TextInput, "First name", "Alex");
+    type_into(&mut h, Role::TextInput, "Last name", "Example");
     type_into(&mut h, Role::TextInput, "City", "London");
     click(&mut h, "Save");
     settle(&mut h);
     assert_eq!(h.state().error(), None);
-    assert!(h.query_by_label_contains("Home\nAda Lovelace").is_some());
+    assert!(h.query_by_label_contains("Home\nAlex Example").is_some());
     assert!(h.query_by_label_contains("London").is_some());
 
     // A secure note shows no subtitle.
@@ -436,7 +436,7 @@ fn cards_identities_and_notes() {
     h.get_by_role_and_label(Role::Button, "Cards").click();
     h.step();
     h.step();
-    assert!(h.query_by_label_contains("Home\nAda").is_none());
+    assert!(h.query_by_label_contains("Home\nAlex").is_none());
     assert!(h.query_by_label_contains("Travel\nVisa").is_some());
 }
 
@@ -531,6 +531,60 @@ fn sidebar_filters_the_list() {
     assert!(!row(&h, "Plain") && row(&h, "Coded 2FA"));
     click(&mut h, "All items");
     assert!(row(&h, "Plain"));
+}
+
+/// Picking a category in the sidebar must visibly change the screen, even
+/// when the category is empty or an item from another one is open.
+#[test]
+fn sidebar_categories_change_the_screen() {
+    let dir = tempdir();
+    let mut h = created(&dir, Duration::from_secs(300), FakeClip::default());
+    let shown = |h: &Harness<'_, App>, label: &str| h.query_all_by_label(label).next().is_some();
+    let button = |h: &Harness<'_, App>, label: &str| {
+        h.query_by_role_and_label(Role::Button, label).is_some()
+    };
+
+    // An empty vault offers a first login.
+    assert!(shown(&h, "No items yet."));
+    click(&mut h, "New login");
+    type_into(&mut h, Role::TextInput, "Title", "Example Mail");
+    click(&mut h, "Save");
+    settle(&mut h);
+    assert!(button(&h, "Edit"), "the saved login is open");
+
+    // An empty category says so, offers its own New button, and closes the
+    // login, which isn't a note.
+    click(&mut h, "Secure notes");
+    assert!(shown(&h, "No secure notes yet."));
+    assert!(!button(&h, "Edit"), "the login stayed open");
+    assert!(!button(&h, "Example Mail"));
+    click(&mut h, "New secure note");
+    assert!(
+        h.query_by_role_and_label(Role::MultilineTextInput, "Notes")
+            .is_some()
+    );
+    type_into(&mut h, Role::TextInput, "Title", "Door codes");
+    click(&mut h, "Save");
+    settle(&mut h);
+    assert!(button(&h, "Door codes"));
+
+    // Keys: their own empty text and both New buttons.
+    click(&mut h, "SSH and PGP keys");
+    assert!(shown(&h, "No SSH or PGP keys yet."));
+    assert!(button(&h, "New SSH key") && button(&h, "New OpenPGP key"));
+    assert!(!button(&h, "Door codes"));
+    click(&mut h, "New SSH key");
+    assert!(button(&h, "Make key"), "the key form opened");
+
+    // An item that is in the category stays open.
+    click(&mut h, "Secure notes");
+    click(&mut h, "Door codes");
+    settle(&mut h);
+    click(&mut h, "All items");
+    assert!(button(&h, "Edit"), "the note was closed though it's listed");
+
+    click(&mut h, "Cards");
+    assert!(shown(&h, "No cards yet."));
 }
 
 #[test]
