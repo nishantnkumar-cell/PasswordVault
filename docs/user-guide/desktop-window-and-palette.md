@@ -24,9 +24,12 @@ reach vaultd, start the service first:
 
 ![The unlock card](images/desktop-4-locked.png)
 
-When the vault is locked, the window shows one card. Pick how you want to
-unlock in the **Unlock with** list, fill in what it asks for, and press
-**Unlock** (or Enter).
+When the vault is locked, the window shows one card with two columns. On
+the left, under **Unlock with**, pick how to unlock: **Master password**,
+**Security key**, **This device** (TPM) or **Recovery code**. On the right,
+fill in what that method asks for and press **Unlock** (or Enter). If
+Windows Hello quick unlock is on, an **Unlock with Windows Hello** button
+sits above the form.
 
 | Method | What you need | Linux | Windows |
 | --- | --- | --- | --- |
@@ -42,33 +45,48 @@ approval** and allow the app in the window vaultd opens.
 
 ## The window
 
-![The three-pane window](images/desktop-1-list.png)
+![The window with its top bar](images/desktop-top-bar.png)
 
-Once unlocked, the window has three columns.
+Once unlocked, the window has a bar across the top and three columns
+below it.
 
-1. **Sidebar (left).** At the top, a status box shows that the vault is
-   unlocked and when it will lock itself if you leave it idle. Below that:
+- **Top bar.** The **search bar** filters the item list by title, user
+  name or website. While a category is open it searches only that
+  category, shown by a blue tag such as **in Logins ×**; click the × to
+  search all items. On the right, the time left before the vault locks
+  itself if you leave it idle, the blue **New** button and **Lock**. The
+  **New** button is named for the open category (**New login**, **New
+  card**, **New SSH key** and so on); in All items it is **New item ▾**, a
+  menu of every kind, including **SSH key** and **OpenPGP key**.
+
+1. **Sidebar (left).** Each entry has an icon; the open one sits on a white
+   button with a blue icon tile.
    - **All items**, **Logins**, **Secure notes**, **Cards**,
      **Identities**, **One-time codes** and **SSH and PGP keys** filter the
-     item list. *One-time codes* shows only items with a two-factor code
-     set up; *SSH and PGP keys* shows only keys.
+     item list, with the number of items in each next to it.
+     *One-time codes* shows only items with a two-factor code
+     set up; *SSH and PGP keys* shows only keys. The chosen category's
+     name heads the item list, and an empty category says so and points
+     you to the **New** button.
    - **Tools**: **Generator** (make a strong password), **Import** (bring
      items in from Bitwarden or a browser export), **Unlock methods**
      (add or remove ways to unlock) and **Sync** (keep the vault in step
      with your other devices).
-   - **Lock** at the bottom locks the vault straight away.
-2. **Item list (middle).** Type in **Search** to filter by title, user
-   name or website. Each row shows the title and, under it, the user name,
+   - At the bottom: the app's version and a reminder that Ctrl K finds
+     items and actions.
+2. **Item list (middle).** Each row shows a coloured letter tile, the title in
+   bold and, under it, the user name,
    the card's network and last four digits, or the identity's name. A
    **2FA** tag means the item has one-time codes; **Key** means it is an
-   SSH or PGP key. **New item** asks which kind of item to start, including
-   a new **SSH key** or **OpenPGP key**.
+   SSH or PGP key.
 3. **Details (right).** The item you picked.
 
 ### Item details
 
 ![An item's details](images/desktop-2-detail.png)
 
+- Each field is a row with its name over its value and a Copy button on
+  the right; the password's **Copy password** is the blue one.
 - **Username** and **Password** each have a copy button. The password stays
   hidden until you press **Show**. Cards and identities show their own
   fields the same way; a card's number, security code and PIN, and any
@@ -107,7 +125,34 @@ the window. It is the fastest way to work without the mouse.
    Enter to lock.
 
 Use the **Up** and **Down** arrow keys to move, **Enter** to run, and **Esc**
-(or a click outside the box) to close it. You can also click any row.
+(or a click outside the box) to close it. You can also click any row. Items
+show their letter tile and user name, and the highlighted row shows the
+Enter key to remind you that Enter runs it.
+
+## The approval window
+
+![The approval window](images/approval-window.png)
+
+When a program asks to pair with the vault, fill a card or use a key, a
+small window names the program and what it wants. **Deny** has the focus,
+so pressing Enter never allows by accident. The window denies by itself
+after a minute; the countdown is in its bottom left corner. The window
+grows to fit its text, so long program paths are never cut off.
+
+## Window size and look
+
+- **The window fits the screen.** The main window opens centred and no
+  larger than the free part of the screen, so the taskbar (or dock and top
+  bar) and the title bar stay visible. On a 1920x1080 display at 150%
+  scaling it opens at 1180x624. If you later make the window bigger than
+  the screen, double-click the title bar (Windows) to fit it again. On
+  Linux with Wayland the compositor decides where windows open, so it may
+  not be centred.
+- **Always light.** The app and its title bar stay light even when Windows
+  or Linux is set to dark mode.
+- **Same fonts everywhere.** The app ships its own fonts (Inter for text,
+  JetBrains Mono for passwords, codes and keys), so it looks the same on
+  every system.
 
 Everything you copy, from the palette or the buttons, is cleared from the
 clipboard after 30 seconds, when the vault locks and when the app closes.
