@@ -10,10 +10,13 @@ like the CLI: it never opens the vault file itself and holds no keys.
 | Desktop app | Yes (X11 or Wayland, OpenGL) | Yes | Not yet |
 | Copied secrets kept out of clipboard history and cloud clipboard | No such feature on Linux desktops | Yes | Not yet |
 
-Some things are only in the command line: creating, importing and using
-SSH and OpenPGP keys ([chapters 6](06-ssh-and-git.md) and
-[7](07-openpgp.md)), revoking unlock methods with key rotation, and finding
-items for a website. The app lists key items and shows their fingerprint.
+The app makes, imports and exports SSH and OpenPGP keys, and encrypts,
+decrypts, signs and verifies with OpenPGP keys
+([Encrypt and sign](#encrypt-and-sign)). Some things are only in the
+command line: pointing ssh and git at the vault's agent and the gpg
+shim ([chapters 6](06-ssh-and-git.md), [7](07-openpgp.md) and
+[9](09-gpg-programs.md)), revoking unlock methods with key rotation, and
+finding items for a website.
 
 For a tour of the window (sidebar, item list, details), the **Ctrl K**
 command palette and keyboard shortcuts, with screenshots, see
