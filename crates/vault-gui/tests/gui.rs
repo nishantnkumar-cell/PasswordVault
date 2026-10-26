@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use eframe::egui::accesskit::Role;
 use egui_kittest::Harness;
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 use vault_core::KdfCost;
 use vault_gui::{App, Clip, Paths, Screen};
 use vault_ipc::ItemKind;
@@ -127,8 +127,25 @@ fn type_into(h: &mut Harness<'_, App>, role: Role, label: &str, text: &str) {
 
 fn click(h: &mut Harness<'_, App>, label: &str) {
     h.get_by_role_and_label(Role::Button, label).click();
+    // A third frame lets the setup card settle at its new height.
     h.step();
     h.step();
+    h.step();
+}
+
+/// Walk through the rest of the first-run wizard, skipping the extras.
+fn finish_setup(h: &mut Harness<'_, App>) {
+    h.get_by_role_and_label(
+        Role::CheckBox,
+        "I've written down my recovery code and put it somewhere safe",
+    )
+    .click();
+    h.step();
+    click(h, "Continue");
+    click(h, "Skip for now");
+    click(h, "Skip for now");
+    click(h, "Open my vault");
+    wait_for(h, Screen::Unlocked);
 }
 
 #[test]
@@ -138,6 +155,7 @@ fn create_add_copy_lock_unlock() {
     let clip = FakeClip::default();
     let mut h = window(sock, dir.join("token"), clip.clone());
     wait_for(&mut h, Screen::Create);
+    click(&mut h, "Create a new vault");
 
     let pw = password();
     type_into(&mut h, Role::PasswordInput, "Master password", &pw);
@@ -154,10 +172,14 @@ fn create_add_copy_lock_unlock() {
     }
     type_into(&mut h, Role::PasswordInput, "Repeat it", &pw);
     click(&mut h, "Create vault");
-    wait_for(&mut h, Screen::ShowRecovery);
+    wait_for(&mut h, Screen::Setup);
     assert!(dir.join("token").exists(), "pairing token saved");
-    click(&mut h, "I've written it down");
-    wait_for(&mut h, Screen::Unlocked);
+    assert!(
+        h.query_by_label("Continue")
+            .is_some_and(|c| c.accesskit_node().is_disabled()),
+        "can't go on before saying the code is saved"
+    );
+    finish_setup(&mut h);
 
     click(&mut h, "New item");
     click(&mut h, "Login");
@@ -218,16 +240,74 @@ fn create_add_copy_lock_unlock() {
 }
 
 #[test]
+fn setup_wizard_steps_back_reports_failures_and_ends_on_import() {
+    let dir = tempdir();
+    let sock = start(&dir, Duration::from_secs(300));
+    let mut h = window(sock, dir.join("token"), FakeClip::default());
+    wait_for(&mut h, Screen::Create);
+    click(&mut h, "Create a new vault");
+    assert!(h.query_by_label("Choose your master password").is_some());
+    click(&mut h, "Back");
+    assert!(h.query_by_label("Welcome to Secret Vault").is_some());
+    click(&mut h, "Create a new vault");
+    let pw = password();
+    type_into(&mut h, Role::PasswordInput, "Master password", &pw);
+    assert!(h.query_by_label("Strong").is_some());
+    type_into(&mut h, Role::PasswordInput, "Repeat it", &pw);
+    click(&mut h, "Create vault");
+    wait_for(&mut h, Screen::Setup);
+    h.get_by_role_and_label(
+        Role::CheckBox,
+        "I've written down my recovery code and put it somewhere safe",
+    )
+    .click();
+    h.step();
+    click(&mut h, "Continue");
+
+    // No security key support in this daemon: the wizard says so and stays.
+    h.get_all_by_role_and_label(Role::Button, "Set up")
+        .last()
+        .unwrap()
+        .click();
+    h.step();
+    h.step();
+    click(&mut h, "Add");
+    settle(&mut h);
+    assert!(h.state().error().is_some());
+    assert_eq!(*h.state().screen(), Screen::Setup);
+    click(&mut h, "Cancel");
+    click(&mut h, "Skip for now");
+    assert!(h.query_by_label("Fill passwords in your browser").is_some());
+    type_into(
+        &mut h,
+        Role::TextInput,
+        "Chrome or Edge extension ID",
+        "not an id",
+    );
+    click(&mut h, "Register");
+    assert!(h.query_by_label_contains("isn't an extension ID").is_some());
+    click(&mut h, "Skip for now");
+    assert!(h.query_by_label("You're all set").is_some());
+    click(&mut h, "Import passwords");
+    wait_for(&mut h, Screen::Unlocked);
+    assert!(
+        h.query_by_label("Bitwarden export (unencrypted .json)")
+            .is_some()
+    );
+}
+
+#[test]
 fn pairs_a_second_window_and_follows_idle_lock() {
     let dir = tempdir();
     let sock = start(&dir, Duration::from_secs(2));
     let pw = password();
     let mut first = window(sock.clone(), dir.join("first"), FakeClip::default());
     wait_for(&mut first, Screen::Create);
+    click(&mut first, "Create a new vault");
     type_into(&mut first, Role::PasswordInput, "Master password", &pw);
     type_into(&mut first, Role::PasswordInput, "Repeat it", &pw);
     click(&mut first, "Create vault");
-    wait_for(&mut first, Screen::ShowRecovery);
+    wait_for(&mut first, Screen::Setup);
 
     let mut second = window(sock, dir.join("second"), FakeClip::default());
     wait_for(&mut second, Screen::Pair);
@@ -267,12 +347,12 @@ fn created_on(sock: PathBuf, dir: &Path, clip: FakeClip) -> Harness<'static, App
     let pw = password();
     let mut h = window(sock, dir.join("token"), clip);
     wait_for(&mut h, Screen::Create);
+    click(&mut h, "Create a new vault");
     type_into(&mut h, Role::PasswordInput, "Master password", &pw);
     type_into(&mut h, Role::PasswordInput, "Repeat it", &pw);
     click(&mut h, "Create vault");
-    wait_for(&mut h, Screen::ShowRecovery);
-    click(&mut h, "I've written it down");
-    wait_for(&mut h, Screen::Unlocked);
+    wait_for(&mut h, Screen::Setup);
+    finish_setup(&mut h);
     h
 }
 
@@ -606,10 +686,11 @@ fn pairs_by_approval_in_the_daemons_window() {
     let pw = password();
     let mut first = window(sock.clone(), dir.join("first"), FakeClip::default());
     wait_for(&mut first, Screen::Create);
+    click(&mut first, "Create a new vault");
     type_into(&mut first, Role::PasswordInput, "Master password", &pw);
     type_into(&mut first, Role::PasswordInput, "Repeat it", &pw);
     click(&mut first, "Create vault");
-    wait_for(&mut first, Screen::ShowRecovery);
+    wait_for(&mut first, Screen::Setup);
 
     let asked = Arc::new(Mutex::new(Vec::new()));
     let log = asked.clone();
@@ -674,6 +755,7 @@ fn turns_on_sync_and_a_second_device_joins() {
         FakeClip::default(),
     );
     wait_for(&mut g, Screen::Create);
+    click(&mut g, "I already use Secret Vault on another device");
     type_into(&mut g, Role::TextInput, "File in the synced folder", &path);
     click(&mut g, "Join");
     wait_for(&mut g, Screen::Pair);
