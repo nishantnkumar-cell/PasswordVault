@@ -147,6 +147,7 @@ pub fn apply(ctx: &egui::Context) {
         v.selection.stroke = Stroke::new(1.0, ACCENT);
         v.text_cursor.stroke = Stroke::new(1.5, INK);
         v.slider_trailing_fill = true;
+        v.handle_shape = egui::style::HandleShape::Circle;
 
         let w = &mut v.widgets;
         w.noninteractive.fg_stroke = Stroke::new(1.0, TEXT);
