@@ -19,6 +19,8 @@ use zeroize::Zeroizing;
 use crate::client::{Backend, Failure, Paths};
 use crate::theme;
 
+mod setup;
+
 /// How long a copied secret stays on the clipboard.
 pub const CLIPBOARD_CLEAR: Duration = Duration::from_secs(30);
 const STATUS_EVERY: Duration = Duration::from_secs(2);
@@ -94,6 +96,10 @@ enum Op {
     NewKey,
     Sync,
     QuickUnlock,
+    /// An unlock method added from the first-run wizard.
+    SetupSlot(setup::Extra),
+    /// Windows Hello quick unlock turned on from the wizard.
+    SetupHello,
 }
 
 /// Which screen is showing.
@@ -101,8 +107,10 @@ enum Op {
 pub enum Screen {
     Connecting,
     Unreachable(String),
+    /// No vault yet: the first-run wizard.
     Create,
-    ShowRecovery,
+    /// The wizard's steps after the vault is made.
+    Setup,
     Pair,
     Locked,
     Unlocked,
@@ -529,7 +537,7 @@ pub struct App {
     unlock: UnlockForm,
     new_password: Secret,
     new_password2: Secret,
-    recovery_code: Option<Secret>,
+    setup: Option<setup::Setup>,
 
     view: View,
     search: String,
@@ -588,7 +596,7 @@ impl App {
             unlock: UnlockForm::default(),
             new_password: Secret::default(),
             new_password2: Secret::default(),
-            recovery_code: None,
+            setup: None,
             view: View::Items,
             search: String::new(),
             items: Vec::new(),
@@ -711,24 +719,24 @@ impl App {
     }
 
     fn on_status(&mut self, s: StatusInfo) {
-        let next = if !s.initialized {
-            Screen::Create
+        let next = if let Some(screen) = self.setup_screen(&s) {
+            screen
         } else if self.token.is_none() {
             Screen::Pair
         } else if !s.unlocked {
             Screen::Locked
-        } else if self.screen == Screen::ShowRecovery {
-            Screen::ShowRecovery
         } else {
             Screen::Unlocked
         };
-        if self.screen == Screen::Unlocked && next != Screen::Unlocked {
+        if matches!(self.screen, Screen::Unlocked | Screen::Setup)
+            && !matches!(next, Screen::Unlocked | Screen::Setup)
+        {
             self.wipe();
             if next == Screen::Locked {
                 self.notice = Some("The vault locked.".into());
             }
         }
-        if next == Screen::Unlocked && self.screen != Screen::Unlocked {
+        if next == Screen::Unlocked && !matches!(self.screen, Screen::Unlocked | Screen::Setup) {
             self.view = View::Items;
             self.send(Op::ListItems, Request::ListItems);
         } else if next == Screen::Unlocked
@@ -769,22 +777,7 @@ impl App {
         };
         match (op, r) {
             (Op::Status, Response::Status(s)) => self.on_status(s),
-            (
-                Op::Init,
-                Response::Initialized {
-                    recovery_code,
-                    token,
-                },
-            ) => {
-                if let Err(e) = self.paths.save_token(&token) {
-                    self.error = Some(format!("Couldn't save this app's pairing: {e}"));
-                }
-                self.token = Some(token);
-                self.new_password = Secret::default();
-                self.new_password2 = Secret::default();
-                self.recovery_code = Some(recovery_code);
-                self.screen = Screen::ShowRecovery;
-            }
+            (op @ (Op::Init | Op::SetupSlot(_) | Op::SetupHello), r) => self.on_setup_result(op, r),
             (Op::Pair, Response::Paired { token }) => {
                 if let Err(e) = self.paths.save_token(&token) {
                     self.error = Some(format!("Couldn't save this app's pairing: {e}"));
@@ -977,6 +970,10 @@ impl App {
             self.unlocked(ui);
             return;
         }
+        if matches!(self.screen, Screen::Create | Screen::Setup) {
+            self.setup_window(ui);
+            return;
+        }
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(theme::SIDEBAR))
             .show(ui, |ui| {
@@ -997,7 +994,7 @@ impl App {
     fn front(&mut self, ui: &mut Ui) {
         let sub = match &self.screen {
             Screen::Connecting | Screen::Unreachable(_) => "Connecting",
-            Screen::Create | Screen::ShowRecovery => "New vault",
+            Screen::Create | Screen::Setup => "New vault",
             Screen::Pair => "Not paired with this app",
             Screen::Locked | Screen::Unlocked => "Locked",
         };
@@ -1034,8 +1031,7 @@ impl App {
                     self.refresh();
                 }
             }
-            Screen::Create => self.create(ui),
-            Screen::ShowRecovery => self.show_recovery(ui),
+            Screen::Create | Screen::Setup => {}
             Screen::Pair => self.pair_or_unlock(ui, true),
             Screen::Locked => self.pair_or_unlock(ui, false),
             Screen::Unlocked => {}
@@ -1064,47 +1060,6 @@ impl App {
                 ui.spinner();
                 ui.label(b);
             });
-        }
-    }
-
-    fn create(&mut self, ui: &mut Ui) {
-        ui.label("No vault yet. Choose a master password of at least 8 characters.");
-        ui.add_space(8.0);
-        let mut submit = false;
-        egui::Grid::new("create").num_columns(2).show(ui, |ui| {
-            secret_field(ui, "Master password", &mut self.new_password);
-            ui.end_row();
-            submit |= secret_field(ui, "Repeat it", &mut self.new_password2);
-            ui.end_row();
-        });
-        let ok = self.busy.is_none();
-        submit |= theme::primary(ui, ok, "Create vault").clicked();
-        if submit && ok {
-            if self.new_password.chars().count() < 8 {
-                self.error = Some("The password needs at least 8 characters.".into());
-            } else if *self.new_password != *self.new_password2 {
-                self.error = Some("The passwords don't match.".into());
-            } else {
-                let password = self.new_password.clone();
-                self.act(
-                    "Creating the vault…",
-                    Op::Init,
-                    Request::Init {
-                        password,
-                        client_name: CLIENT_NAME.into(),
-                    },
-                );
-            }
-        }
-        ui.add_space(16.0);
-        ui.separator();
-        ui.label(
-            "Already use the vault on another device and sync it through OneDrive, \
-             Google Drive or Dropbox? Join it instead:",
-        );
-        if self.sync_form(ui, "Join") {
-            let path = self.sync_path.trim().to_owned();
-            self.act("Joining…", Op::Sync, Request::SetSync { path: Some(path) });
         }
     }
 
@@ -1229,25 +1184,6 @@ impl App {
                     ));
                 }
             });
-        }
-    }
-
-    fn show_recovery(&mut self, ui: &mut Ui) {
-        ui.label("Your vault is ready. This is its recovery code. It is shown only once.");
-        ui.add_space(8.0);
-        if let Some(code) = &self.recovery_code {
-            ui.label(RichText::new(code.as_str()).monospace().size(18.0));
-        }
-        ui.add_space(8.0);
-        ui.label(
-            "Write it down and keep it offline. It unlocks the vault on its own, \
-             so anyone who has it can read your passwords.",
-        );
-        ui.add_space(8.0);
-        if theme::primary(ui, true, "I've written it down").clicked() {
-            self.recovery_code = None;
-            self.screen = Screen::Connecting;
-            self.refresh();
         }
     }
 
