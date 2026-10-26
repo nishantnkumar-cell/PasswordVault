@@ -58,6 +58,29 @@ Platform differences:
   apply when they do.
 - Paths starting with `~/` work on every system, meaning your home folder.
 
+### Post-quantum Windows TPM slots
+
+- **Windows TPM slots are now sealed inside the TPM.** A TPM slot added on
+  Windows is now locked by the TPM's own internal key, the way Linux has
+  always done it. Before, the slot's secret was wrapped with an RSA key,
+  and a future quantum computer could unwrap it from a copy of the vault
+  file, leaving only your password to protect that copy.
+- **Old slots still work, and are marked.** A Windows TPM slot added
+  before this version keeps unlocking. `vault slots` shows a note under it
+  and the desktop app's **Unlock methods** page marks it **Not
+  post-quantum**. Add the TPM again and remove or revoke the old slot.
+- **How to use it:**
+  [Post-quantum protection](user-guide/02-unlocking.md#post-quantum-protection)
+  explains which unlock methods are post-quantum and how to replace an old
+  slot step by step.
+- **Platform differences:** Windows only. Linux TPM slots, security keys,
+  passwords and recovery codes were already safe against a future quantum
+  computer. macOS has no TPM.
+- **Known limits:** a group policy that blocks TPM commands for programs
+  stops new Windows TPM slots from being added; the error says so. A slot
+  added on Windows still cannot be opened under Linux on the same PC, or
+  the other way round.
+
 ### One search bar and a New button that follows you
 
 - **Search at the top.** One search field runs across the top of the
