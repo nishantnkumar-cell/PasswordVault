@@ -49,4 +49,10 @@ impl HwKey {
     pub(crate) fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
+
+    /// The secret itself, for a client that ran the factor (a phone passkey)
+    /// and hands its output to the daemon. Copy it only into zeroized memory.
+    pub fn expose(&self) -> &[u8; 32] {
+        &self.0
+    }
 }

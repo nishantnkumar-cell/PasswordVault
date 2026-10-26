@@ -8,6 +8,8 @@ use vault_core::HwKey;
 pub mod fido2;
 #[cfg(windows)]
 pub mod hello;
+#[cfg(feature = "phone")]
+pub mod phone;
 pub mod protect;
 pub mod soft;
 #[cfg(all(feature = "tpm", target_os = "linux"))]
@@ -18,6 +20,10 @@ pub mod webauthn;
 pub mod wintpm;
 
 pub type HwResult<T> = Result<T, String>;
+
+/// The relying party ID of every security key and phone passkey slot the
+/// vault makes; fixed, since changing it changes the derived secret.
+pub const RP_ID: &str = "vault.local";
 
 /// Starts a TPM slot blob made on Windows (`wintpm`). Blobs made on Linux
 /// (`tpm`) start with a small length instead, so the two never collide.

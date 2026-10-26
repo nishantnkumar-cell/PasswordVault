@@ -1298,3 +1298,125 @@ fn quick_unlock_with_windows_hello() {
     c.ok(Request::Lock);
     assert!(c.err(hello()).contains("not available"));
 }
+
+#[test]
+fn phone_passkey_slots() {
+    use vault_hw::Fido2;
+    // The "phone": the PRF output a passkey gives is hmac-secret with the
+    // WebAuthn PRF salt, which the soft key computes the same way.
+    let phone = SoftFido2 {
+        device_secret: [7; 32],
+        pin: "1111".into(),
+        counter: Mutex::new(0),
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let sock = start(dir.path(), server::current_user(), Duration::from_secs(600));
+    let mut c = C::new(&sock);
+    let Response::Initialized { token, .. } = c.ok(Request::Init {
+        password: s(PW),
+        client_name: "t".into(),
+    }) else {
+        panic!()
+    };
+    c.token = Some(token);
+
+    // Nothing to offer a phone yet; a touch-only key slot is not offered.
+    c.ok(Request::AddFido2Slot {
+        password: s(PW),
+        pin: None,
+        require_uv: false,
+        label: "touch-only key".into(),
+    });
+    let Response::PasskeySlots(none) = c.ok(Request::PasskeySlots) else {
+        panic!()
+    };
+    assert!(none.is_empty());
+
+    // Enroll: the client made the passkey and asked it for the PRF output.
+    let cred = phone
+        .enroll(vaultd::daemon::RP_ID, Some("1111"), true)
+        .unwrap();
+    let prf_input = [3u8; 32];
+    let out = |input: &[u8; 32]| {
+        let hw = phone
+            .hmac_secret(vaultd::daemon::RP_ID, &cred, input, Some("1111"), true)
+            .unwrap();
+        Zeroizing::new(hw.expose().to_vec())
+    };
+    assert!(
+        c.err(Request::AddPasskeySlot {
+            password: s(PW),
+            credential_id: cred.clone(),
+            prf_input,
+            prf_output: Zeroizing::new(vec![1; 31]),
+            label: "phone".into(),
+        })
+        .contains("32 bytes")
+    );
+    let Response::SlotAdded { id, .. } = c.ok(Request::AddPasskeySlot {
+        password: s(PW),
+        credential_id: cred.clone(),
+        prf_input,
+        prf_output: out(&prf_input),
+        label: "phone".into(),
+    }) else {
+        panic!()
+    };
+    let Response::Slots(slots) = c.ok(Request::ListSlots) else {
+        panic!()
+    };
+    let phone_slot = slots.iter().find(|s| s.id == id).unwrap();
+    assert_eq!(
+        (phone_slot.kind.as_str(), phone_slot.label.as_str()),
+        ("fido2", "phone")
+    );
+
+    // Locked: the client learns what to ask the phone, without a token.
+    c.ok(Request::Lock);
+    let mut anon = C::new(&sock);
+    let Response::PasskeySlots(offered) = anon.ok(Request::PasskeySlots) else {
+        panic!()
+    };
+    assert_eq!(offered.len(), 1);
+    assert_eq!(offered[0].credential_id, cred);
+    assert_eq!(offered[0].rp_id, vaultd::daemon::RP_ID);
+    assert_eq!(offered[0].prf_input, prf_input);
+
+    let passkey = |password: &str, credential_id: &[u8], prf_output| UnlockMethod::Passkey {
+        password: s(password),
+        credential_id: credential_id.to_vec(),
+        prf_output,
+    };
+    // Wrong PRF output, wrong password, unknown credential: all refused.
+    assert!(
+        c.err(Request::Unlock {
+            method: passkey(PW, &cred, out(&[4; 32]))
+        })
+        .contains("wrong")
+    );
+    assert!(
+        c.err(Request::Unlock {
+            method: passkey("wrong password", &cred, out(&prf_input))
+        })
+        .contains("wrong")
+    );
+    assert!(
+        c.err(Request::Unlock {
+            method: passkey(PW, b"other", out(&prf_input))
+        })
+        .contains("no slot")
+    );
+    c.ok(Request::Unlock {
+        method: passkey(PW, &cred, out(&prf_input)),
+    });
+    c.ok(Request::ListItems);
+
+    // A new client can pair with the phone too.
+    let Response::Paired { .. } = anon.ok(Request::Pair {
+        client_name: "second".into(),
+        scope: ClientScope::Full,
+        method: Some(passkey(PW, &cred, out(&prf_input))),
+    }) else {
+        panic!()
+    };
+}

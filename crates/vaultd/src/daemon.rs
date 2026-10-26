@@ -15,8 +15,8 @@ use vault_core::{
 };
 use vault_hw::protect::ProtectedKey;
 use vault_ipc::{
-    ClientScope, ClientToken, Envelope, ImportFormat, ItemSummary, QuickUnlockInfo, Request,
-    Response, Secret, SlotInfo, StatusInfo, SyncInfo, UnlockMethod,
+    ClientScope, ClientToken, Envelope, ImportFormat, ItemSummary, PasskeySlot, QuickUnlockInfo,
+    Request, Response, Secret, SlotInfo, StatusInfo, SyncInfo, UnlockMethod,
 };
 use zeroize::Zeroizing;
 
@@ -27,7 +27,7 @@ use crate::sync::Folder;
 use crate::{pgp, ssh};
 
 /// Relying party ID for FIDO2 credentials created by this daemon.
-pub const RP_ID: &str = "vault.local";
+pub const RP_ID: &str = vault_hw::RP_ID;
 
 /// Failed attempts allowed before backoff starts.
 const FREE_ATTEMPTS: u32 = 3;
@@ -621,7 +621,10 @@ impl Daemon {
 
     fn dispatch(&mut self, env: Envelope) -> R<Response> {
         let scope = match &env.request {
-            Request::Status | Request::Init { .. } | Request::Pair { .. } => None,
+            Request::Status
+            | Request::Init { .. }
+            | Request::Pair { .. }
+            | Request::PasskeySlots => None,
             Request::SetSync { .. } if !self.store.exists() => None,
             _ => {
                 let t = env
@@ -639,6 +642,7 @@ impl Daemon {
             && !matches!(
                 env.request,
                 Request::Unlock { .. }
+                    | Request::PasskeySlots
                     | Request::Lock
                     | Request::LockFully
                     | Request::FindForOrigin { .. }
@@ -718,8 +722,44 @@ impl Daemon {
                         .map_err(e)?;
                 Ok(Response::Generated(pw))
             }
+            Request::PasskeySlots => self.passkey_slots(),
             other => self.unlocked(other),
         }
+    }
+
+    /// Slots a phone passkey can open: FIDO2 slots that check the PIN.
+    fn passkey_slots(&mut self) -> R<Response> {
+        let parsed;
+        let metas: Vec<&KeyslotMeta> = match &self.vault {
+            Some(v) => v.slots().collect(),
+            None => {
+                self.join_from_sync();
+                let bytes = self
+                    .store
+                    .read()
+                    .map_err(|_| "no vault; run `vault init`")?;
+                parsed = ParsedVault::parse(&bytes).map_err(e)?;
+                parsed.slots().collect()
+            }
+        };
+        Ok(Response::PasskeySlots(
+            metas
+                .into_iter()
+                .filter_map(|m| match &m.factor {
+                    Factor::PasswordFido2 {
+                        credential_id,
+                        rp_id,
+                        prf_input,
+                        require_uv: true,
+                    } => Some(PasskeySlot {
+                        credential_id: credential_id.clone(),
+                        rp_id: rp_id.clone(),
+                        prf_input: *prf_input,
+                    }),
+                    _ => None,
+                })
+                .collect(),
+        ))
     }
 
     /// Hold a vault just unlocked with `method`, and catch up with the
@@ -984,6 +1024,17 @@ impl Daemon {
                 )?;
                 Cred::Password(password.clone(), Some(hw))
             }
+            (
+                Factor::PasswordFido2 { .. },
+                UnlockMethod::Passkey {
+                    password,
+                    prf_output,
+                    ..
+                },
+            ) => {
+                check_password(password)?;
+                Cred::Password(password.clone(), Some(prf_key(prf_output)?))
+            }
             (Factor::Recovery, UnlockMethod::Recovery { code }) => Cred::Recovery(code.clone()),
             _ => return Err("that method does not fit this slot".into()),
         })
@@ -1129,6 +1180,43 @@ impl Daemon {
                     rp_id: RP_ID.into(),
                     prf_input,
                     require_uv,
+                };
+                let cost = self.cost;
+                let id = self
+                    .vault()?
+                    .add_password_slot(rng, factor, cost, &password, Some(&hw), &label)
+                    .map_err(e)?;
+                self.save()?;
+                self.test_unlock(
+                    &id,
+                    &Unlock::Password {
+                        password: &password,
+                        hw_key: Some(&hw),
+                    },
+                )?;
+                Ok(Response::SlotAdded {
+                    id,
+                    recovery_code: None,
+                })
+            }
+            Request::AddPasskeySlot {
+                password,
+                credential_id,
+                prf_input,
+                prf_output,
+                label,
+            } => {
+                check_password(&password)?;
+                if credential_id.is_empty() {
+                    return Err("the passkey has no credential ID".into());
+                }
+                let hw = prf_key(&prf_output)?;
+                // Phones always verify the user, so the slot checks UV.
+                let factor = Factor::PasswordFido2 {
+                    credential_id,
+                    rp_id: RP_ID.into(),
+                    prf_input,
+                    require_uv: true,
                 };
                 let cost = self.cost;
                 let id = self
@@ -1447,6 +1535,7 @@ impl Daemon {
             Request::Status
             | Request::Init { .. }
             | Request::Pair { .. }
+            | Request::PasskeySlots
             | Request::Unlock { .. }
             | Request::SetSync { .. }
             | Request::Lock
@@ -1525,7 +1614,21 @@ fn fits(f: &Factor, m: &UnlockMethod) -> bool {
             | (Factor::PasswordFido2 { .. }, UnlockMethod::Fido2 { .. })
             | (Factor::PasswordTpm { .. }, UnlockMethod::Tpm { .. })
             | (Factor::Recovery, UnlockMethod::Recovery { .. })
+    ) || matches!(
+        (f, m),
+        (
+            Factor::PasswordFido2 { credential_id: c, require_uv: true, .. },
+            UnlockMethod::Passkey { credential_id, .. },
+        ) if c == credential_id
     )
+}
+
+/// A PRF output from a client as a hardware key.
+fn prf_key(out: &[u8]) -> R<HwKey> {
+    let b: [u8; 32] = out
+        .try_into()
+        .map_err(|_| "a passkey PRF output is 32 bytes")?;
+    Ok(HwKey::new(b))
 }
 
 fn check_password(p: &str) -> R<()> {

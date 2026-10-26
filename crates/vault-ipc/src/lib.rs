@@ -59,6 +59,26 @@ pub enum UnlockMethod {
     /// time limit since the last unlock with another method; never for
     /// pairing, revoking or a vault this daemon has not unlocked.
     Hello,
+    /// A password + phone passkey slot (or any FIDO2 slot that checks the
+    /// PIN). The client ran the passkey itself, with the slot's
+    /// `PasskeySlot::prf_input`, and sends the credential the phone used and
+    /// its 32-byte PRF output.
+    Passkey {
+        password: Secret,
+        credential_id: Vec<u8>,
+        prf_output: SecretBytes,
+    },
+}
+
+/// A slot a phone passkey can open, as `Request::PasskeySlots` lists it.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct PasskeySlot {
+    /// The passkey's credential ID.
+    pub credential_id: Vec<u8>,
+    /// Relying party ID the passkey was made for.
+    pub rp_id: String,
+    /// PRF input to ask the passkey for.
+    pub prf_input: [u8; 32],
 }
 
 /// What a paired client may do.
@@ -259,6 +279,20 @@ pub enum Request {
         signature: Vec<u8>,
         certs: Vec<Vec<u8>>,
     },
+    /// The slots a phone passkey can open (security key slots that check the
+    /// PIN included: the two are the same kind of slot), so the client can
+    /// run the passkey before `Unlock` or `Pair` with `UnlockMethod::Passkey`.
+    /// Only public header data, so no token needed.
+    PasskeySlots,
+    /// Enroll a phone passkey the client just created: its credential ID, the
+    /// random PRF input it was asked for, and the PRF output.
+    AddPasskeySlot {
+        password: Secret,
+        credential_id: Vec<u8>,
+        prf_input: [u8; 32],
+        prf_output: SecretBytes,
+        label: String,
+    },
 }
 
 /// Public slot information.
@@ -390,6 +424,8 @@ pub enum Response {
     Decrypted { plaintext: SecretBytes, key: String },
     /// A good signature, by this key (fingerprint and user ID).
     Verified(String),
+    /// Slots a phone passkey can open.
+    PasskeySlots(Vec<PasskeySlot>),
 }
 
 /// Write one frame: u32 little-endian length, then postcard bytes.
