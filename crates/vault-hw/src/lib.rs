@@ -28,7 +28,7 @@ pub type HwResult<T> = Result<T, String>;
 /// Starts every TPM slot blob made on Windows (`wintpm`). Blobs made on
 /// Linux (`tpm`) start with a small length instead, so the two never collide.
 pub const WIN_TPM_PREFIX: &[u8] = b"VWTPM";
-/// A Windows blob from before 0.3: the secret wrapped with a TPM RSA key,
+/// A Windows blob made by earlier versions: the secret wrapped with a TPM RSA key,
 /// which a quantum computer could unwrap from the vault file alone.
 pub const WIN_TPM_MAGIC: &[u8] = b"VWTPM1";
 /// A Windows blob sealed by the TPM under Windows' storage key (`tpm2`).

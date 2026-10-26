@@ -271,7 +271,7 @@ pub struct SlotInfo {
     /// User label.
     pub label: String,
     /// Set when the slot relies on public-key cryptography that a quantum
-    /// computer could break (a Windows TPM slot made before 0.3); says what
+    /// computer could break (a Windows TPM slot made by earlier versions); says what
     /// to do about it.
     pub warning: Option<String>,
 }
