@@ -178,3 +178,22 @@ runs without AutoFill and keeps its files in its own container.
 with unit tests and lint on Linux, and the iOS app and its AutoFill
 extension for the simulator on macOS. The release APK is uploaded as a
 build artifact.
+
+The same workflow then walks through each app the way a first-time user
+would (create a vault, add a login with a one-time code and a card, open
+Codes, Generator and Settings, lock and unlock) and saves a screenshot of
+every screen:
+
+- Android: `mobile/scripts/android-ui-test.sh` runs
+  `app/src/androidTest/.../TourTest.kt` on phone, tablet and foldable
+  emulators, the foldable both unfolded and folded.
+- iOS: `mobile/scripts/ios-ui-test.sh` runs `UITests/TourTests.swift` on an
+  iPhone and an iPad simulator, the iPad in landscape and portrait.
+
+Each run makes up its own throwaway master password. The screenshots are
+uploaded as build artifacts. Debug builds let a test turn off Android's
+screenshot blocking; release builds never do.
+
+These runs can't check Face ID, Touch ID or fingerprint unlock, AutoFill in
+a real browser, the cloud file pickers, QR scanning with the camera, or the
+half-folded (tabletop) posture. Try those on a real device.
