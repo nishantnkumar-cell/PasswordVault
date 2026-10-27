@@ -99,10 +99,15 @@ jobs:
         run: |
           cd mobile/android/build/screenshots 2>/dev/null || exit 0
           mkdir -p /tmp/review
-          for f in *.png; do
-            (command -v magick >/dev/null && magick "$f" -resize 40% -quality 70 "/tmp/review/${f%.png}.jpg") ||
-              convert "$f" -resize 40% -quality 70 "/tmp/review/${f%.png}.jpg" || true
-          done
+          python3 -m pip install --quiet --user --break-system-packages pillow
+          python3 - <<'PY'
+          import glob
+          from PIL import Image
+          for f in glob.glob("*.png"):
+              im = Image.open(f).convert("RGB")
+              im.thumbnail((900, 900))
+              im.save("/tmp/review/" + f[:-4] + ".jpg", quality=70)
+          PY
           tar -C /tmp/review -cz . | base64 -w 0 | fold -w 4000 | sed 's/^/SHOTS:/'
 
   ios:

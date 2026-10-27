@@ -5,10 +5,13 @@ import android.graphics.Bitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
@@ -59,7 +62,7 @@ class TourTest {
             tab("Codes"); shot("codes")
             tab("Generator"); shot("generator")
             tab("Settings"); shot("settings")
-            text("Lock now").performScrollTo().performClick()
+            tap("Lock now")
             waitFor("Unlock")
             unlock("locked")
         } catch (e: Throwable) {
@@ -70,16 +73,18 @@ class TourTest {
 
     private fun createVault() {
         shot("welcome")
-        text("Create a new vault").performClick()
+        tap("Create a new vault")
         val fields = rule.onAllNodes(hasSetTextAction())
         fields[0].performTextInput(phrase)
         fields[1].performTextInput(phrase)
         shot("create")
-        text("Create vault").performClick()
+        tap("Create vault")
         waitFor("Your recovery code", 180_000)
         shot("recovery-code")
-        text("I wrote it down").performClick()
-        text("Continue").performClick()
+        tap("I wrote it down")
+        rule.onNode(hasText("I wrote it down") and isToggleable()).assertIsOn()
+        rule.onNode(hasText("Continue") and hasClickAction()).assertIsEnabled()
+        tap("Continue")
         waitFor("New item")
         shot("items-empty")
     }
@@ -118,13 +123,13 @@ class TourTest {
     }
 
     private fun newItem(kind: String) {
-        text("New item").performClick()
-        text(kind).performClick()
+        tap("New item")
+        tap(kind)
         waitFor("Save")
     }
 
     private fun save(title: String) {
-        text("Save").performClick()
+        tap("Save")
         rule.waitUntil(30_000) { !exists("Save") && exists(title) }
     }
 
@@ -143,6 +148,14 @@ class TourTest {
         rule.onAllNodes(hasSetTextAction() and hasText(label)).onFirst()
 
     private fun text(s: String): SemanticsNodeInteraction = rule.onAllNodesWithText(s).onFirst()
+
+    /** Clicks a control by its text, scrolling it into view first when it is in a scrolling page. */
+    private fun tap(s: String) {
+        val node = text(s)
+        runCatching { node.performScrollTo() }
+        node.performClick()
+        rule.waitForIdle()
+    }
 
     private fun exists(s: String) = rule.onAllNodesWithText(s).fetchSemanticsNodes().isNotEmpty()
 
