@@ -36,20 +36,30 @@ for spec in "phone:iPhone 17 Pro:iPhone" "tablet:iPad Pro 13:iPad Pro:iPad"; do
     IFS=: read -r -a prefs <<< "${spec#*:}"
     IFS=$'\t' read -r udid model < <(pick "${prefs[@]}")
     echo "== $name: $model ($udid)"
+    # Boot first: a cold simulator can take longer than XCTest waits for the app to launch.
+    xcrun simctl boot "$udid" 2>/dev/null || true
+    xcrun simctl bootstatus "$udid" -b >/dev/null
     rm -rf "build/$name.xcresult"
+    rc=0
     TEST_RUNNER_DEVICE=$name TEST_RUNNER_PHRASE=$phrase xcodebuild test -project SecretVault.xcodeproj -scheme SecretVault \
         -destination "id=$udid" -derivedDataPath build -resultBundlePath "build/$name.xcresult" \
-        CODE_SIGNING_ALLOWED=NO VAULT_SKIP_RUST=1 | tail -40 || status=1
+        CODE_SIGNING_ALLOWED=NO VAULT_SKIP_RUST=1 > "build/$name.log" 2>&1 || rc=$?
+    # The test steps and any failure, without the build noise.
+    grep -E "error:|Test Case|t = .*(Tap|Swipe|Type|Find|Wait|Assert)|TEST (FAILED|SUCCEEDED)" "build/$name.log" | tail -80 || true
+    [ $rc -eq 0 ] || status=1
     tmp=build/attachments-$name
     rm -rf "$tmp"
-    xcrun xcresulttool export attachments --path "build/$name.xcresult" --output-path "$tmp" || continue
+    xcrun xcresulttool export attachments --path "build/$name.xcresult" --output-path "$tmp" >/dev/null || continue
     python3 - "$tmp" "$out" <<'PY'
-import json, os, shutil, sys
+import json, os, re, shutil, sys
 src, dst = sys.argv[1:]
 for test in json.load(open(os.path.join(src, "manifest.json"))):
     for a in test.get("attachments", []):
         name = a.get("suggestedHumanReadableName") or a["exportedFileName"]
         base = name.rsplit(".", 1)[0].split("_")[0]
+        # Only the tour's own screenshots, not XCTest's recordings and debug files.
+        if not re.match(r"^[a-z]+-\d\d-[a-z-]+$", base):
+            continue
         shutil.copy(os.path.join(src, a["exportedFileName"]), os.path.join(dst, base + ".png"))
 PY
 done

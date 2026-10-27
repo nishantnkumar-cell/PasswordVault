@@ -146,13 +146,16 @@ final class TourTests: XCTestCase {
         field.typeText(text)
     }
 
+    /// Taps an element, scrolling down to it first. Lists and forms only
+    /// create rows near the screen, so a row further down doesn't exist yet.
     private func tapScrolling(_ element: XCUIElement) {
-        XCTAssertTrue(element.waitForExistence(timeout: 10), "\(element) is missing")
+        _ = element.waitForExistence(timeout: 5)
         var tries = 0
-        while !element.isHittable && tries < 6 {
+        while !(element.exists && element.isHittable) && tries < 8 {
             app.swipeUp()
             tries += 1
         }
+        XCTAssertTrue(element.exists, "\(element) is missing")
         element.tap()
     }
 
