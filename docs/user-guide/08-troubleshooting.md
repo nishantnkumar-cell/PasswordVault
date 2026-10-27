@@ -115,6 +115,30 @@ On Windows, a TPM slot made under Linux on the same computer does not open
 (and the other way round); the error says which system made it. Add a TPM
 slot from each system.
 
+**Unlocking with your phone doesn't start, or times out**
+- Bluetooth must be on on both the phone and the computer, and both need an
+  internet connection: they meet through the phone maker's relay, and
+  Bluetooth only proves they are near each other.
+- Linux: `bluetoothctl show` should list an adapter with `Powered: yes`. If
+  it lists nothing, start the BlueZ service
+  (`sudo systemctl enable --now bluetooth`).
+- Windows: phone unlock needs Windows 11 version 23H2 or later. The QR code
+  is in Windows' own window, which may open behind other windows; check the
+  taskbar.
+- Confirm on the phone within two minutes, then try again.
+- If the app says the vault has no phone method, add one first
+  ([Unlock with your phone](02-unlocking.md#unlock-with-your-phone)).
+- If you deleted the **vault.local** passkey on the phone, that method can
+  no longer open the vault. Unlock with your password and another method,
+  remove the phone method and add the phone again.
+
+**A Windows TPM slot says "Not post-quantum"**
+The slot was added before Windows TPM slots were sealed inside the TPM. It
+still works, but a copy of the vault file is then only protected by your
+password against a future quantum computer. Add the TPM again and remove or
+revoke the old slot, as in
+[Post-quantum protection](02-unlocking.md#post-quantum-protection).
+
 **"no usable TPM 2.0" on Windows**
 Press Win+R, run `tpm.msc` and check that the TPM is ready and its
 specification version is 2.0. If no TPM is found, turn it on in the

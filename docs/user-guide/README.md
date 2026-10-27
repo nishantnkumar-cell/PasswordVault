@@ -40,8 +40,9 @@ random program on your computer cannot just ask for your passwords.
 3. [Items, one-time codes, the generator and import](03-items.md): logins,
    secure notes, cards and identities.
 4. [Browser autofill](04-browser-autofill.md)
-5. [Desktop app](05-desktop-app.md), with a tour of the window and the
-   Ctrl K command palette in
+5. [Desktop app](05-desktop-app.md): the setup wizard, items, making,
+   importing and exporting keys, encrypting and signing, unlock methods and
+   sync, with a tour of the window and the Ctrl K command palette in
    [The desktop window and command palette](desktop-window-and-palette.md).
 6. [SSH keys and git signing](06-ssh-and-git.md)
 7. [OpenPGP keys](07-openpgp.md): signing, encrypting and decrypting files and mail.
