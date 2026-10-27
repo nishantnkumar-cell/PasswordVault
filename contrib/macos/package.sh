@@ -51,15 +51,18 @@ done
 sed "s|NUMBER|$num|; s|VERSION|$ver|" contrib/macos/Info.plist >"$app/Info.plist"
 install -m644 contrib/icons/secret-vault.icns "$app/Resources/"
 install -m755 contrib/macos/uninstall.sh "$app/Resources/uninstall.sh"
+# Every program, then the bundle: lipo output carries no signature, and
+# --strict checks the nested programs too.
 if [ -n "${DEVELOPER_ID_APP:-}" ]; then
     # Hardened runtime and a secure timestamp, which notarization requires.
-    for b in "${bins[@]}"; do
-        codesign --force --options runtime --timestamp --sign "$DEVELOPER_ID_APP" "$app/MacOS/$b"
-    done
-    codesign --force --options runtime --timestamp --sign "$DEVELOPER_ID_APP" "$bundle"
+    sign=(--options runtime --timestamp --sign "$DEVELOPER_ID_APP")
 else
-    codesign --force --sign - "$bundle"
+    sign=(--sign -)
 fi
+for b in "${bins[@]}"; do
+    codesign --force "${sign[@]}" "$app/MacOS/$b"
+done
+codesign --force "${sign[@]}" "$bundle"
 codesign --verify --strict "$bundle"
 
 # The .tar.gz with install.sh.
