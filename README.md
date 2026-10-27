@@ -2,7 +2,7 @@
 
 A local-first password vault in Rust. Linux first, then Windows and macOS.
 
-Status: v1 feature-complete on Linux, not yet audited. Do not trust it with real secrets yet.
+Status: v1 feature-complete on Linux and Windows, not yet audited. Do not trust it with real secrets yet.
 
 | Crate | What |
 | --- | --- |
@@ -10,7 +10,9 @@ Status: v1 feature-complete on Linux, not yet audited. Do not trust it with real
 | `vault-import` | Bitwarden JSON (all four item types) and browser CSV import. |
 | `vault-ipc` | Wire protocol between the daemon and clients. |
 | `vaultd` | The daemon: storage, unlock, FIDO2 and TPM factors, folder sync, socket server. |
+| `vault-hw` | Hardware unlock factors: FIDO2 security keys and phone passkeys, the TPM, Windows Hello. |
 | `vault-cli` | The `vault` command. |
+| `vault-gui` | The desktop app: setup wizard, items, key tools, unlock methods, sync, and the pairing approval window. |
 | `vault-gpg` | A gpg-compatible front end, so git, pass and mail programs can use OpenPGP keys held in the vault. |
 | `vault-native-host` | Native messaging host for the browser extension. |
 | `extension/` | Browser autofill extension (Manifest V3): logins, cards and addresses. |
@@ -23,6 +25,8 @@ For the technical reference, start with [`docs/vaultd.md`](docs/vaultd.md), then
 - [`docs/threat-model.md`](docs/threat-model.md): v1 threat model.
 - [`docs/format.md`](docs/format.md): vault file format, version 1.
 - [`docs/items.md`](docs/items.md): item types, TOTP and autofill origin policy.
+- [`docs/desktop.md`](docs/desktop.md): the desktop app and its approval window.
+- [`docs/windows.md`](docs/windows.md): what differs on Windows (installer, background start, TPM, Windows Hello).
 - [`docs/sync.md`](docs/sync.md): syncing devices through OneDrive, Google Drive or Dropbox.
 - [`docs/ssh.md`](docs/ssh.md): SSH keys in the vault, the ssh-agent and git commit signing.
 - [`docs/pgp.md`](docs/pgp.md): OpenPGP keys in the vault, classic and post-quantum, and the gpg-compatible front end.
