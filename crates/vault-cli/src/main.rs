@@ -770,6 +770,16 @@ fn main() {
         }
         "unlock" => {
             let method = if rest.iter().any(|a| a == "--hello" || a == "--touch-id") {
+                // Ask only when vaultd will accept the check, so a refused
+                // quick unlock does not first ask the user to confirm.
+                let Response::Status(s) = Client::connect().call(Request::Status) else {
+                    die("unexpected response")
+                };
+                if !s.unlocked && s.quick_unlock.until.is_none() {
+                    die(
+                        "quick unlock is not available now: unlock with your password (or another method) first",
+                    );
+                }
                 eprintln!("{CONFIRM}");
                 UnlockMethod::Hello
             } else {

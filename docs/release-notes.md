@@ -50,6 +50,15 @@ New on the Mac:
 - **Security keys** work as on Linux: the app asks for the key's PIN, and no
   extra permission is needed. A key slot made on a Mac also unlocks on
   Linux and Windows.
+- **Security keys with a PIN:** if a key has a PIN set and needs it to
+  register (many older or Feitian keys do), `vault add-slot fido2` now says
+  so at once, instead of waiting for a touch that times out. Run it again
+  and type the PIN. This applies on Linux and macOS; on Windows, Windows'
+  own security key window asks for the PIN as before.
+- **Quick unlock that is not available** (after `vault lock --full`, a
+  restart, or once its hours run out) is refused straight away by
+  `vault unlock --touch-id` / `--hello`, without first asking you to
+  confirm with Touch ID or Windows Hello.
 - The desktop app shows **Cmd K** for the command palette, and copied
   secrets are marked so clipboard managers skip them.
 

@@ -132,6 +132,24 @@ needed. A key slot added on a Mac unlocks on Linux and Windows too, and the
 other way round. Chapter 2 has the details:
 [Add a security key](02-unlocking.md#add-a-security-key-fido2).
 
+Step by step in Terminal, for a key that has a PIN:
+
+1. Plug the key in. On a MacBook, if macOS asks whether to allow the
+   accessory to connect, click **Allow**.
+2. Run `vault add-slot fido2 --label "my key"`.
+3. Type your master password, then the key's PIN. (If the key has no PIN,
+   just press Return; if it has one and you press Return, Secret Vault
+   tells you it needs the PIN.)
+4. When it says **Touch your security key**, touch the key while its light
+   blinks, twice. It prints "Added slot ... and test-unlocked it."
+5. To unlock with it later: `vault unlock --fido2`, then your master
+   password, the PIN and one touch. A key slot always needs the password
+   too.
+
+Some keys (Feitian keys with "KB" in the name, for example) also act as a
+keyboard: a touch while the light is not blinking types a code into the
+window in front. That is harmless; wait for the blink and touch again.
+
 To check a key before you add it:
 
 ```sh
