@@ -1,0 +1,104 @@
+# XcodeGen spec: `xcodegen generate` writes SecretVault.xcodeproj (not in git).
+# Build the Rust side first with mobile/scripts/build-ios.sh (the app's
+# pre-build script does it too). docs/mobile.md has the steps.
+name: SecretVault
+options:
+  bundleIdPrefix: dev.passwordvault
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "$(VAULT_VERSION)"
+    CURRENT_PROJECT_VERSION: "$(VAULT_BUILD)"
+    DEVELOPMENT_TEAM: ""
+    TARGETED_DEVICE_FAMILY: "1,2"
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+configFiles:
+  Debug: Version.xcconfig
+  Release: Version.xcconfig
+aggregateTargets:
+  # The Rust library and its Swift bindings, built before both targets.
+  VaultMobile:
+    buildScripts:
+      - name: Build vault-mobile (Rust)
+        basedOnDependencyAnalysis: false
+        script: |
+          if [ -z "$VAULT_SKIP_RUST" ]; then
+            export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:$PATH"
+            "$SRCROOT/../scripts/build-ios.sh" release
+          fi
+targets:
+  SecretVault:
+    type: application
+    platform: iOS
+    scheme: {}
+    sources:
+      - SecretVault
+      - Shared
+      - path: Generated/Sources
+        optional: true
+    dependencies:
+      - framework: Generated/VaultMobileFFI.xcframework
+        embed: false
+      - target: SecretVaultAutoFill
+      - target: VaultMobile
+    info:
+      path: SecretVault/Info.plist
+      properties:
+        CFBundleDisplayName: Secret Vault
+        AppIdentifierPrefix: $(AppIdentifierPrefix)
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight, UIInterfaceOrientationPortraitUpsideDown]
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: true
+        NSFaceIDUsageDescription: Unlock your vault with Face ID instead of typing the master password.
+        NSCameraUsageDescription: Scan a website's QR code to set up its one-time codes.
+        ITSAppUsesNonExemptEncryption: false
+    entitlements:
+      path: SecretVault/SecretVault.entitlements
+      properties:
+        com.apple.security.application-groups: [group.dev.passwordvault.app]
+        keychain-access-groups: ["$(AppIdentifierPrefix)dev.passwordvault.shared"]
+        com.apple.developer.authentication-services.autofill-credential-provider: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.passwordvault.app
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+  SecretVaultAutoFill:
+    type: app-extension
+    platform: iOS
+    sources:
+      - AutoFill
+      - Shared
+      - path: Generated/Sources
+        optional: true
+    dependencies:
+      - framework: Generated/VaultMobileFFI.xcframework
+        embed: false
+      - sdk: AuthenticationServices.framework
+      - target: VaultMobile
+    info:
+      path: AutoFill/Info.plist
+      properties:
+        CFBundleDisplayName: Secret Vault
+        AppIdentifierPrefix: $(AppIdentifierPrefix)
+        NSFaceIDUsageDescription: Unlock your vault with Face ID to fill a password.
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.authentication-services-credential-provider-ui
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).CredentialProviderViewController
+          NSExtensionAttributes:
+            ASCredentialProviderExtensionCapabilities:
+              ProvidesPasswords: true
+              ProvidesOneTimeCodes: true
+            ASCredentialProviderExtensionShowsConfigurationUI: false
+    entitlements:
+      path: AutoFill/AutoFill.entitlements
+      properties:
+        com.apple.security.application-groups: [group.dev.passwordvault.app]
+        keychain-access-groups: ["$(AppIdentifierPrefix)dev.passwordvault.shared"]
+        com.apple.developer.authentication-services.autofill-credential-provider: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.passwordvault.app.autofill

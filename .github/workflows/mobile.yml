@@ -46,3 +46,27 @@ jobs:
           path: |
             mobile/android/app/build/outputs/apk/release/*.apk
             mobile/android/app/build/reports/lint-results-debug.html
+
+  ios:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-ios
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Build the Rust library and Swift bindings
+        run: mobile/scripts/build-ios.sh debug
+      - name: Build the app and AutoFill extension for the simulator
+        working-directory: mobile/ios
+        run: |
+          xcodegen generate
+          xcodebuild -project SecretVault.xcodeproj -scheme SecretVault -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO VAULT_SKIP_RUST=1 build

@@ -16,7 +16,7 @@ if [ "$profile" = debug ]; then dir=debug; flags=(); fi
 
 targets=(aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios)
 rustup target add "${targets[@]}" >/dev/null 2>&1 || true
-export IPHONEOS_DEPLOYMENT_TARGET=18.0
+export IPHONEOS_DEPLOYMENT_TARGET=26.0
 for t in "${targets[@]}"; do
     cargo build -p vault-mobile --locked --target "$t" "${flags[@]}"
 done
@@ -44,3 +44,10 @@ xcodebuild -create-xcframework \
     -library "$gen/libvault_mobile_sim.a" -headers "$gen/include" \
     -output "$gen/VaultMobileFFI.xcframework"
 rm -rf "$gen/bindings" "$gen/libvault_mobile_sim.a"
+
+# The app's version is the workspace version (version.sh); the build number
+# counts commits so each TestFlight upload is higher than the last.
+{
+    echo "VAULT_VERSION = $(contrib/release/version.sh --number)"
+    echo "VAULT_BUILD = $(git rev-list --count HEAD 2>/dev/null || echo 1)"
+} > "$gen/Version.xcconfig"
