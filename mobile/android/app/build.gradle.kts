@@ -1,8 +1,8 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
+    // AGP 9 compiles Kotlin itself; the root project pins the Kotlin version.
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
 }
 
@@ -18,7 +18,7 @@ val vaultVersionCode = vaultVersion.split('.').map { it.toInt() }
 
 android {
     namespace = "dev.passwordvault.app"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "dev.passwordvault.app"

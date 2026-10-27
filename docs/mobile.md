@@ -145,7 +145,7 @@ the newest Google Maven versions in its "Latest library versions" step.
 | --- | --- |
 | Rust | stable, with the Android or iOS targets |
 | UniFFI | 0.32 |
-| Android | JDK 21, Android SDK 36, NDK (latest), `cargo-ndk`; minimum Android 9 (API 28) |
+| Android | JDK 21, Gradle 9.8, Android Gradle plugin 9.4 (built-in Kotlin), compile SDK 37, target SDK 36, NDK (latest), `cargo-ndk`; minimum Android 9 (API 28) |
 | iOS | Xcode 26, XcodeGen; minimum iOS and iPadOS 26 |
 
 ### Android
