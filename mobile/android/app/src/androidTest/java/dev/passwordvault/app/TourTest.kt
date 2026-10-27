@@ -136,8 +136,12 @@ class TourTest {
         rule.waitUntil(30_000) { !exists("Save") && exists(title) }
     }
 
-    /** On a phone the item opens full screen; on wide screens Back does nothing harmful. */
+    /**
+     * On a phone the item opens full screen over the list, so go back to it.
+     * Side by side the list is still showing, and Back would leave the app.
+     */
     private fun back() {
+        if (exists("New item")) return
         scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
         rule.waitForIdle()
     }

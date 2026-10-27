@@ -156,19 +156,17 @@ private fun ItemList(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp),
                 ) {
-                    items(Category.entries) { c ->
-                        val n = items.count(c.matches)
-                        if (c == Category.All || n > 0) {
-                            FilterChip(
-                                selected = c == category,
-                                onClick = { category = c },
-                                label = { Text(c.label) },
-                                shape = MaterialTheme.shapes.small,
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                ),
-                            )
-                        }
+                    // Only kinds the vault has; an empty slot would still take up spacing.
+                    items(Category.entries.filter { it == Category.All || items.any(it.matches) }) { c ->
+                        FilterChip(
+                            selected = c == category,
+                            onClick = { category = c },
+                            label = { Text(c.label) },
+                            shape = MaterialTheme.shapes.small,
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            ),
+                        )
                     }
                 }
             }
