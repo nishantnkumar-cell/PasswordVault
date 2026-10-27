@@ -3,6 +3,7 @@ package dev.passwordvault.app
 import android.content.Intent
 import android.graphics.Bitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsEnabled
@@ -11,6 +12,7 @@ import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -19,6 +21,7 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.printToString
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -157,9 +160,19 @@ class TourTest {
         rule.waitForIdle()
     }
 
-    private fun exists(s: String) = rule.onAllNodesWithText(s).fetchSemanticsNodes().isNotEmpty()
+    private fun exists(s: String) =
+        rule.onAllNodesWithText(s).fetchSemanticsNodes().isNotEmpty() ||
+            rule.onAllNodesWithText(s, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
 
-    private fun waitFor(s: String, millis: Long = 30_000) = rule.waitUntil(millis) { exists(s) }
+    /** Waits for [s] to show; on a timeout the failure lists what is on screen instead. */
+    private fun waitFor(s: String, millis: Long = 30_000) {
+        try {
+            rule.waitUntil(millis) { exists(s) }
+        } catch (e: ComposeTimeoutException) {
+            val screen = runCatching { rule.onAllNodes(isRoot()).printToString(maxDepth = 40) }.getOrElse { "(no tree: $it)" }
+            throw AssertionError("\"$s\" did not appear within $millis ms. On screen:\n$screen", e)
+        }
+    }
 
     private fun shot(name: String) {
         rule.waitForIdle()
