@@ -15,6 +15,6 @@ mkdir -p "$out"
 for b in vaultd vault vault-gui vault-prompt vault-native-host vault-gpg; do
     lipo -create -output "$out/$b" \
         "target/aarch64-apple-darwin/release/$b" "target/x86_64-apple-darwin/release/$b"
-    lipo -verify_arch arm64 x86_64 "$out/$b"
+    lipo "$out/$b" -verify_arch arm64 x86_64
 done
 lipo -info "$out"/*

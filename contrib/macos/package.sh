@@ -87,8 +87,8 @@ chmod 755 "$scripts/preinstall"
 # Install where the payload says even if another copy of the app is
 # somewhere else (by default Installer would "upgrade" that copy in place).
 pkgbuild --analyze --root "$pkgroot" "$work/component.plist" >/dev/null
-plutil -replace BundleIsRelocatable -bool NO "$work/component.plist"
-plutil -replace BundleIsVersionChecked -bool NO "$work/component.plist"
+plutil -replace 0.BundleIsRelocatable -bool NO "$work/component.plist"
+plutil -replace 0.BundleIsVersionChecked -bool NO "$work/component.plist"
 pkgbuild --root "$pkgroot" --component-plist "$work/component.plist" --scripts "$scripts" \
     --identifier dev.passwordvault.pkg --version "$num" --install-location / \
     "$work/SecretVault.pkg"

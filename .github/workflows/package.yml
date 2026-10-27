@@ -109,13 +109,13 @@ jobs:
         run: |
           pkg=target/packages/SecretVault-$VAULT_VERSION-macos.pkg
           pkgutil --payload-files "$pkg" | tee payload.txt
-          grep -qx "./Applications/Secret Vault.app/Contents/MacOS/vaultd" payload.txt
-          grep -qx "./Applications/Secret Vault.app/Contents/Resources/uninstall.sh" payload.txt
-          grep -qx "./Library/LaunchAgents/dev.passwordvault.vaultd.plist" payload.txt
+          grep -q "Applications/Secret Vault.app/Contents/MacOS/vaultd$" payload.txt
+          grep -q "Applications/Secret Vault.app/Contents/Resources/uninstall.sh$" payload.txt
+          grep -q "Library/LaunchAgents/dev.passwordvault.vaultd.plist$" payload.txt
           sudo installer -verbose -pkg "$pkg" -target /
           app="/Applications/Secret Vault.app"
           codesign --verify --strict --verbose "$app"
-          lipo -verify_arch arm64 x86_64 "$app/Contents/MacOS/vaultd"
+          lipo "$app/Contents/MacOS/vaultd" -verify_arch arm64 x86_64
           test "$(/usr/local/bin/vault --version)" = "vault $VAULT_VERSION"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Contents/Info.plist")" = "$VAULT_VERSION"
           plutil -lint /Library/LaunchAgents/dev.passwordvault.vaultd.plist
