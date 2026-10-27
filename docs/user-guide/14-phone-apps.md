@@ -1,4 +1,4 @@
-# 13. Phone and tablet apps
+# 14. Phone and tablet apps
 
 Secret Vault has apps for iPhone and iPad and for Android phones and
 tablets, including foldables such as the Galaxy Z Fold and Flip and the

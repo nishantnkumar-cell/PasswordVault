@@ -55,7 +55,7 @@ random program on your computer cannot just ask for your passwords.
 12. [Keep apps' passwords in the vault](12-secret-service.md): Linux apps
     that save passwords through the Secret Service (GNOME Keyring's or
     KWallet's job) keep them in the vault instead.
-13. [Phone and tablet apps](13-phone-apps.md): Secret Vault on iPhone, iPad
+14. [Phone and tablet apps](14-phone-apps.md): Secret Vault on iPhone, iPad
     and Android, with Face ID or fingerprint unlock, AutoFill and sync with
     your computer.
 

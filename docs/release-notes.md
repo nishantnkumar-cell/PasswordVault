@@ -38,7 +38,7 @@ to work yet.
   foldables and wide split-screen windows it shows the list and the item
   side by side, with three columns on iPad like the desktop app. On a
   half-folded Android foldable the Codes tab shows the code on the top half.
-- How to start: [Phone and tablet apps](user-guide/13-phone-apps.md).
+- How to start: [Phone and tablet apps](user-guide/14-phone-apps.md).
   Technical details: [mobile.md](mobile.md).
 
 | | iPhone and iPad | Android |

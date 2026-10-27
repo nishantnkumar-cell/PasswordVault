@@ -3,7 +3,7 @@
 Secret Vault for iPhone, iPad and Android phones and tablets. This page is
 the technical reference: how the apps are built, how they keep the vault
 safe, and how to build them. The user-facing walkthrough is
-[Phone and tablet apps](user-guide/13-phone-apps.md).
+[Phone and tablet apps](user-guide/14-phone-apps.md).
 
 ## Architecture
 
