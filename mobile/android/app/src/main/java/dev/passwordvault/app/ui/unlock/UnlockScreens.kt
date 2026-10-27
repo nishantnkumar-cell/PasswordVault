@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -51,6 +52,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -260,8 +262,12 @@ fun RecoveryCodeScreen(vault: VaultRepository, code: String, onDone: () -> Unit)
         TextButton(onClick = {
             SecureClipboard.copy(context, "Recovery code", code, sensitive = true, clearAfterSeconds = 60)
         }) { Text("Copy (cleared in 60 s)") }
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Checkbox(checked = saved, onCheckedChange = { saved = it })
+        // The whole row toggles, not just the small box.
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().toggleable(value = saved, role = Role.Checkbox, onValueChange = { saved = it }),
+        ) {
+            Checkbox(checked = saved, onCheckedChange = null)
             Text("I wrote it down", style = MaterialTheme.typography.bodyLarge)
         }
         Spacer(Modifier.height(16.dp))

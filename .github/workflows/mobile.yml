@@ -93,6 +93,17 @@ jobs:
         with:
           name: android-screenshots-${{ matrix.name }}
           path: mobile/android/build/screenshots
+      # Small JPEG copies in the log, for reviewing without downloading artifacts.
+      - name: Screenshots for review
+        if: always()
+        run: |
+          cd mobile/android/build/screenshots 2>/dev/null || exit 0
+          mkdir -p /tmp/review
+          for f in *.png; do
+            (command -v magick >/dev/null && magick "$f" -resize 40% -quality 70 "/tmp/review/${f%.png}.jpg") ||
+              convert "$f" -resize 40% -quality 70 "/tmp/review/${f%.png}.jpg" || true
+          done
+          tar -C /tmp/review -cz . | base64 -w 0 | fold -w 4000 | sed 's/^/SHOTS:/'
 
   ios:
     runs-on: macos-26
@@ -124,3 +135,10 @@ jobs:
         with:
           name: ios-screenshots
           path: mobile/ios/build/screenshots
+      - name: Screenshots for review
+        if: always()
+        run: |
+          cd mobile/ios/build/screenshots 2>/dev/null || exit 0
+          mkdir -p /tmp/review
+          for f in *.png; do sips -Z 900 -s format jpeg -s formatOptions 70 "$f" --out "/tmp/review/${f%.png}.jpg" >/dev/null || true; done
+          tar -C /tmp/review -cz . | base64 | tr -d '\n' | fold -w 4000 | sed 's/^/SHOTS:/'
