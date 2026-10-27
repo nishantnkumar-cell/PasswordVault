@@ -129,7 +129,6 @@ final class TourTests: XCTestCase {
         let sidebar: String
         switch name {
         case "Items": sidebar = "All Items"
-        case "Codes": sidebar = "One-Time Codes"
         default: sidebar = name
         }
         let row = app.cells.containing(.staticText, identifier: sidebar).firstMatch

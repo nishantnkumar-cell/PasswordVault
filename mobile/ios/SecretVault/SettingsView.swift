@@ -41,8 +41,12 @@ struct SettingsView: View {
                         Image(systemName: slot.usableHere ? "checkmark.circle.fill" : "laptopcomputer")
                             .foregroundStyle(slot.usableHere ? Palette.ok : Palette.muted)
                         VStack(alignment: .leading) {
-                            Text(slot.label)
-                            Text(slot.usableHere ? slot.factor : "\(slot.factor), on another device").font(.caption).foregroundStyle(.secondary)
+                            // A slot without its own name is labelled with its kind; don't say it twice.
+                            let kind = slot.factor.prefix(1).uppercased() + slot.factor.dropFirst()
+                            let named = !slot.label.isEmpty && slot.label.lowercased() != slot.factor.lowercased()
+                            Text(named ? slot.label : kind)
+                            Text((named ? "\(kind) · " : "") + (slot.usableHere ? "Works on this device" : "Works on the computer that added it"))
+                                .font(.caption).foregroundStyle(.secondary)
                         }
                     }
                 }

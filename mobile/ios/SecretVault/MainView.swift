@@ -105,7 +105,8 @@ private struct SplitLayout: View {
                     }
                 }
                 Section("Tools") {
-                    Label("One-Time Codes", systemImage: "clock").tag(SidebarEntry.codes)
+                    // "Codes", as on the iPhone tab bar; "One-Time Codes" above is the item filter.
+                    Label("Codes", systemImage: "clock").tag(SidebarEntry.codes)
                     Label("Generator", systemImage: "dice").tag(SidebarEntry.generator)
                     Label("Settings", systemImage: "gearshape").tag(SidebarEntry.settings)
                 }
@@ -113,16 +114,20 @@ private struct SplitLayout: View {
             .navigationTitle("Secret Vault")
             .safeAreaInset(edge: .bottom) { StatusPill().padding() }
         } content: {
-            switch entry {
-            case .category(let c)?:
-                ItemListView(category: c, query: query, selection: $selected)
-                    .navigationTitle(c.rawValue)
-                    .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search")
-            case .codes?: CodesView()
-            case .generator?: GeneratorView()
-            case .settings?: SettingsView()
-            case nil: Text("Pick a category").foregroundStyle(.secondary)
+            Group {
+                switch entry {
+                case .category(let c)?:
+                    ItemListView(category: c, query: query, selection: $selected)
+                        .navigationTitle(c.rawValue)
+                        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search")
+                case .codes?: CodesView()
+                case .generator?: GeneratorView()
+                case .settings?: SettingsView()
+                case nil: Text("Pick a category").foregroundStyle(.secondary)
+                }
             }
+            // Wide enough for titles and usernames in portrait too.
+            .navigationSplitViewColumnWidth(min: 300, ideal: 340, max: 420)
         } detail: {
             NavigationStack {
                 if let id = selected, case .category = entry {
@@ -131,6 +136,11 @@ private struct SplitLayout: View {
                     ContentUnavailableView("No Item Selected", systemImage: "key.viewfinder", description: Text("Pick an item to see its details."))
                 }
             }
+        }
+        .onChange(of: entry) { _, now in
+            // Don't keep showing an item the new list doesn't contain.
+            guard case .category(let c)? = now, let id = selected,
+                  vault.items.contains(where: { $0.id == id && c.matches($0) }) else { selected = nil; return }
         }
     }
 }
