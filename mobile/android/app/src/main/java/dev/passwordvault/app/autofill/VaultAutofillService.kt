@@ -91,7 +91,7 @@ class VaultAutofillService : AutofillService() {
                     val words = listOfNotNull(n.idEntry, n.hint, n.htmlInfo?.attributes?.firstOrNull { it.first == "name" }?.second)
                         .joinToString(" ").lowercase()
                     val variation = n.inputType and InputType.TYPE_MASK_VARIATION
-                    val isPassword = hints.any { View.AUTOFILL_HINT_PASSWORD in it } ||
+                    val secretField = hints.any { View.AUTOFILL_HINT_PASSWORD in it } ||
                         variation == InputType.TYPE_TEXT_VARIATION_PASSWORD ||
                         variation == InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD ||
                         n.htmlInfo?.attributes?.any { it.first == "type" && it.second == View.AUTOFILL_HINT_PASSWORD } == true
@@ -99,7 +99,7 @@ class VaultAutofillService : AutofillService() {
                         variation == InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS ||
                         variation == InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS ||
                         listOf("user", "email", "login", "account").any { it in words }
-                    if (isPassword && pass == null) pass = id
+                    if (secretField && pass == null) pass = id
                     else if (isUser && user == null && pass == null) user = id
                 }
                 for (i in 0 until n.childCount) visit(n.getChildAt(i))
