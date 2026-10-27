@@ -11,6 +11,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -252,7 +253,7 @@ private fun Group(count: Int, row: @Composable (Int, Shape) -> Unit) {
 }
 
 @Composable
-private fun RowShell(shape: Shape, onClick: (() -> Unit)?, content: @Composable () -> Unit) {
+private fun RowShell(shape: Shape, onClick: (() -> Unit)?, content: @Composable RowScope.() -> Unit) {
     Surface(
         shape = shape,
         color = MaterialTheme.colorScheme.surfaceContainerLowest,
