@@ -18,7 +18,7 @@ targets=(aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios)
 rustup target add "${targets[@]}" >/dev/null 2>&1 || true
 export IPHONEOS_DEPLOYMENT_TARGET=26.0
 for t in "${targets[@]}"; do
-    cargo build -p vault-mobile --locked --target "$t" "${flags[@]}"
+    cargo build -p vault-mobile --locked --target "$t" ${flags[@]+"${flags[@]}"}
 done
 
 gen=mobile/ios/Generated
