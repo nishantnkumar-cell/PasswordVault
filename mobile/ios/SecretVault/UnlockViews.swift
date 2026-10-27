@@ -99,7 +99,8 @@ struct RecoveryCodeView: View {
             Text("Your Recovery Code").font(.title.bold()).padding(.top, 24)
             Text("If you forget your master password, this code is the only way back in. Write it on paper and keep it somewhere safe. It is shown only now.")
                 .multilineTextAlignment(.center).foregroundStyle(Palette.muted).padding(.top, 8)
-            Text(code)
+            // Two groups to a line, so no group is split across lines.
+            Text(code.split(separator: "-").chunked(2).joined(separator: "\n"))
                 .font(.system(.title3, design: .monospaced).weight(.semibold))
                 .multilineTextAlignment(.center)
                 .textSelection(.enabled)
@@ -209,5 +210,12 @@ struct UnlockView: View {
             } catch { self.error = describe(error) }
             busy = false
         }
+    }
+}
+
+private extension Array where Element == Substring {
+    /// Groups joined with dashes, `size` to a line.
+    func chunked(_ size: Int) -> [String] {
+        stride(from: 0, to: count, by: size).map { self[$0..<Swift.min($0 + size, count)].joined(separator: "-") }
     }
 }

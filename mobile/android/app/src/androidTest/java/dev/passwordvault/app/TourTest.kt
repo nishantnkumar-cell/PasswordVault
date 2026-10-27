@@ -150,7 +150,14 @@ class TourTest {
     private fun field(label: String): SemanticsNodeInteraction =
         rule.onAllNodes(hasSetTextAction() and hasText(label)).onFirst()
 
-    private fun text(s: String): SemanticsNodeInteraction = rule.onAllNodesWithText(s).onFirst()
+    /**
+     * The first node showing [s]. Some Material controls (the extended FAB)
+     * don't merge their label into the clickable node, so fall back to the
+     * label itself; a touch on it still lands on the control.
+     */
+    private fun text(s: String): SemanticsNodeInteraction =
+        if (rule.onAllNodesWithText(s).fetchSemanticsNodes().isNotEmpty()) rule.onAllNodesWithText(s).onFirst()
+        else rule.onAllNodesWithText(s, useUnmergedTree = true).onFirst()
 
     /** Clicks a control by its text, scrolling it into view first when it is in a scrolling page. */
     private fun tap(s: String) {

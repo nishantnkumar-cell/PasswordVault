@@ -251,7 +251,8 @@ fun RecoveryCodeScreen(vault: VaultRepository, code: String, onDone: () -> Unit)
         Spacer(Modifier.height(24.dp))
         Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.fillMaxWidth()) {
             Text(
-                code,
+                // Two groups to a line, so no group is split across lines.
+                code.split("-").chunked(2).joinToString("\n") { it.joinToString("-") },
                 fontFamily = Mono,
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -267,7 +268,7 @@ fun RecoveryCodeScreen(vault: VaultRepository, code: String, onDone: () -> Unit)
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth().toggleable(value = saved, role = Role.Checkbox, onValueChange = { saved = it }),
         ) {
-            Checkbox(checked = saved, onCheckedChange = null)
+            Checkbox(checked = saved, onCheckedChange = null, modifier = Modifier.padding(12.dp))
             Text("I wrote it down", style = MaterialTheme.typography.bodyLarge)
         }
         Spacer(Modifier.height(16.dp))
