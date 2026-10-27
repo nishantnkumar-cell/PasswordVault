@@ -1521,6 +1521,12 @@ impl App {
             theme::divider(ui);
             ui.add_space(16.0);
         }
+        // Pairing needs a full unlock, so quick unlock waits until afterwards.
+        let quick_later = pair
+            && self
+                .status
+                .as_ref()
+                .is_some_and(|(s, _)| s.quick_unlock.supported && s.quick_unlock.hours > 0);
         let f = &mut self.unlock;
         let (heading, about) = match f.method {
             Method::Password => (
@@ -1551,6 +1557,17 @@ impl App {
                 )
                 .wrap(),
             );
+            if quick_later {
+                ui.add(
+                    egui::Label::new(
+                        RichText::new(format!(
+                            "{HELLO} unlock shows here from the next time the vault locks."
+                        ))
+                        .color(theme::MUTED),
+                    )
+                    .wrap(),
+                );
+            }
         }
         ui.add_space(12.0);
         let mut submit = false;
