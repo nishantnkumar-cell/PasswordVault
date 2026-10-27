@@ -55,6 +55,9 @@ random program on your computer cannot just ask for your passwords.
 12. [Keep apps' passwords in the vault](12-secret-service.md): Linux apps
     that save passwords through the Secret Service (GNOME Keyring's or
     KWallet's job) keep them in the vault instead.
+13. [Phone and tablet apps](13-phone-apps.md): Secret Vault on iPhone, iPad
+    and Android, with Face ID or fingerprint unlock, AutoFill and sync with
+    your computer.
 
 ## What works where
 
@@ -71,6 +74,7 @@ random program on your computer cannot just ask for your passwords.
 | Quick unlock with Windows Hello (after a full unlock) | Not applicable | Yes | Not applicable |
 | Unlock: password + phone passkey | Yes (Bluetooth) | Yes (Windows 11 23H2 or later) | Not yet |
 | Face or fingerprint quick unlock, Touch ID | Not yet | Not applicable | Not yet |
+| iPhone, iPad and Android apps sync with this computer | Yes | Yes | Not yet |
 | SSH agent and git signing | Yes | Yes (untested on real hardware) | Not yet |
 | OpenPGP keys | Yes | Yes | Not yet |
 | `vault-gpg` for git and NeoMutt | Yes | git only (untested on real hardware) | Not yet |
@@ -90,5 +94,5 @@ format is the same everywhere.
 The guide covers how to use each feature. For the technical details behind
 it, see [`vaultd.md`](../vaultd.md), [`windows.md`](../windows.md),
 [`browser.md`](../browser.md), [`desktop.md`](../desktop.md),
-[`items.md`](../items.md), [`ssh.md`](../ssh.md), [`pgp.md`](../pgp.md),
+[`items.md`](../items.md), [`mobile.md`](../mobile.md), [`ssh.md`](../ssh.md), [`pgp.md`](../pgp.md),
 [`format.md`](../format.md) and the [threat model](../threat-model.md).

@@ -14,6 +14,7 @@ Status: v1 feature-complete on Linux, not yet audited. Do not trust it with real
 | `vault-gpg` | A gpg-compatible front end, so git, pass and mail programs can use OpenPGP keys held in the vault. |
 | `vault-native-host` | Native messaging host for the browser extension. |
 | `extension/` | Browser autofill extension (Manifest V3): logins, cards and addresses. |
+| `vault-mobile`, `mobile/` | iPhone, iPad and Android apps (SwiftUI, Jetpack Compose) over `vault-core` through UniFFI. |
 
 New here? Read the [user guide](docs/user-guide/README.md): it walks through installing, creating a vault and using each feature on Linux and Windows. What changed in each version is in the [release notes](docs/release-notes.md).
 
@@ -24,6 +25,7 @@ For the technical reference, start with [`docs/vaultd.md`](docs/vaultd.md), then
 - [`docs/format.md`](docs/format.md): vault file format, version 1.
 - [`docs/items.md`](docs/items.md): item types, TOTP and autofill origin policy.
 - [`docs/sync.md`](docs/sync.md): syncing devices through OneDrive, Google Drive or Dropbox.
+- [`docs/mobile.md`](docs/mobile.md): the iPhone, iPad and Android apps, phone quick unlock and AutoFill.
 - [`docs/ssh.md`](docs/ssh.md): SSH keys in the vault, the ssh-agent and git commit signing.
 - [`docs/pgp.md`](docs/pgp.md): OpenPGP keys in the vault, classic and post-quantum, and the gpg-compatible front end.
 - [`docs/architecture-review.md`](docs/architecture-review.md): the review that produced brief Revision 2.

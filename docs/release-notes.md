@@ -14,6 +14,46 @@ to work yet.
 
 ## Unreleased
 
+### Apps for iPhone, iPad and Android
+
+- **Your vault on your phone and tablet.** New apps for iPhone and iPad
+  (iOS 26) and for Android phones, tablets and foldables (Android 9 or
+  later). Look up and copy passwords, cards and identities, add and edit
+  items, see every one-time code in one place, and make passwords with the
+  same generator as the desktop.
+- **The same vault as your computer.** Pick the vault file your computer
+  syncs (iCloud Drive, OneDrive, Google Drive or Dropbox) and the phone
+  merges with it, exactly like another computer. Or start a vault on the
+  phone and join it from a computer later.
+- **Face ID, Touch ID or fingerprint unlock.** After you unlock once with
+  the master password, your face or fingerprint opens the vault for up to
+  14 days. The key behind it stays in the phone's secure hardware and is
+  dropped when a new face or fingerprint is added.
+- **AutoFill in your browser.** Turn on Secret Vault as the phone's
+  AutoFill provider. Logins are offered only on the websites they are saved
+  for, the same rule as the browser extension. On iPhone, one-time codes
+  can be filled too.
+- **Made for every screen.** On phones the app uses a tab bar (Liquid Glass
+  on iOS 26) and Material 3 on Android. On iPad, tablets, unfolded
+  foldables and wide split-screen windows it shows the list and the item
+  side by side, with three columns on iPad like the desktop app. On a
+  half-folded Android foldable the Codes tab shows the code on the top half.
+- How to start: [Phone and tablet apps](user-guide/13-phone-apps.md).
+  Technical details: [mobile.md](mobile.md).
+
+| | iPhone and iPad | Android |
+| --- | --- | --- |
+| Face or fingerprint unlock | Face ID, Touch ID | Strong biometrics (fingerprint, some face unlock) |
+| AutoFill unlock | Face ID or Touch ID only | Biometrics or master password |
+| One-time codes in AutoFill | Yes | Not yet |
+| How you get it | Build with Xcode on a Mac | APK from the Mobile CI run |
+
+Known limits: not yet in the App Store or on Google Play. Not yet tried on
+real phones at the time of writing. Security keys, TPM and phone-passkey
+unlock methods work only on the computer they were made on. Saving a new
+login from another app's sign-up form is not built yet. No vault file
+change: computers and phones read the same files.
+
 ### Unlock with a passkey on your phone (Linux and Windows)
 
 - **Your phone as a second factor.** You can now add a passkey on your

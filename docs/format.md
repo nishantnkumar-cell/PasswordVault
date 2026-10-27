@@ -177,6 +177,14 @@ parked   = seal(wrap_key, aad = "vault/parked-key/v1" || vault_id, vault_key)
 
 using the same commitment AEAD as everywhere else (section 4.4). Re-opening unseals `vault_key` and then verifies the current file's header MAC and body as in 4.5 and 5, so a file whose key was rotated (a revoke, possibly synced from another device) or that was replaced refuses the parked key. It never adds a keyslot and never satisfies a request that proves a factor (pairing, revoking, key export).
 
+`vaultd` never writes the parked key anywhere. The phone apps ([`mobile.md`](mobile.md)) do: they store it in the app's private storage and keep `wrap_key` in the platform keystore behind biometrics (Android Keystore, iOS Keychain), so the vault can be re-opened with a face or fingerprint after the app was closed. The stored encoding is
+
+```
+parked_bytes = "VPARK\0\0\x01" || vault_id[16] || nonce[24] || commit[32] || ciphertext[32] || tag[16]   // 128 bytes
+```
+
+It is still not part of the vault file, is never synced, and the same rules apply: it opens only the file it was made from, until that file's key is rotated.
+
 ## 5. Body
 
 ```rust

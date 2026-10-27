@@ -56,6 +56,7 @@ Status: **M** = mitigated by the design, **P** = partially mitigated, **A** = ac
 | Finds the recovery code | Recovery code is a full 256-bit secret and unlocks alone, by design. Users are told to store it offline | A |
 | Reads metadata without unlocking | All item metadata and slot labels encrypted; the plaintext header holds only what is needed to try an unlock. Body is padded to hide item count roughly | P (file size and slot count leak) |
 | Uses an old copy of the file with a since-revoked factor | Revoking a factor rotates the vault key, so new data is safe. Old copies stay readable with old factors | A (inherent) |
+| Steals an unlocked phone, or a locked one with biometric quick unlock on (iOS, Android) | The app locks after its auto-lock time in the background (default 5 min). The parked vault key in app storage is sealed under a 32-byte wrap key held in the Android Keystore (StrongBox when present) or the iOS Keychain (Secure Enclave-protected, `ThisDeviceOnly`), released only after a strong biometric check, invalidated when a new face or fingerprint is enrolled, and not included in backups. Quick unlock ends after 14 days without the master password, and whenever the vault key is rotated. A thief who can pass the biometric check gets what they would get from an unlocked vault | P (opt-in) |
 
 ### A2, remote phisher
 
@@ -68,6 +69,7 @@ Status: **M** = mitigated by the design, **P** = partially mitigated, **A** = ac
 | Origin spoofed from page content | Origin taken only from browser-provided `sender` data in the background script | M |
 | XSS on the legitimate origin | Out of reach: the origin is genuinely correct | A |
 | Downgrade to `http` | `https` only unless a per-item override | M |
+| Fill on a phone app or page the platform misreports (iOS, Android AutoFill) | Logins are suggested only for a web domain the platform's AutoFill API reports (Android `webDomain`, iOS service identifier), matched with the same origin rules as the browser extension. Native apps and unreported pages get no suggestions; the user searches, and picking a login saved for another site asks for confirmation | P (relies on the browser reporting the domain correctly) |
 
 ### A3, same-user malware
 
@@ -79,6 +81,8 @@ Status: **M** = mitigated by the design, **P** = partially mitigated, **A** = ac
 | Impersonate a paired client binary | Pairing key stored in the client's own storage, readable by the same user | A on Linux (no per-app isolation) |
 | Keylog the master password | Wayland: partially mitigated by compositor isolation. X11: any client can keylog | A on X11, P on Wayland |
 | Read the clipboard | Prefer autofill; auto-clear; password-manager MIME hint (verify) | P |
+| Read the clipboard on a phone | Copied secrets expire (iOS `expirationDate`, Android clear after the chosen time), are marked local-only on iOS so Universal Clipboard does not send them, and sensitive on Android 13+ so the clipboard preview hides them | P |
+| Screenshot or screen-record the phone app | Android sets `FLAG_SECURE`; iOS covers the window in the app switcher. iOS cannot block screenshots | P |
 | Modify the browser extension or profile | Out of scope: same-user code owns the browser profile | A |
 | Capture a phone passkey's PRF output | The desktop app or `vault` runs the phone passkey (QR code, Bluetooth, the phone maker's relay) and sends the 32-byte PRF output to `vaultd` with the password, so `vaultd` keeps its network sandbox. Same-user code that can see the password can see this output too; it opens only that slot, still with the password, and wrong guesses are rate limited as for any method | A |
 | Answer a phone QR code from far away (relay or phishing over a screen share) | The hybrid transport requires Bluetooth proximity between phone and computer before the phone talks; the relay sees only encrypted traffic | M |
