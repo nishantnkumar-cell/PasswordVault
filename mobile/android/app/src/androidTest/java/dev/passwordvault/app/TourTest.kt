@@ -95,7 +95,10 @@ class TourTest {
     private fun unlock(name: String) {
         shot(name)
         rule.onAllNodes(hasSetTextAction()).onFirst().performTextInput(phrase)
-        rule.onNode(hasText("Unlock") and hasClickAction()).performClick()
+        // The keyboard can cover the button; scroll it into view first.
+        val button = rule.onNode(hasText("Unlock") and hasClickAction())
+        runCatching { button.performScrollTo() }
+        button.performClick()
         waitFor("New item", 180_000)
     }
 
