@@ -173,7 +173,7 @@ fun WelcomeScreen(vault: VaultRepository, onCreated: (String) -> Unit) {
         Text("Secret Vault", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(8.dp))
         Text(
-            "Your passwords, cards and one-time codes, encrypted on this phone. Nothing is sent to a server.",
+            "Your passwords, cards and one-time codes, encrypted on this device. Nothing is sent to a server.",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,

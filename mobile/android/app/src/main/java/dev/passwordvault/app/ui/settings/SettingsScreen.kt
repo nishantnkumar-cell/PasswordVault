@@ -176,7 +176,7 @@ fun SettingsScreen(vault: VaultRepository, onDynamicColor: (Boolean) -> Unit) {
                 )
             }
             Text(
-                "Add or remove unlock methods in the desktop app; they sync to this phone.",
+                "Add or remove unlock methods in the desktop app; they sync to this device.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(8.dp),
@@ -196,7 +196,7 @@ fun SettingsScreen(vault: VaultRepository, onDynamicColor: (Boolean) -> Unit) {
                 if (i == 0) {
                     ActionRow("Lock now", null, shape) { vault.lock() }
                 } else {
-                    ActionRow("Remove the vault from this phone", "Synced copies and other devices keep theirs.", shape) { confirmRemove = true }
+                    ActionRow("Remove the vault from this device", "Synced copies and other devices keep theirs.", shape) { confirmRemove = true }
                 }
             }
             Spacer(Modifier.size(48.dp))
@@ -226,7 +226,7 @@ fun SettingsScreen(vault: VaultRepository, onDynamicColor: (Boolean) -> Unit) {
     if (confirmRemove) {
         AlertDialog(
             onDismissRequest = { confirmRemove = false },
-            title = { Text("Remove the vault from this phone?") },
+            title = { Text("Remove the vault from this device?") },
             text = { Text("Items that were never synced are lost. Your computer and the synced copy are not changed.") },
             confirmButton = {
                 TextButton(onClick = { confirmRemove = false; vault.removeFromDevice() }) {

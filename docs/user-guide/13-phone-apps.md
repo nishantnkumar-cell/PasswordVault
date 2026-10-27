@@ -196,7 +196,7 @@ unlock it there once.
 ## Things to know
 
 - **Remove the vault from a phone** in **Settings > Remove Vault from This
-  Device** (Android: *Remove the vault from this phone*). Items that were never synced are lost. Your computer and the
+  Device** (Android: *Remove the vault from this device*). Items that were never synced are lost. Your computer and the
   synced copy are not changed.
 - **A lost or stolen phone** can't open the vault without your face,
   fingerprint or master password. The phone limits face and fingerprint
