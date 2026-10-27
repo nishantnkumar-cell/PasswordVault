@@ -851,3 +851,30 @@ fn parked_key_resumes_only_with_its_wrap_key_and_vault_key() {
     let r = ParsedVault::parse(&rotated).unwrap();
     assert_eq!(r.resume(&parked, &wrap).err(), Some(Error::DifferentKey));
 }
+
+#[test]
+fn parked_key_round_trips_through_bytes() {
+    let mut rng = TestRng(0);
+    let f = fixture(&mut rng);
+    let v = unlock_pw(&f.bytes, &f.pw_slot).unwrap();
+    let wrap = HwKey::new([0x5A; 32]);
+    let bytes = v.park(&wrap, &mut rng).unwrap().to_bytes();
+    let parked = ParkedKey::from_bytes(&bytes).unwrap();
+    assert_eq!(parked.vault_id(), v.vault_id());
+    let p = ParsedVault::parse(&f.bytes).unwrap();
+    let back = p.resume(&parked, &wrap).unwrap();
+    assert_eq!(&**back.get_item(&f.items[0]).unwrap(), b"item a");
+
+    // Truncated, padded or retagged bytes are refused before any crypto.
+    assert!(ParkedKey::from_bytes(&bytes[..bytes.len() - 1]).is_err());
+    assert!(ParkedKey::from_bytes(&[bytes.as_slice(), &[0]].concat()).is_err());
+    let mut bad = bytes.clone();
+    bad[0] ^= 1;
+    assert!(ParkedKey::from_bytes(&bad).is_err());
+    // A flipped ciphertext bit fails to open.
+    let mut flipped = bytes;
+    let last = flipped.len() - 1;
+    flipped[last] ^= 1;
+    let parked = ParkedKey::from_bytes(&flipped).unwrap();
+    assert_eq!(p.resume(&parked, &wrap).err(), Some(Error::WrongFactor));
+}

@@ -1,0 +1,48 @@
+# Builds and tests the iPhone/iPad and Android apps (mobile/, docs/mobile.md).
+name: Mobile
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  VAULT_COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,x86_64-linux-android
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Latest library versions (for keeping libs.versions.toml current)
+        continue-on-error: true
+        run: |
+          for p in com/android/tools/build/gradle androidx/compose/compose-bom androidx/compose/material3/adaptive/adaptive \
+                   androidx/activity/activity-compose androidx/biometric/biometric androidx/core/core-ktx \
+                   androidx/lifecycle/lifecycle-runtime-compose androidx/window/window \
+                   com/google/android/gms/play-services-code-scanner; do
+            echo "$p: $(curl -s https://dl.google.com/dl/android/maven2/$p/maven-metadata.xml | grep -o '<release>[^<]*\|<version>[^<]*' | sed 's/<[a-z]*>//' | grep -v -i 'alpha\|beta\|rc\|dev' | tail -3 | tr '\n' ' ')"
+          done
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
+      - name: Build the Rust library, then the app
+        working-directory: mobile/android
+        run: |
+          export ANDROID_NDK_HOME=${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}
+          ./gradlew --no-daemon assembleDebug assembleRelease testDebugUnitTest lintDebug
+      - uses: actions/upload-artifact@v7
+        with:
+          name: secret-vault-android
+          path: |
+            mobile/android/app/build/outputs/apk/release/*.apk
+            mobile/android/app/build/reports/lint-results-debug.html
