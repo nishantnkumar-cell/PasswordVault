@@ -16,6 +16,9 @@ foldable=${2:-}
 pkg=dev.passwordvault.app
 out=build/screenshots
 mkdir -p "$out"
+# A fresh master password for this run's throwaway vault; both runs on a
+# foldable share it.
+phrase=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
 
 adb wait-for-device
 adb install -r -g app/build/outputs/apk/debug/app-debug.apk
@@ -26,7 +29,7 @@ adb shell settings put global animator_duration_scale 0
 
 run() {
     local status=0
-    adb shell am instrument -w -r -e device "$1" \
+    adb shell am instrument -w -r -e device "$1" -e phrase "$phrase" \
         -e class dev.passwordvault.app.TourTest \
         $pkg.test/androidx.test.runner.AndroidJUnitRunner | tee "$out/$1.log" || status=$?
     # am instrument exits 0 even when a test fails; look at its report.

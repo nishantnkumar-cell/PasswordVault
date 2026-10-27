@@ -9,6 +9,8 @@ set -euo pipefail
 cd "$(dirname "$0")/../ios"
 out=build/screenshots
 mkdir -p "$out"
+# A fresh master password for this run's throwaway vaults.
+phrase=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
 
 # The newest iOS runtime's simulator whose name starts with one of the
 # given names, in order of preference.
@@ -35,7 +37,7 @@ for spec in "phone:iPhone 17 Pro:iPhone" "tablet:iPad Pro 13:iPad Pro:iPad"; do
     IFS=$'\t' read -r udid model < <(pick "${prefs[@]}")
     echo "== $name: $model ($udid)"
     rm -rf "build/$name.xcresult"
-    TEST_RUNNER_DEVICE=$name xcodebuild test -project SecretVault.xcodeproj -scheme SecretVault \
+    TEST_RUNNER_DEVICE=$name TEST_RUNNER_PHRASE=$phrase xcodebuild test -project SecretVault.xcodeproj -scheme SecretVault \
         -destination "id=$udid" -derivedDataPath build -resultBundlePath "build/$name.xcresult" \
         CODE_SIGNING_ALLOWED=NO VAULT_SKIP_RUST=1 | tail -40 || status=1
     tmp=build/attachments-$name

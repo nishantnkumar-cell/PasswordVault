@@ -40,6 +40,8 @@ class TourTest {
 
     private val args = InstrumentationRegistry.getArguments()
     private val device = args.getString("device") ?: "device"
+    /** The throwaway vault's master password, made up by the script for each run. */
+    private val phrase = args.getString("phrase") ?: error("pass -e phrase <password>")
     private val shots = File(ApplicationProvider.getApplicationContext<VaultApp>().filesDir, "screenshots").apply { mkdirs() }
     private var n = 0
     private lateinit var scenario: ActivityScenario<MainActivity>
@@ -70,8 +72,8 @@ class TourTest {
         shot("welcome")
         text("Create a new vault").performClick()
         val fields = rule.onAllNodes(hasSetTextAction())
-        fields[0].performTextInput(PHRASE)
-        fields[1].performTextInput(PHRASE)
+        fields[0].performTextInput(phrase)
+        fields[1].performTextInput(phrase)
         shot("create")
         text("Create vault").performClick()
         waitFor("Your recovery code", 180_000)
@@ -84,7 +86,7 @@ class TourTest {
 
     private fun unlock(name: String) {
         shot(name)
-        rule.onAllNodes(hasSetTextAction()).onFirst().performTextInput(PHRASE)
+        rule.onAllNodes(hasSetTextAction()).onFirst().performTextInput(phrase)
         rule.onNode(hasText("Unlock") and hasClickAction()).performClick()
         waitFor("New item", 180_000)
     }
@@ -152,10 +154,5 @@ class TourTest {
         val file = File(shots, "%s-%02d-%s.png".format(device, n, name))
         val bitmap = rule.onRoot().captureToImage().asAndroidBitmap()
         file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-    }
-
-    private companion object {
-        /** A throwaway password for an emulator-only test vault. */
-        const val PHRASE = "correct horse battery staple"
     }
 }

@@ -6,8 +6,8 @@ import XCTest
 ///
 /// Sample data uses placeholder names only (docs/user-guide/README.md).
 final class TourTests: XCTestCase {
-    /// A throwaway phrase for a simulator-only test vault.
-    private let phrase = "correct horse battery staple"
+    /// The throwaway vault's master password, made up by ios-ui-test.sh for each run.
+    private let phrase = ProcessInfo.processInfo.environment["PHRASE"] ?? UUID().uuidString
     private let device = ProcessInfo.processInfo.environment["DEVICE"] ?? "device"
     private var app: XCUIApplication!
     private var n = 0
