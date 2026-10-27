@@ -91,10 +91,10 @@ class VaultAutofillService : AutofillService() {
                     val words = listOfNotNull(n.idEntry, n.hint, n.htmlInfo?.attributes?.firstOrNull { it.first == "name" }?.second)
                         .joinToString(" ").lowercase()
                     val variation = n.inputType and InputType.TYPE_MASK_VARIATION
-                    val isPassword = hints.any { "password" in it } ||
+                    val isPassword = hints.any { View.AUTOFILL_HINT_PASSWORD in it } ||
                         variation == InputType.TYPE_TEXT_VARIATION_PASSWORD ||
                         variation == InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD ||
-                        n.htmlInfo?.attributes?.any { it.first == "type" && it.second == "password" } == true
+                        n.htmlInfo?.attributes?.any { it.first == "type" && it.second == View.AUTOFILL_HINT_PASSWORD } == true
                     val isUser = hints.any { it == View.AUTOFILL_HINT_USERNAME.lowercase() || it == View.AUTOFILL_HINT_EMAIL_ADDRESS.lowercase() || "username" in it || "email" in it } ||
                         variation == InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS ||
                         variation == InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS ||
