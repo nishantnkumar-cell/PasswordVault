@@ -56,9 +56,12 @@ struct WelcomeView: View {
                 .padding(.top, 36)
             } else {
                 VStack(alignment: .leading, spacing: 12) {
+                    // Captions stay once typing hides the placeholders, as on the unlock screen.
+                    Text("Master password").font(.subheadline.weight(.semibold)).foregroundStyle(Palette.muted)
                     SecureField("Master password", text: $password)
                         .textContentType(.newPassword)
                         .padding(14).background(.background, in: .rect(cornerRadius: 14))
+                    Text("Type it again").font(.subheadline.weight(.semibold)).foregroundStyle(Palette.muted)
                     SecureField("Type it again", text: $confirm)
                         .textContentType(.newPassword)
                         .padding(14).background(.background, in: .rect(cornerRadius: 14))

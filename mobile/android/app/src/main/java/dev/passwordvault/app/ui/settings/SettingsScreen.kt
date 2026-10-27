@@ -82,7 +82,7 @@ fun SettingsScreen(vault: VaultRepository, onDynamicColor: (Boolean) -> Unit) {
         Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Column(Modifier.widthIn(max = 640.dp)) {
+        Column(Modifier.widthIn(max = 640.dp).fillMaxWidth()) {
             Text("Settings", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(start = 8.dp, top = 16.dp))
             message?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(8.dp)) }
 
@@ -169,11 +169,11 @@ fun SettingsScreen(vault: VaultRepository, onDynamicColor: (Boolean) -> Unit) {
             val slots = remember { vault.slots() }
             Group(slots.size) { i, shape ->
                 val s = slots[i]
-                InfoRow(
-                    s.label.ifEmpty { s.factor },
-                    s.factor.replaceFirstChar { it.uppercase() } + if (s.usableHere) "" else " · works on the computer that added it",
-                    shape,
-                )
+                val kind = s.factor.replaceFirstChar { it.uppercase() }
+                // A slot without its own name is labelled with its kind; don't say it twice.
+                val named = s.label.isNotBlank() && !s.label.equals(s.factor, ignoreCase = true)
+                val where = if (s.usableHere) "Works on this device" else "Works on the computer that added it"
+                InfoRow(if (named) s.label else kind, if (named) "$kind · $where" else where, shape)
             }
             Text(
                 "Add or remove unlock methods in the desktop app; they sync to this device.",
