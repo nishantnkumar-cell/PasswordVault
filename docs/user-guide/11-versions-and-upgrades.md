@@ -54,10 +54,43 @@ No GitHub account is needed. Each release has:
 | `SecretVault-<version>-macos.pkg` | macOS 11 and newer, Apple silicon and Intel: the installer ([chapter 13](13-macos.md)) |
 | `secret-vault-<version>-macos-universal.tar.gz` | macOS without an administrator password, with `install.sh` |
 | `secret-vault-extension-<version>.zip` | The browser extension, to load unpacked |
+| `SHA256SUMS.txt` | A fingerprint of every file above, to check a download (below) |
 
 The release's description is that version's section of the
 [release notes](../release-notes.md): what's new and what differs between
-systems.
+systems. The newest release is always at
+<https://github.com/nishantnkumar-cell/PasswordVault/releases/latest>.
+
+### Checking a download (optional)
+
+`SHA256SUMS.txt` lists a SHA-256 fingerprint for each file. If the
+fingerprint of the file you downloaded matches its line, the file arrived
+complete and is the one the release built. Put both files in the same
+folder, open a terminal there, and run:
+
+- **Linux:** `sha256sum --ignore-missing -c SHA256SUMS.txt` prints
+  `OK` next to each file you downloaded.
+- **macOS:** `shasum -a 256 --ignore-missing -c SHA256SUMS.txt` prints `OK`
+  the same way.
+- **Windows** (PowerShell):
+  `Get-FileHash .\SecretVault-Setup-0.2.0.exe` prints a long hash; check it
+  is the same as the one on the `SecretVault-Setup-0.2.0.exe` line of
+  `SHA256SUMS.txt` (capital or small letters don't matter).
+
+### Warnings the first time you open a download
+
+The installers are not signed with a paid code-signing certificate yet, so
+Windows and macOS don't know who made them and warn once. This is expected.
+
+- **Windows:** "Windows protected your PC" (SmartScreen). Click **More
+  info**, then **Run anyway**. See [Installing on Windows](windows-install.md).
+- **macOS 15 and newer:** "SecretVault-…pkg Not Opened". Click **Done**, open
+  System Settings > Privacy & Security, scroll down and click **Open
+  Anyway**. On macOS 11 to 14, right-click the `.pkg` and choose **Open**.
+  See [chapter 13](13-macos.md).
+- **Linux:** no warning. `apt` and `install.sh` install the files as they are.
+- **Browsers** may say the file "isn't commonly downloaded". Choose **Keep**
+  (Edge: **…** > **Keep**; Chrome: **Keep anyway**).
 
 ### Development builds
 
@@ -69,8 +102,8 @@ it is released:
    [Actions tab](https://github.com/nishantnkumar-cell/PasswordVault/actions/workflows/ci.yml?query=branch%3Amain)
    and click the newest run with a green tick.
 3. Under **Artifacts** at the bottom, download **windows-installer**,
-   **linux-packages** or **browser-extension**. Each is a zip containing the
-   files above, with a `-dev` version.
+   **linux-packages**, **macos-package** or **browser-extension**. Each is a
+   zip containing the files above, with a `-dev` version.
 
 Development downloads are kept for 90 days.
 
@@ -156,10 +189,11 @@ browser's extensions page). It keeps its pairing.
 | | Windows | Linux | macOS |
 |---|---|---|---|
 | Release download | Installer (`.exe`) | `.deb`, or `.tar.gz` with `install.sh` | Installer (`.pkg`), or `.tar.gz` with `install.sh` ([chapter 13](13-macos.md)) |
-| Upgrade | Run the newer installer | `apt install ./new.deb`, or `./install.sh` from the new archive | `./install.sh` from the new archive |
+| Upgrade | Run the newer installer | `apt install ./new.deb`, or `./install.sh` from the new archive | Open the newer `.pkg`, or `./install.sh` from the new archive |
 | Daemon restarted for you | Yes | `.tar.gz`: yes; `.deb`: run `systemctl --user restart vaultd` | Yes |
-| Older over newer | Asks first (default No) | apt refuses; `install.sh` asks first | `install.sh` asks first |
-| Administrator rights | Only for an all-users install | `sudo` for the `.deb`; none for the `.tar.gz` | None |
+| Older over newer | Asks first (default No) | apt refuses; `install.sh` asks first | `.pkg` refuses; `install.sh` asks first |
+| Administrator rights | Only for an all-users install | `sudo` for the `.deb`; none for the `.tar.gz` | For the `.pkg`; none for the `.tar.gz` |
+| Warning on first open | SmartScreen: **More info** > **Run anyway** | None | **Open Anyway** in Privacy & Security |
 
 ## For maintainers: making a release
 
@@ -175,8 +209,33 @@ Nothing is published until the tag is pushed.
    `--next 0.2.1` instead.
 3. Push both: `git push origin main v0.2.0`.
 4. The **Release** workflow builds every package from the tag, checks that
-   the tag matches the version in `Cargo.toml`, and publishes them on the
-   Releases page with that version's release notes.
+   the tag matches the version in `Cargo.toml` and that all six downloads
+   were built, adds `SHA256SUMS.txt`, and publishes them on the Releases
+   page with that version's release notes. It takes about 20 minutes; follow
+   it on the [Actions tab](https://github.com/nishantnkumar-cell/PasswordVault/actions/workflows/release.yml).
+   Anyone can download a release without a GitHub account, because the
+   repository is public.
+
+If the workflow fails, nothing is published. A failure that looks like a
+hiccup (a download timeout, a test that passes on `main`) usually goes away
+with **Re-run failed jobs** on the run's page. If it fails for a real reason,
+fix it on `main` and release the fix as the next patch version (0.2.1).
+Once a release is published, never move or reuse its tag.
+
+### Signing the installers (optional, costs money)
+
+Unsigned installers work, but Windows and macOS warn once (see above).
+Signing removes the warnings:
+
+| | What it takes | Rough cost |
+|---|---|---|
+| macOS | Apple Developer Program: a Developer ID certificate and notarization. Steps in [macos-signing.md](../macos-signing.md). | USD 99 a year |
+| Windows | A code-signing certificate. Microsoft's Azure Artifact Signing (formerly Trusted Signing) is the cheapest, if your country and account type are eligible; otherwise an OV certificate from a certificate authority, delivered on a hardware token or cloud HSM. | About USD 10 a month (Azure), or roughly USD 200 to 400 a year (OV certificate) |
+| Linux | Nothing needed. | Free |
+
+On Windows, even a signed installer can show SmartScreen for a while until
+enough people have downloaded it; the warning fades as the file builds a
+reputation. Check current prices and eligibility before buying: they change.
 
 `contrib/release/bump.sh X.Y.Z` changes the version on its own, and
 `contrib/release/version.sh` prints it. CI fails if the extension's

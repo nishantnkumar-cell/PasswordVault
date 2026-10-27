@@ -14,6 +14,28 @@ to work yet.
 
 ## Unreleased
 
+### Public downloads with checksums
+
+Every release is published on the
+[Releases page](https://github.com/nishantnkumar-cell/PasswordVault/releases/latest)
+for anyone to download, no GitHub account needed: the Windows installer, the
+Linux `.deb` and `.tar.gz`, the macOS `.pkg` and `.tar.gz`, and the browser
+extension. New with this release:
+
+- **`SHA256SUMS.txt`** is attached to every release. It holds a fingerprint
+  of each file, so you can check that a download is complete and unchanged
+  before you run it. How to check it on Linux, macOS and Windows is in
+  [Versions, downloads and upgrading](user-guide/11-versions-and-upgrades.md#checking-a-download-optional).
+- The release is only published if **all six downloads** were built, so a
+  release can never be missing one system's installer.
+- The user guide now explains the **one-time warnings** Windows (SmartScreen:
+  **More info** > **Run anyway**) and macOS (**Open Anyway** in Privacy &
+  Security) show for an unsigned installer, and what code signing would cost
+  to remove them. Linux shows no warning.
+
+Not included yet: the iPhone, iPad and Android apps, which are still in
+development and need app store accounts to be published.
+
 ### A macOS installer
 
 Secret Vault now comes as a normal Mac installer, `SecretVault-<version>-macos.pkg`:
