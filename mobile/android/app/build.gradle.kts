@@ -47,7 +47,8 @@ android {
 
     buildFeatures { compose = true }
 
-    sourceSets["main"].java.srcDir(layout.buildDirectory.dir("generated/uniffi"))
+    // Written by buildRust below, which runs before every build.
+    sourceSets["main"].java.directories.add("build/generated/uniffi")
 
     packaging { jniLibs.useLegacyPackaging = false }
 }
@@ -57,7 +58,7 @@ kotlin {
 }
 
 // The Rust library and its Kotlin bindings (mobile/scripts/build-android.sh).
-val buildRust by tasks.registering(Exec::class) {
+val buildRust = tasks.register<Exec>("buildRust") {
     group = "build"
     description = "Builds vault-mobile for Android and generates its Kotlin bindings."
     workingDir = repoRoot
