@@ -1,0 +1,43 @@
+#!/bin/bash
+# Runs as root after SecretVault-<version>-macos.pkg has copied Secret
+# Vault.app to /Applications and the launch agent to /Library/LaunchAgents.
+set -u
+app="/Applications/Secret Vault.app"
+agent=/Library/LaunchAgents/dev.passwordvault.vaultd.plist
+
+# The commands, on the PATH every Terminal has (/etc/paths).
+mkdir -p /usr/local/bin
+for b in vault vaultd vault-gpg; do
+    ln -sf "$app/Contents/MacOS/$b" "/usr/local/bin/$b"
+done
+
+# Replace a copy installed earlier with install.sh (in ~/Applications, with a
+# launch agent of the same label in ~/Library/LaunchAgents), so only one
+# vaultd starts, and point that account's browsers at the new copy.
+for home in /Users/*; do
+    old="$home/Applications/Secret Vault.app"
+    [ -e "$home/Library/LaunchAgents/dev.passwordvault.vaultd.plist" ] || [ -e "$old" ] || continue
+    user=$(stat -f %Su "$home")
+    echo "Moving $user's Secret Vault from $old to $app"
+    rm -f "$home/Library/LaunchAgents/dev.passwordvault.vaultd.plist"
+    rm -rf "$old"
+    for b in vault vaultd vault-gpg; do
+        l="$home/.local/bin/$b"
+        if [ -L "$l" ] && [ "$(readlink "$l")" = "$old/Contents/MacOS/$b" ]; then
+            rm -f "$l"
+        fi
+    done
+    for d in "Google/Chrome" "Chromium" "Microsoft Edge" "Mozilla"; do
+        m="$home/Library/Application Support/$d/NativeMessagingHosts/dev.passwordvault.host.json"
+        if [ -f "$m" ] && grep -qF "$old/" "$m"; then
+            sudo -u "$user" sed -i '' "s|$old/|$app/|" "$m"
+        fi
+    done
+done
+
+# Start vaultd now for everyone signed in; it starts at sign-in from now on.
+for uid in $(ps -axo uid=,comm= | awk '$2 ~ /loginwindow$/ { print $1 }' | sort -u); do
+    launchctl bootstrap "gui/$uid" "$agent" 2>/dev/null ||
+        echo "Could not start vaultd for uid $uid now; it starts at the next sign-in." >&2
+done
+exit 0
