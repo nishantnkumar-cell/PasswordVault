@@ -51,8 +51,10 @@ done
 sed "s|NUMBER|$num|; s|VERSION|$ver|" contrib/macos/Info.plist >"$app/Info.plist"
 install -m644 contrib/icons/secret-vault.icns "$app/Resources/"
 install -m755 contrib/macos/uninstall.sh "$app/Resources/uninstall.sh"
-# Every program, then the bundle: lipo output carries no signature, and
-# --strict checks the nested programs too.
+# Every helper program, then the bundle (which signs its main program,
+# vault-gui): lipo output carries no signature, and --strict checks the
+# helpers too. Signing vault-gui on its own path would sign the whole
+# bundle before the helpers are signed.
 if [ -n "${DEVELOPER_ID_APP:-}" ]; then
     # Hardened runtime and a secure timestamp, which notarization requires.
     sign=(--options runtime --timestamp --sign "$DEVELOPER_ID_APP")
@@ -60,7 +62,7 @@ else
     sign=(--sign -)
 fi
 for b in "${bins[@]}"; do
-    codesign --force "${sign[@]}" "$app/MacOS/$b"
+    [ "$b" = vault-gui ] || codesign --force "${sign[@]}" "$app/MacOS/$b"
 done
 codesign --force "${sign[@]}" "$bundle"
 codesign --verify --strict "$bundle"
