@@ -1,3 +1,5 @@
+import javax.inject.Inject
+import org.gradle.process.ExecOperations
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -47,9 +49,6 @@ android {
 
     buildFeatures { compose = true }
 
-    // Written by buildRust below, which runs before every build.
-    sourceSets["main"].java.directories.add("build/generated/uniffi")
-
     packaging { jniLibs.useLegacyPackaging = false }
 }
 
@@ -57,19 +56,42 @@ kotlin {
     compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
 }
 
-// The Rust library and its Kotlin bindings (mobile/scripts/build-android.sh).
-val buildRust = tasks.register<Exec>("buildRust") {
-    group = "build"
-    description = "Builds vault-mobile for Android and generates its Kotlin bindings."
-    workingDir = repoRoot
-    commandLine("bash", "mobile/scripts/build-android.sh", "release")
-    inputs.dir(repoRoot.resolve("crates/vault-core/src"))
-    inputs.dir(repoRoot.resolve("crates/vault-mobile/src"))
-    inputs.file(repoRoot.resolve("Cargo.lock"))
-    outputs.dir(projectDir.resolve("src/main/jniLibs"))
-    outputs.dir(layout.buildDirectory.dir("generated/uniffi"))
+// The Rust library and its Kotlin bindings (mobile/scripts/build-android.sh),
+// built for each variant into directories AGP adds as generated sources.
+abstract class BuildRust : DefaultTask() {
+    @get:Internal abstract val workspace: DirectoryProperty
+    @get:InputFiles @get:PathSensitive(PathSensitivity.RELATIVE) abstract val rustSources: ConfigurableFileCollection
+    @get:OutputDirectory abstract val bindings: DirectoryProperty
+    @get:OutputDirectory abstract val jniLibs: DirectoryProperty
+    @get:Inject abstract val execOps: ExecOperations
+
+    @TaskAction
+    fun build() {
+        execOps.exec {
+            workingDir(workspace.get().asFile)
+            environment("VAULT_BINDINGS_OUT", bindings.get().asFile.absolutePath)
+            environment("VAULT_JNILIBS_OUT", jniLibs.get().asFile.absolutePath)
+            commandLine("bash", "mobile/scripts/build-android.sh", "release")
+        }
+    }
 }
-tasks.named("preBuild") { dependsOn(buildRust) }
+
+androidComponents {
+    onVariants { variant ->
+        val task = tasks.register<BuildRust>("buildRust${variant.name.replaceFirstChar { it.uppercase() }}") {
+            group = "build"
+            description = "Builds vault-mobile for Android and generates its Kotlin bindings."
+            workspace.set(repoRoot)
+            rustSources.from(
+                repoRoot.resolve("crates/vault-core/src"),
+                repoRoot.resolve("crates/vault-mobile/src"),
+                repoRoot.resolve("Cargo.lock"),
+            )
+        }
+        variant.sources.java?.addGeneratedSourceDirectory(task, BuildRust::bindings)
+        variant.sources.jniLibs?.addGeneratedSourceDirectory(task, BuildRust::jniLibs)
+    }
+}
 
 dependencies {
     implementation(libs.androidx.core.ktx)

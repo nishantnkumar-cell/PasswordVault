@@ -3,8 +3,9 @@
 #
 #   mobile/scripts/build-android.sh [debug|release] [ABI...]
 #
-# Writes app/src/main/jniLibs/<abi>/libvault_mobile.so and
-# app/build/generated/uniffi/ under mobile/android. Needs the Android NDK
+# Writes <abi>/libvault_mobile.so under $VAULT_JNILIBS_OUT and the Kotlin
+# bindings under $VAULT_BINDINGS_OUT (by default app/src/main/jniLibs and
+# app/build/generated/uniffi under mobile/android; Gradle passes its own). Needs the Android NDK
 # (ANDROID_NDK_HOME, or the newest one under the SDK) and cargo-ndk.
 # The Gradle build runs this before compiling; run it by hand only to debug.
 set -euo pipefail
@@ -37,7 +38,7 @@ rustup target add "${targets[@]}" >/dev/null 2>&1 || true
 
 flags=()
 [ "$profile" = release ] && flags+=(--release)
-out=mobile/android/app/src/main/jniLibs
+out=${VAULT_JNILIBS_OUT:-mobile/android/app/src/main/jniLibs}
 args=()
 for abi in "${abis[@]}"; do args+=(-t "$abi"); done
 cargo ndk "${args[@]}" -o "$out" --platform 28 build -p vault-mobile --locked "${flags[@]}"
@@ -48,4 +49,4 @@ lib=target/debug/libvault_mobile.so
 [ -f "$lib" ] || lib=target/debug/libvault_mobile.dylib
 cargo run -q -p vault-mobile --features cli --bin uniffi-bindgen --locked -- \
     generate --library "$lib" --language kotlin --no-format \
-    --out-dir mobile/android/app/build/generated/uniffi
+    --out-dir "${VAULT_BINDINGS_OUT:-mobile/android/app/build/generated/uniffi}"
