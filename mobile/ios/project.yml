@@ -33,7 +33,8 @@ targets:
   SecretVault:
     type: application
     platform: iOS
-    scheme: {}
+    scheme:
+      testTargets: [SecretVaultUITests]
     sources:
       - SecretVault
       - Shared
@@ -102,3 +103,14 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.passwordvault.app.autofill
+  # The UI tour with screenshots (UITests/TourTests.swift).
+  SecretVaultUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [UITests]
+    dependencies:
+      - target: SecretVault
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.passwordvault.app.uitests
+        GENERATE_INFOPLIST_FILE: YES

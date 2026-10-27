@@ -27,7 +27,7 @@ jobs:
       - name: Latest library versions (for keeping libs.versions.toml current)
         continue-on-error: true
         run: |
-          for p in com/android/tools/build/gradle androidx/compose/compose-bom androidx/compose/material3/adaptive/adaptive \
+          for p in androidx/test/runner androidx/test/ext/junit com/android/tools/build/gradle androidx/compose/compose-bom androidx/compose/material3/adaptive/adaptive \
                    androidx/activity/activity-compose androidx/biometric/biometric androidx/core/core-ktx \
                    androidx/lifecycle/lifecycle-runtime-compose androidx/window/window \
                    com/google/android/gms/play-services-code-scanner; do
@@ -39,13 +39,60 @@ jobs:
         working-directory: mobile/android
         run: |
           export ANDROID_NDK_HOME=${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}
-          ./gradlew --no-daemon assembleDebug assembleRelease testDebugUnitTest lintDebug
+          ./gradlew --no-daemon assembleDebug assembleRelease assembleDebugAndroidTest testDebugUnitTest lintDebug
       - uses: actions/upload-artifact@v7
         with:
           name: secret-vault-android
           path: |
             mobile/android/app/build/outputs/apk/release/*.apk
             mobile/android/app/build/reports/lint-results-debug.html
+      - uses: actions/upload-artifact@v7
+        with:
+          name: android-test-apks
+          path: |
+            mobile/android/app/build/outputs/apk/debug/app-debug.apk
+            mobile/android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+
+  # The UI tour on emulators of three sizes, with a screenshot of each screen.
+  android-ui:
+    needs: android
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: phone
+            profile: pixel_6
+          - name: tablet
+            profile: pixel_tablet
+          - name: foldable
+            profile: pixel_fold
+            fold: foldable
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v7
+        with:
+          name: android-test-apks
+          path: mobile/android/app/build/outputs/apk
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: ${{ matrix.profile }}
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: mobile/scripts/android-ui-test.sh ${{ matrix.name }} ${{ matrix.fold }}
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: android-screenshots-${{ matrix.name }}
+          path: mobile/android/build/screenshots
 
   ios:
     runs-on: macos-26
@@ -62,7 +109,7 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Build the Rust library and Swift bindings
-        run: mobile/scripts/build-ios.sh debug
+        run: mobile/scripts/build-ios.sh release
       - name: Build the app and AutoFill extension for the simulator
         working-directory: mobile/ios
         run: |
@@ -70,3 +117,10 @@ jobs:
           xcodebuild -project SecretVault.xcodeproj -scheme SecretVault -configuration Debug \
             -destination 'generic/platform=iOS Simulator' -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO VAULT_SKIP_RUST=1 build
+      - name: Run the UI tour on iPhone and iPad simulators
+        run: mobile/scripts/ios-ui-test.sh
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ios-screenshots
+          path: mobile/ios/build/screenshots

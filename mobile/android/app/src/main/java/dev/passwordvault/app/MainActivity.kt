@@ -1,5 +1,6 @@
 package dev.passwordvault.app
 
+import android.content.pm.ApplicationInfo
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.compose.setContent
@@ -24,8 +25,12 @@ import dev.passwordvault.app.ui.unlock.WelcomeScreen
 class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // No screenshots, screen recording or previews in Recents.
-        window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+        // No screenshots, screen recording or previews in Recents. Debug builds
+        // let the UI tests (mobile/android/app/src/androidTest) turn it off.
+        val debuggable = applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+        if (!(debuggable && intent.getBooleanExtra(EXTRA_ALLOW_SCREENSHOTS, false))) {
+            window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+        }
         enableEdgeToEdge()
         val vault = (application as VaultApp).vault
         setContent {
@@ -34,6 +39,10 @@ class MainActivity : FragmentActivity() {
                 AppRoot(vault, onDynamicColor = { vault.settings.dynamicColor = it; dynamic = it })
             }
         }
+    }
+
+    companion object {
+        const val EXTRA_ALLOW_SCREENSHOTS = "dev.passwordvault.app.ALLOW_SCREENSHOTS"
     }
 }
 
