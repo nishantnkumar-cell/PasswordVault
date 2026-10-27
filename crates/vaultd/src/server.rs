@@ -155,9 +155,26 @@ mod unix {
     use std::os::unix::fs::PermissionsExt;
     use std::os::unix::net::{UnixListener, UnixStream};
 
-    use nix::sys::socket::{getsockopt, sockopt::PeerCredentials};
-
     use super::*;
+
+    /// The peer's UID and, where the OS says, its PID.
+    #[cfg(target_os = "linux")]
+    fn peer(conn: &UnixStream) -> Option<(u32, Option<u32>)> {
+        use nix::sys::socket::{getsockopt, sockopt::PeerCredentials};
+        let cred = getsockopt(conn, PeerCredentials).ok()?;
+        Some((cred.uid(), cred.pid().try_into().ok()))
+    }
+
+    /// The peer's UID and, where the OS says, its PID.
+    #[cfg(target_os = "macos")]
+    fn peer(conn: &UnixStream) -> Option<(u32, Option<u32>)> {
+        use nix::sys::socket::{getsockopt, sockopt::LocalPeerPid};
+        let (uid, _) = nix::unistd::getpeereid(conn).ok()?;
+        let pid = getsockopt(conn, LocalPeerPid)
+            .ok()
+            .and_then(|p| p.try_into().ok());
+        Some((uid.as_raw(), pid))
+    }
 
     /// Who may connect: a UID.
     pub type Owner = u32;
@@ -209,15 +226,14 @@ mod unix {
             let Ok(mut conn) = conn else { continue };
             let f = f.clone();
             std::thread::spawn(move || {
-                let Ok(cred) = getsockopt(&conn, PeerCredentials) else {
+                let Some((uid, pid)) = peer(&conn) else {
                     return;
                 };
-                if cred.uid() != owner {
+                if uid != owner {
                     let _ = refuse(&mut conn);
                     return;
                 }
                 let _ = conn.set_read_timeout(Some(Duration::from_secs(600)));
-                let pid = cred.pid().try_into().ok();
                 f(conn, pid);
             });
         }

@@ -13,7 +13,7 @@ X11 or Wayland and OpenGL (libGL, libxkbcommon-x11). To show it in the app
 menu, install `contrib/desktop/dev.passwordvault.app.desktop` to
 `~/.local/share/applications/` and put `vault-gui` on your PATH.
 
-Like vaultd, it runs on Linux and Windows; macOS follows the daemon port.
+Like vaultd, it runs on Linux, Windows and macOS. On macOS, `contrib/macos/package.sh` bundles it as `Secret Vault.app` with `vault-prompt` and `vault-native-host` next to it in `Contents/MacOS/`.
 
 ## What it does
 

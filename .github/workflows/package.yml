@@ -79,6 +79,28 @@ jobs:
             target/packages/*.deb
             target/packages/*.tar.gz
 
+  macos-package:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Version
+        run: |
+          export VAULT_COMMIT=${VAULT_COMMIT_SHA::7}
+          echo "VAULT_VERSION=$(contrib/release/version.sh --build)" >> "$GITHUB_ENV"
+      - run: cargo build --release --locked
+      - run: contrib/macos/package.sh "$VAULT_VERSION"
+      - name: Check the package
+        run: |
+          test "$(target/release/vaultd --version)" = "vaultd $VAULT_VERSION"
+          tar -tzf target/packages/*.tar.gz | grep -q "Secret Vault.app/Contents/MacOS/vaultd"
+          d=$(mktemp -d) && tar -C "$d" -xzf target/packages/*.tar.gz
+          codesign --verify --verbose "$d"/*/"Secret Vault.app"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos-package
+          path: target/packages/*.tar.gz
+
   extension:
     runs-on: ubuntu-latest
     steps:

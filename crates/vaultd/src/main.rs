@@ -36,7 +36,7 @@ OPTIONS:
 
 /// No core dumps, no ptrace attach from same-UID processes, and keys kept
 /// out of swap (threat model A3 and section 6). Not yet on Windows.
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 fn harden() {
     use nix::sys::resource::{Resource, getrlimit, setrlimit};
     let _ = setrlimit(Resource::RLIMIT_CORE, 0, 0);
@@ -59,12 +59,30 @@ fn harden() {
     }
 }
 
+/// No core dumps and no debugger attach. macOS has no mlockall, but it
+/// always encrypts swap with a key that never leaves the kernel.
+#[cfg(target_os = "macos")]
+#[allow(unsafe_code)]
+fn harden() {
+    use nix::sys::resource::{Resource, setrlimit};
+    let _ = setrlimit(Resource::RLIMIT_CORE, 0, 0);
+    // SAFETY: PT_DENY_ATTACH takes no address or data and only sets a flag
+    // on this process.
+    let r = unsafe { nix::libc::ptrace(nix::libc::PT_DENY_ATTACH, 0, std::ptr::null_mut(), 0) };
+    if r != 0 {
+        eprintln!(
+            "vaultd: warning: could not deny debugger attach: {}",
+            std::io::Error::last_os_error()
+        );
+    }
+}
+
 fn main() {
     if matches!(std::env::args().nth(1).as_deref(), Some("-V" | "--version")) {
         println!("vaultd {}", vault_ipc::VERSION);
         return;
     }
-    #[cfg(unix)]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     harden();
     let mut vault = local::data_dir().join("vault.svault");
     let mut state: PathBuf = local::state_dir();

@@ -7,8 +7,8 @@ like the CLI: it never opens the vault file itself and holds no keys.
 
 | | Linux | Windows | macOS |
 |---|---|---|---|
-| Desktop app | Yes (X11 or Wayland, OpenGL) | Yes | Not yet |
-| Copied secrets kept out of clipboard history and cloud clipboard | No such feature on Linux desktops | Yes | Not yet |
+| Desktop app | Yes (X11 or Wayland, OpenGL) | Yes | Yes (macOS 11 or newer) |
+| Copied secrets kept out of clipboard history and cloud clipboard | No such feature on Linux desktops | Yes | Yes (marked so clipboard managers skip them) |
 
 The app makes, imports and exports SSH and OpenPGP keys, and encrypts,
 decrypts, signs and verifies with OpenPGP keys
@@ -55,8 +55,8 @@ keyhole with no ring, so it stays readable in the tray and title bar.
 
 | | Linux | Windows | macOS |
 |---|---|---|---|
-| Window and taskbar icon | Yes. On Wayland the dock reads it from the menu entry, so do steps 2 and 3 above | Yes, built into the program | Not yet (the app does not run on macOS yet; a `.icns` is ready in `contrib/icons/`) |
-| Menu entry icon | After steps 2 and 3 above | Yes, from the installer | Not yet |
+| Window and taskbar icon | Yes. On Wayland the dock reads it from the menu entry, so do steps 2 and 3 above | Yes, built into the program | Yes, from the app bundle ([chapter 13](13-macos.md)) |
+| Menu entry icon | After steps 2 and 3 above | Yes, from the installer | Yes, in Launchpad and the Dock |
 
 If the app says it cannot reach `vaultd`, start the daemon
 (`systemctl --user start vaultd` on Linux; on Windows run `vaultw.exe`, or sign out and back in) and
@@ -109,12 +109,12 @@ press **Continue**. You can't go on until the box is ticked.
 **3. Unlock methods (optional).** Add quicker or stronger ways to unlock.
 Press **Set up** next to one, fill in its options and press **Add** (or
 **Turn on**). You don't type your password again: the wizard uses the one
-from step 1. Each method has an icon (chip, security key, Windows Hello)
+from step 1. Each method has an icon (chip, security key, Windows Hello or Touch ID)
 that turns green, with **Added**, once you have added it.
 
 | Method | What it does | Linux | Windows | macOS |
 |---|---|---|---|---|
-| Windows Hello | After a password unlock, your face, fingerprint or Windows PIN re-opens the vault for 8 hours, until the computer restarts | No | Yes, if Windows Hello is set up | No |
+| Windows Hello, or Touch ID on a Mac | After a password unlock, your face, fingerprint or Windows PIN (on a Mac: fingerprint, Apple Watch or login password) re-opens the vault for 8 hours, until the computer restarts | No | Yes, if Windows Hello is set up | Yes (Touch ID) |
 | This computer's TPM chip | Unlocking needs your password *and* this computer, so a copied vault file is useless elsewhere. Optional PIN | Yes, if the computer has a TPM 2.0 you may use | Yes | No (no TPM) |
 | Security key | Unlocking needs your password and a touch on a FIDO2 key (YubiKey, Nitrokey, Titan) | Yes | Yes; Windows shows its own window for the touch and PIN | Yes |
 
@@ -141,8 +141,8 @@ extension so it can fill your logins:
 3. In the browser, click the Secret Vault icon, then **Connect**, and press
    **Allow** in the window that opens.
 
-On macOS this step only says that browser autofill is not available yet.
-(The app can't be used on macOS yet, because vaultd doesn't run there.)
+On macOS the steps are the same; the extension works in Chrome, Edge and
+Firefox, not in Safari.
 
 ![Connecting the browser](images/setup-7-browser.png)
 
@@ -364,7 +364,7 @@ do encrypting, decrypting and signing.
 
 Platforms: making keys works the same on Linux and Windows. On Windows the
 vault's SSH agent is a named pipe, which the built-in OpenSSH client uses
-([chapter 6](06-ssh-and-git.md)). The app does not run on macOS yet.
+([chapter 6](06-ssh-and-git.md)). On macOS it works as on Linux.
 
 The **New** button at the top right (see
 [Add an item](#add-an-item-the-new-button)) opens an empty form for the
@@ -452,8 +452,8 @@ don't need.
 
 | | Linux | Windows | macOS |
 |---|---|---|---|
-| Saved key file | Readable only by you (600) | Gets the folder's permissions: save inside your user folder | Readable only by you (600), once the app runs on macOS |
-| Proving with a security key | PIN typed in the app | Windows asks for the touch and PIN | Not yet |
+| Saved key file | Readable only by you (600) | Gets the folder's permissions: save inside your user folder | Readable only by you (600) |
+| Proving with a security key | PIN typed in the app | Windows asks for the touch and PIN | PIN typed in the app |
 | Proving with "This device" | TPM chip | TPM chip | Not available |
 
 ### Clipboard
@@ -533,11 +533,11 @@ and what to do about conflicts.
 
 | | Linux | Windows | macOS |
 |---|---|---|---|
-| Key details, **Copy public key**, **Ask before each use** | Yes | Yes | Not yet (the app does not run on macOS yet) |
-| Security key and TPM rows under **Unlock methods** | Yes | Yes (Windows shows its own window for the security key's touch and PIN) | Not yet |
-| **PIN** box for a security key | Yes | Not shown: Windows asks in its own window | Not yet |
-| **Quick unlock with Windows Hello** box | Not shown | Yes | Not yet |
-| **Sync** page | Yes | Yes | Not yet |
+| Key details, **Copy public key**, **Ask before each use** | Yes | Yes | Yes |
+| Security key and TPM rows under **Unlock methods** | Yes | Yes (Windows shows its own window for the security key's touch and PIN) | Security key only (no TPM) |
+| **PIN** box for a security key | Yes | Not shown: Windows asks in its own window | Yes |
+| **Quick unlock with Windows Hello** box | Not shown | Yes | Yes, as **Quick unlock with Touch ID** |
+| **Sync** page | Yes | Yes | Yes |
 
 ## Encrypt and sign
 
@@ -618,7 +618,7 @@ program changes its line endings.
 
 | | Linux | Windows | macOS |
 |---|---|---|---|
-| Encrypt and sign page | Yes | Yes | Not yet (no desktop app on macOS) |
+| Encrypt and sign page | Yes | Yes | Yes |
 | Decrypted files saved | Readable only by you | Folder's permissions: keep in your user folder | — |
 
 ## Good to know

@@ -33,11 +33,13 @@ SETUP
 UNLOCKING                      METHOD is one of --password (default), --fido2, --phone, --tpm,
                                --recovery
   unlock [METHOD]              unlock the vault
-  unlock --hello               quick unlock with Windows Hello (after a full unlock, see below)
+  unlock --hello               quick unlock with Windows Hello or Touch ID (after a full
+                               unlock, see below); --touch-id is the same
   lock [--full]                lock it and wipe keys from memory (--full: forget the
                                quick unlock key too, so the next unlock needs METHOD)
   quick-unlock [HOURS|off]     show, turn on (for HOURS after each full unlock, 1 to 24)
-                               or turn off quick unlock with Windows Hello (Windows)
+                               or turn off quick unlock with Windows Hello (Windows) or
+                               Touch ID (macOS)
 
 ITEMS                          ID may be any unique prefix of an item ID
   ls [KIND]                    list items, or only logins, notes, cards or identities
@@ -95,13 +97,25 @@ ENVIRONMENT
   VAULT_TOKEN_FILE             pairing token [default: $XDG_CONFIG_HOME/vault/token,
                                on Windows %APPDATA%\vault\token]";
 
+/// The quick unlock check on this system.
+const PRESENCE: &str = if cfg!(target_os = "macos") {
+    "Touch ID"
+} else {
+    "Windows Hello"
+};
+const CONFIRM: &str = if cfg!(target_os = "macos") {
+    "Confirm it's you with Touch ID or your Mac password..."
+} else {
+    "Confirm it's you in the Windows Security window..."
+};
+
 fn print_quick(q: &QuickUnlockInfo) {
     if q.hours == 0 {
         println!("quick unlock: off (turn on with `vault quick-unlock 8`)");
         return;
     }
     println!(
-        "quick unlock: Windows Hello, for {} h after each full unlock",
+        "quick unlock: {PRESENCE}, for {} h after each full unlock",
         q.hours
     );
     if let Some(t) = q.until {
@@ -755,8 +769,18 @@ fn main() {
             }
         }
         "unlock" => {
-            let method = if rest.iter().any(|a| a == "--hello") {
-                eprintln!("Confirm it's you in the Windows Security window...");
+            let method = if rest.iter().any(|a| a == "--hello" || a == "--touch-id") {
+                // Ask only when vaultd will accept the check, so a refused
+                // quick unlock does not first ask the user to confirm.
+                let Response::Status(s) = Client::connect().call(Request::Status) else {
+                    die("unexpected response")
+                };
+                if !s.unlocked && s.quick_unlock.until.is_none() {
+                    die(
+                        "quick unlock is not available now: unlock with your password (or another method) first",
+                    );
+                }
+                eprintln!("{CONFIRM}");
                 UnlockMethod::Hello
             } else {
                 method(rest)
@@ -782,7 +806,7 @@ fn main() {
                     let hours = h.parse().unwrap_or_else(|_| {
                         die("usage: vault quick-unlock [HOURS|off], HOURS from 1 to 24")
                     });
-                    eprintln!("Confirm it's you in the Windows Security window...");
+                    eprintln!("{CONFIRM}");
                     Request::SetQuickUnlock { hours }
                 }
             };
@@ -790,7 +814,9 @@ fn main() {
                 die("unexpected response")
             };
             if !s.quick_unlock.supported {
-                die("quick unlock needs Windows Hello, which this system does not have");
+                die(
+                    "quick unlock needs Windows Hello or Touch ID, which this system does not have",
+                );
             }
             print_quick(&s.quick_unlock);
         }

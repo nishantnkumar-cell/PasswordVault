@@ -39,6 +39,32 @@ pub trait Clip {
     fn clear(&mut self);
 }
 
+/// What this system calls its quick unlock check (vault_hw::PRESENCE_NAME).
+pub(crate) const HELLO: &str = if cfg!(target_os = "macos") {
+    "Touch ID"
+} else {
+    "Windows Hello"
+};
+/// The ways the quick unlock check accepts, as a sentence start.
+pub(crate) const HELLO_WAYS: &str = if cfg!(target_os = "macos") {
+    "Your fingerprint, Apple Watch or Mac password"
+} else {
+    "Face, fingerprint or your Windows PIN"
+};
+/// What to show while the quick unlock check waits for the person.
+pub(crate) const HELLO_CONFIRM: &str = if cfg!(target_os = "macos") {
+    "Confirm it's you with Touch ID…"
+} else {
+    "Confirm it's you in the Windows Security window…"
+};
+
+/// The command palette's shortcut as this system writes it.
+const PALETTE_KEY: &str = if cfg!(target_os = "macos") {
+    "Cmd K"
+} else {
+    "Ctrl K"
+};
+
 /// The OS clipboard. On Windows and macOS copied secrets are marked so
 /// clipboard history and sync skip them.
 #[derive(Default)]
@@ -108,7 +134,7 @@ enum Op {
     QuickUnlock,
     /// An unlock method added from the first-run wizard.
     SetupSlot(setup::Extra),
-    /// Windows Hello quick unlock turned on from the wizard.
+    /// Windows Hello or Touch ID quick unlock turned on from the wizard.
     SetupHello,
 }
 
@@ -1003,7 +1029,7 @@ impl App {
                     "Quick unlock is off.".into()
                 } else {
                     format!(
-                        "Quick unlock is on: Windows Hello can unlock for {} hours after each \
+                        "Quick unlock is on: {HELLO} can unlock for {} hours after each \
                          unlock with your password.",
                         s.quick_unlock.hours
                     )
@@ -1477,9 +1503,9 @@ impl App {
             .filter(|_| !pair);
         if quick.is_some() {
             let ok = self.busy.is_none();
-            if wide_primary(ui, ok, "Unlock with Windows Hello").clicked() && ok {
+            if wide_primary(ui, ok, &format!("Unlock with {HELLO}")).clicked() && ok {
                 self.act(
-                    "Confirm it's you in the Windows Security window…",
+                    HELLO_CONFIRM,
                     Op::Unlock,
                     Request::Unlock {
                         method: UnlockMethod::Hello,
@@ -1487,7 +1513,7 @@ impl App {
                 );
             }
             ui.label(
-                RichText::new("Face, fingerprint or your Windows PIN. Or use another method:")
+                RichText::new(format!("{HELLO_WAYS}. Or use another method:"))
                     .small()
                     .color(theme::MUTED),
             );
@@ -1495,6 +1521,12 @@ impl App {
             theme::divider(ui);
             ui.add_space(16.0);
         }
+        // Pairing needs a full unlock, so quick unlock waits until afterwards.
+        let quick_later = pair
+            && self
+                .status
+                .as_ref()
+                .is_some_and(|(s, _)| s.quick_unlock.supported && s.quick_unlock.hours > 0);
         let f = &mut self.unlock;
         let (heading, about) = match f.method {
             Method::Password => (
@@ -1525,6 +1557,17 @@ impl App {
                 )
                 .wrap(),
             );
+            if quick_later {
+                ui.add(
+                    egui::Label::new(
+                        RichText::new(format!(
+                            "{HELLO} unlock shows here from the next time the vault locks."
+                        ))
+                        .color(theme::MUTED),
+                    )
+                    .wrap(),
+                );
+            }
         }
         ui.add_space(12.0);
         let mut submit = false;
@@ -1814,7 +1857,7 @@ impl App {
                             .accesskit_node_builder(r.id, |n| n.set_label("Search"));
                         search_changed = r.changed();
                         ui.label(
-                            RichText::new("Ctrl K")
+                            RichText::new(PALETTE_KEY)
                                 .monospace()
                                 .size(11.0)
                                 .color(theme::MUTED),
@@ -2029,7 +2072,7 @@ impl App {
             ui.horizontal(|ui| {
                 ui.add_space(8.0);
                 ui.label(
-                    RichText::new("Ctrl K finds items and actions")
+                    RichText::new(format!("{PALETTE_KEY} finds items and actions"))
                         .small()
                         .color(theme::MUTED),
                 );
@@ -2170,8 +2213,10 @@ impl App {
                 ui.add_space(40.0);
                 ui.vertical_centered(|ui| {
                     ui.label(
-                        RichText::new("Pick an item on the left, make a new one, or press Ctrl K.")
-                            .color(theme::MUTED),
+                        RichText::new(format!(
+                            "Pick an item on the left, make a new one, or press {PALETTE_KEY}."
+                        ))
+                        .color(theme::MUTED),
                     );
                 });
             }
@@ -3524,7 +3569,7 @@ impl App {
 }
 
 impl App {
-    /// Quick unlock with Windows Hello, where vaultd supports it.
+    /// Quick unlock with Windows Hello or Touch ID, where vaultd supports it.
     fn quick_unlock_form(&mut self, ui: &mut Ui) {
         let Some(q) = self.status.as_ref().map(|(s, _)| s.quick_unlock.clone()) else {
             return;
@@ -3536,17 +3581,17 @@ impl App {
         theme::card().show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.label(
-                RichText::new("Quick unlock with Windows Hello")
+                RichText::new(format!("Quick unlock with {HELLO}"))
                     .family(theme::semibold())
                     .color(theme::INK)
                     .size(16.0)
                     .color(theme::INK),
             );
-            ui.label(
-                "After you unlock with your password (or another method), Windows Hello can \
+            ui.label(format!(
+                "After you unlock with your password (or another method), {HELLO} can \
              unlock the vault again when it locks, until the time below runs out or the \
-             computer restarts. Then the password is needed again.",
-            );
+             computer restarts. Then the password is needed again."
+            ));
             let hours = self
                 .quick_hours
                 .get_or_insert(if q.hours == 0 { 8 } else { q.hours });
@@ -3570,7 +3615,7 @@ impl App {
                 let busy = if picked == 0 {
                     "Turning quick unlock off…"
                 } else {
-                    "Confirm it's you in the Windows Security window…"
+                    HELLO_CONFIRM
                 };
                 self.act(
                     busy,

@@ -54,11 +54,13 @@ jobs:
   packages:
     uses: ./.github/workflows/package.yml
 
-  # vaultd is not ported to macOS yet; the core crates and the key check must build there.
+  # Everything, including the daemon over a Unix socket, on macOS.
   macos:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo test --locked -p vault-core -p vault-import -p vault-ipc
-      - run: cargo build --locked -p vault-hw --no-default-features --features fido2 --examples
+        with:
+          components: clippy
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked

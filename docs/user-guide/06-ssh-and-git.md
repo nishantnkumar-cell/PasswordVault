@@ -14,9 +14,9 @@ Use cases:
 
 | | Linux | Windows | macOS |
 |---|---|---|---|
-| SSH agent | Yes (tested with OpenSSH 9) | Yes, through the Windows OpenSSH client; untested on real hardware | Not yet |
-| Agent address | `$XDG_RUNTIME_DIR/vault/ssh-agent.sock` | `\\.\pipe\vaultd-ssh-<your SID>` | |
-| Key types | Ed25519, ECDSA P-256 | Ed25519, ECDSA P-256 | |
+| SSH agent | Yes (tested with OpenSSH 9) | Yes, through the Windows OpenSSH client; untested on real hardware | Yes, with macOS's OpenSSH |
+| Agent address | `$XDG_RUNTIME_DIR/vault/ssh-agent.sock` | `\\.\pipe\vaultd-ssh-<your SID>` | `~/Library/Application Support/vault/state/ssh-agent.sock` (quote it: the path has a space; see [chapter 13](13-macos.md#ssh-keys)) |
+| Key types | Ed25519, ECDSA P-256 | Ed25519, ECDSA P-256 | Ed25519, ECDSA P-256 |
 
 RSA keys are not supported, for creating or for importing.
 

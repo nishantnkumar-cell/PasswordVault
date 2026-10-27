@@ -103,8 +103,22 @@ Wait it out; restarting `vaultd` also clears it.
   administrator, or update Windows.
 - Linux: check that your user can open `/dev/hidraw*`; for the system-user
   setup, install `contrib/udev/70-vault-fido.rules`.
+- **"this security key has a PIN and needs it to register a credential"**
+  (Linux and macOS): run `vault add-slot fido2` again and type the key's
+  PIN at "Security key PIN" instead of pressing Enter. Unlocking with that
+  slot (`vault unlock --fido2`) asks for the PIN too.
+- **Touching the key types numbers** into a window: some keys (for example
+  Feitian keys with "KB" in their name) also act as a keyboard and type a
+  one-time code when touched while no request is waiting. Wait until
+  Secret Vault says "Touch your security key" and the key's light blinks,
+  then touch it. If the request times out, run the command again.
+- **"CTAP2_ERR_PIN_INVALID"**: the PIN was mistyped. After several wrong
+  PINs in a row the key asks you to remove and reinsert it, and after 8 it
+  locks itself for good, so check the PIN before trying again.
 - Run `cargo run -p vault-hw --example fido2-check` to test the key on its
-  own.
+  own. On a Mac or Linux, `fido2-token -I <device>` from libfido2 (Homebrew:
+  `brew install libfido2`) shows whether the key has a PIN (`clientPin`)
+  and supports `hmac-secret`.
 
 **TPM slot stopped working**
 If it was added with `--pcr7`, a change to Secure Boot or a firmware update
@@ -114,6 +128,30 @@ lockout for a while.
 On Windows, a TPM slot made under Linux on the same computer does not open
 (and the other way round); the error says which system made it. Add a TPM
 slot from each system.
+
+**Unlocking with your phone doesn't start, or times out**
+- Bluetooth must be on on both the phone and the computer, and both need an
+  internet connection: they meet through the phone maker's relay, and
+  Bluetooth only proves they are near each other.
+- Linux: `bluetoothctl show` should list an adapter with `Powered: yes`. If
+  it lists nothing, start the BlueZ service
+  (`sudo systemctl enable --now bluetooth`).
+- Windows: phone unlock needs Windows 11 version 23H2 or later. The QR code
+  is in Windows' own window, which may open behind other windows; check the
+  taskbar.
+- Confirm on the phone within two minutes, then try again.
+- If the app says the vault has no phone method, add one first
+  ([Unlock with your phone](02-unlocking.md#unlock-with-your-phone)).
+- If you deleted the **vault.local** passkey on the phone, that method can
+  no longer open the vault. Unlock with your password and another method,
+  remove the phone method and add the phone again.
+
+**A Windows TPM slot says "Not post-quantum"**
+The slot was added before Windows TPM slots were sealed inside the TPM. It
+still works, but a copy of the vault file is then only protected by your
+password against a future quantum computer. Add the TPM again and remove or
+revoke the old slot, as in
+[Post-quantum protection](02-unlocking.md#post-quantum-protection).
 
 **"no usable TPM 2.0" on Windows**
 Press Win+R, run `tpm.msc` and check that the TPM is ready and its
@@ -125,6 +163,8 @@ firmware settings (often called fTPM, PTT or Security Device). Then run
 - Quick unlock must be on: `vault quick-unlock` shows the setting.
 - It only works after a full unlock (password, security key, TPM or
   recovery code) since `vaultd` started, and only for the hours you chose.
+- Since this version, when quick unlock is not available the command says
+  so at once and no Touch ID or Windows Hello check appears.
 - Three failed or cancelled Windows Hello checks switch it off until the
   next full unlock, and so does `vault lock --full`.
 - If Windows says Windows Hello is not set up, add a PIN, face or

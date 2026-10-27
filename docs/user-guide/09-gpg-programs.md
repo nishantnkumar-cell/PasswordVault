@@ -20,12 +20,13 @@ It does not replace GnuPG for everything: see [What it does not do](#what-it-doe
 
 | | Linux | Windows | macOS |
 |---|---|---|---|
-| git commit and tag signing, `git log --show-signature` | Yes (tested with git 2.43) | Yes, untested on real hardware | Not yet |
-| `pass` | Yes (tested with pass 1.7.4) | No: `pass` is a Unix shell script | Not yet |
-| NeoMutt and Mutt | Commands tested by hand | Not applicable | Not yet |
+| git commit and tag signing, `git log --show-signature` | Yes (tested with git 2.43) | Yes, untested on real hardware | Yes, untested on real hardware |
+| `pass` | Yes (tested with pass 1.7.4) | No: `pass` is a Unix shell script | Should work (`brew install pass`); untested |
+| NeoMutt and Mutt | Commands tested by hand | Not applicable | Should work; untested |
 | Evolution, KMail, Thunderbird with GnuPG keys | Not yet | Not yet | Not yet |
 
-macOS waits for `vaultd` itself to run on macOS.
+On macOS, `vault-gpg` is linked into `~/.local/bin` by the installer
+([chapter 13](13-macos.md)).
 
 Before you start you need an OpenPGP key in the vault
 ([chapter 7](07-openpgp.md)), for example:

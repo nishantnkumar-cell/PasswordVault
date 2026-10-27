@@ -181,9 +181,9 @@ unlock it there once.
 
 ## Differences between phones, tablets and computers
 
-| | iPhone and iPad | Android | Linux and Windows desktop |
+| | iPhone and iPad | Android | Computers (Linux, Windows, macOS) |
 | --- | --- | --- | --- |
-| Unlock with face or fingerprint | Face ID, Touch ID | Fingerprint, face (strong biometrics only) | Windows Hello on Windows |
+| Unlock with face or fingerprint | Face ID, Touch ID | Fingerprint, face (strong biometrics only) | Windows Hello on Windows, Touch ID on a Mac |
 | Unlock with security key, TPM, phone passkey | No | No | Yes |
 | AutoFill in browsers | Yes, Face ID or Touch ID to unlock inside AutoFill | Yes, full unlock inside AutoFill | Browser extension |
 | One-time codes in AutoFill | Yes | Not yet | No |

@@ -914,13 +914,16 @@ fn makes_ssh_and_openpgp_keys() {
 /// A phone for tests: a soft authenticator behind the app's `Phone` trait. It
 /// returns no PRF output when creating a passkey, as iPhones may not, so the
 /// app has to ask a second time. While `hold` is set, it waits after showing
-/// its QR code, so the test can look at the window meanwhile.
+/// its QR code, so the test can look at the window meanwhile. Phone unlock
+/// is Linux and Windows only; the app hides it on macOS.
+#[cfg(any(target_os = "linux", windows))]
 struct FakePhone {
     key: vault_hw::soft::SoftFido2,
     hold: Arc<std::sync::atomic::AtomicBool>,
     asked: Mutex<u32>,
 }
 
+#[cfg(any(target_os = "linux", windows))]
 impl FakePhone {
     fn wait(&self) {
         while self.hold.load(std::sync::atomic::Ordering::SeqCst) {
@@ -929,6 +932,7 @@ impl FakePhone {
     }
 }
 
+#[cfg(any(target_os = "linux", windows))]
 impl vault_gui::client::Phone for FakePhone {
     fn enroll(
         &self,
@@ -965,6 +969,7 @@ impl vault_gui::client::Phone for FakePhone {
     }
 }
 
+#[cfg(any(target_os = "linux", windows))]
 #[test]
 fn adds_a_phone_and_unlocks_with_it() {
     let dir = tempdir();

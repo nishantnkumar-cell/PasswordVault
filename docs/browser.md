@@ -14,7 +14,7 @@ Load the extension unpacked: `chrome://extensions`, Developer mode, Load unpacke
 vault-native-host --install <EXTENSION_ID> [autofill@passwordvault.dev]   # second ID for Firefox
 ```
 
-This writes `dev.passwordvault.host.json` into the browsers' `NativeMessagingHosts` folders, allowing only that extension to start the host.
+This writes `dev.passwordvault.host.json` into the browsers' `NativeMessagingHosts` folders, allowing only that extension to start the host. On macOS those are under `~/Library/Application Support/` (`Google/Chrome`, `Chromium`, `Microsoft Edge`, `Mozilla`); the host itself is in `Secret Vault.app/Contents/MacOS/`.
 
 Then open the extension and press **Connect**: vaultd opens a window asking you to allow "browser" with autofill access. That gives the host an autofill-only token. Without a desktop, run `vault-native-host --pair --password` in a terminal instead.
 

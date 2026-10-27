@@ -17,13 +17,15 @@ trick it into handing over a login:
 
 | Browser | Linux | Windows | macOS |
 |---|---|---|---|
-| Google Chrome | Yes | Yes | Not yet |
-| Chromium | Yes | Not registered by the installer | Not yet |
-| Microsoft Edge | Yes | Yes | Not yet |
-| Firefox 128 or newer | Yes | Yes | Not yet |
+| Google Chrome | Yes | Yes | Yes |
+| Chromium | Yes | Not registered by the installer | Yes |
+| Microsoft Edge | Yes | Yes | Yes |
+| Firefox 128 or newer | Yes | Yes | Yes |
 
 Other Chromium-based browsers (Brave, Vivaldi) are not set up by the
-installer.
+installer. Safari is not supported. On macOS, `vault-native-host` is inside
+the app: `~/Applications/Secret Vault.app/Contents/MacOS/vault-native-host`
+([chapter 13](13-macos.md#browser-autofill)).
 
 ## Set it up
 
