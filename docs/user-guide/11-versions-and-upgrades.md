@@ -153,11 +153,11 @@ browser's extensions page). It keeps its pairing.
 
 | | Windows | Linux | macOS |
 |---|---|---|---|
-| Release download | Installer (`.exe`) | `.deb`, or `.tar.gz` with `install.sh` | None yet: the daemon is not ported to macOS |
-| Upgrade | Run the newer installer | `apt install ./new.deb`, or `./install.sh` from the new archive | |
-| Daemon restarted for you | Yes | `.tar.gz`: yes; `.deb`: run `systemctl --user restart vaultd` | |
-| Older over newer | Asks first (default No) | apt refuses; `install.sh` asks first | |
-| Administrator rights | Only for an all-users install | `sudo` for the `.deb`; none for the `.tar.gz` | |
+| Release download | Installer (`.exe`) | `.deb`, or `.tar.gz` with `install.sh` | `.tar.gz` with `install.sh` ([chapter 13](13-macos.md)) |
+| Upgrade | Run the newer installer | `apt install ./new.deb`, or `./install.sh` from the new archive | `./install.sh` from the new archive |
+| Daemon restarted for you | Yes | `.tar.gz`: yes; `.deb`: run `systemctl --user restart vaultd` | Yes |
+| Older over newer | Asks first (default No) | apt refuses; `install.sh` asks first | `install.sh` asks first |
+| Administrator rights | Only for an all-users install | `sudo` for the `.deb`; none for the `.tar.gz` | None |
 
 ## For maintainers: making a release
 

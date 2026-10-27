@@ -281,21 +281,32 @@ fn install(chrome_id: &str, firefox_id: Option<&str>) -> Result<(), String> {
         println!("wrote {}", file.display());
         Ok(())
     };
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let (chrome_dirs, firefox_dir) = (
+        [
+            ".config/google-chrome/NativeMessagingHosts",
+            ".config/chromium/NativeMessagingHosts",
+            ".config/microsoft-edge/NativeMessagingHosts",
+        ],
+        ".mozilla/native-messaging-hosts",
+    );
+    #[cfg(target_os = "macos")]
+    let (chrome_dirs, firefox_dir) = (
+        [
+            "Library/Application Support/Google/Chrome/NativeMessagingHosts",
+            "Library/Application Support/Chromium/NativeMessagingHosts",
+            "Library/Application Support/Microsoft Edge/NativeMessagingHosts",
+        ],
+        "Library/Application Support/Mozilla/NativeMessagingHosts",
+    );
     #[cfg(unix)]
     {
-        let mut targets = vec![
-            (
-                home(".config/google-chrome/NativeMessagingHosts"),
-                chrome.clone(),
-            ),
-            (
-                home(".config/chromium/NativeMessagingHosts"),
-                chrome.clone(),
-            ),
-            (home(".config/microsoft-edge/NativeMessagingHosts"), chrome),
-        ];
+        let mut targets: Vec<_> = chrome_dirs
+            .iter()
+            .map(|d| (home(d), chrome.clone()))
+            .collect();
         if let Some(fx) = firefox {
-            targets.push((home(".mozilla/native-messaging-hosts"), fx));
+            targets.push((home(firefox_dir), fx));
         }
         for (dir, manifest) in targets {
             write(&dir.join(format!("{HOST_NAME}.json")), &manifest)?;

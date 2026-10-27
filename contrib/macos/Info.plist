@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>Secret Vault</string>
+    <key>CFBundleDisplayName</key>
+    <string>Secret Vault</string>
+    <key>CFBundleIdentifier</key>
+    <string>dev.passwordvault.app</string>
+    <key>CFBundleExecutable</key>
+    <string>vault-gui</string>
+    <key>CFBundleIconFile</key>
+    <string>secret-vault</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>NUMBER</string>
+    <key>CFBundleVersion</key>
+    <string>VERSION</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>11.0</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+</dict>
+</plist>

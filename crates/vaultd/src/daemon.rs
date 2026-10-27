@@ -35,7 +35,7 @@ const FREE_ATTEMPTS: u32 = 3;
 const MAX_BACKOFF: Duration = Duration::from_secs(300);
 /// Longest quick unlock window after a full unlock.
 const MAX_QUICK_HOURS: u32 = 24;
-/// Failed Windows Hello attempts before the quick unlock key is forgotten.
+/// Failed Windows Hello or Touch ID attempts before the quick unlock key is forgotten.
 const QUICK_ATTEMPTS: u32 = 3;
 
 pub struct Daemon {
@@ -378,7 +378,7 @@ impl Daemon {
         self.quick_hours > 0 && self.quick_until.is_some_and(|t| SystemTime::now() < t)
     }
 
-    /// Re-open the parked vault after Windows Hello confirms the user.
+    /// Re-open the parked vault after Windows Hello or Touch ID confirms the user.
     fn quick_unlock(&mut self) -> R<Vault> {
         const NOT_NOW: &str = "quick unlock is not available now: unlock with your password \
                                (or another method) first";
@@ -427,11 +427,9 @@ impl Daemon {
             ));
         }
         if hours > 0 {
-            let hello = self
-                .hw
-                .presence
-                .as_ref()
-                .ok_or("quick unlock needs Windows Hello, which this system does not have")?;
+            let hello = self.hw.presence.as_ref().ok_or(
+                "quick unlock needs Windows Hello or Touch ID, which this system does not have",
+            )?;
             hello.check_available()?;
             hello.verify("Turn on quick unlock for Secret Vault")?;
         }
@@ -973,11 +971,11 @@ impl Daemon {
     /// Unlock with the first slot the method fits. Rate limited.
     fn prove(&mut self, method: &UnlockMethod) -> R<Vault> {
         if matches!(method, UnlockMethod::Hello) {
-            return Err(
-                "Windows Hello only re-opens a vault locked on this computer; \
-                 use your password or another full unlock method here"
-                    .into(),
-            );
+            return Err(format!(
+                "{} only re-opens a vault locked on this computer; \
+                 use your password or another full unlock method here",
+                vault_hw::PRESENCE_NAME
+            ));
         }
         if let Some(t) = self.next_attempt
             && Instant::now() < t

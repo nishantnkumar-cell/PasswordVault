@@ -12,6 +12,8 @@ pub mod hello;
 pub mod phone;
 pub mod protect;
 pub mod soft;
+#[cfg(target_os = "macos")]
+pub mod touchid;
 #[cfg(all(feature = "tpm", target_os = "linux"))]
 pub mod tpm;
 #[cfg(all(feature = "tpm", any(windows, test)))]
@@ -47,6 +49,13 @@ pub fn tpm_blob_is_classical(blob: &[u8]) -> bool {
     blob.starts_with(WIN_TPM_MAGIC)
 }
 
+/// What this system calls its presence check, for messages.
+pub const PRESENCE_NAME: &str = if cfg!(target_os = "macos") {
+    "Touch ID"
+} else {
+    "Windows Hello"
+};
+
 pub const LINUX_TPM_HINT: &str =
     "this TPM slot was made on Linux; Windows cannot use it, even on the same computer";
 pub const WIN_TPM_HINT: &str =
@@ -79,7 +88,7 @@ pub trait Tpm: Send {
 }
 
 /// The operating system's own check that the user is at the computer
-/// (Windows Hello). It yields no secret, so it only approves a quick unlock
+/// (Windows Hello, or Touch ID on macOS). It yields no secret, so it only approves a quick unlock
 /// of a key the daemon still holds; it never opens a vault on its own.
 pub trait Presence: Send {
     /// Whether the check is set up and usable for this user.
@@ -111,7 +120,9 @@ impl Hardware {
             tpm: None,
             #[cfg(windows)]
             presence: Some(Box::new(hello::WinHello)),
-            #[cfg(not(windows))]
+            #[cfg(target_os = "macos")]
+            presence: Some(Box::new(touchid::TouchId)),
+            #[cfg(not(any(windows, target_os = "macos")))]
             presence: None,
         }
     }

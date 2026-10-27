@@ -28,6 +28,19 @@ impl Fido2 for HidFido2 {
     fn enroll(&self, rp_id: &str, pin: Option<&str>, require_uv: bool) -> HwResult<Vec<u8>> {
         let dev =
             FidoKeyHidFactory::create(&Cfg::init()).map_err(|e| format!("no security key: {e}"))?;
+        // Some keys with a PIN (CTAP 2.0, 2.1 previews) wait for a touch and
+        // time out instead of answering PIN_REQUIRED: say so before the touch.
+        if pin.is_none() {
+            let opts = dev.get_info().map(|i| i.options).unwrap_or_default();
+            let on = |name: &str| opts.iter().any(|(k, v)| k == name && *v);
+            if on("clientPin") && !on("makeCredUvNotRqd") {
+                return Err(
+                    "this security key has a PIN and needs it to register a credential; \
+                     give the PIN"
+                        .into(),
+                );
+            }
+        }
         let ch = challenge();
         let ext = [Mext::HmacSecret(Some(true))];
         let mut b = MakeCredentialArgsBuilder::new(rp_id, &ch).extensions(&ext);
