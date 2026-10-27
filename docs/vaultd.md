@@ -20,7 +20,12 @@ Build without hardware support with `cargo build -p vaultd --no-default-features
 
 ## macOS
 
-`cargo build --release` needs only Apple's command line tools. `contrib/macos/package.sh VERSION` wraps the programs in `Secret Vault.app` (signed ad hoc) with `install.sh` and the launch agent `contrib/macos/dev.passwordvault.vaultd.plist` (`LimitLoadToSessionType` Aqua, core dumps off, restart on failure, log in `~/Library/Logs/vaultd.log`). User steps: [user-guide/13-macos.md](user-guide/13-macos.md).
+`cargo build --release` needs only Apple's command line tools. `contrib/macos/package.sh VERSION` wraps the programs in `Secret Vault.app` (signed ad hoc) and makes two packages from it:
+
+- `SecretVault-<version>-macos.pkg` (`pkgbuild` + `productbuild`, package id `dev.passwordvault.pkg`): the app in `/Applications` (not relocatable), links in `/usr/local/bin`, and the shared launch agent `contrib/macos/pkg/dev.passwordvault.vaultd.plist` in `/Library/LaunchAgents`, which starts vaultd in each account's Aqua session and logs to that account's `~/Library/Logs/vaultd.log`. `preinstall` refuses a downgrade and boots out vaultd for every signed-in account; `postinstall` makes the links, removes an `install.sh` copy (and rewrites that account's native-messaging manifests to the new path), and bootstraps the agent for every signed-in account. `Contents/Resources/uninstall.sh` (run with sudo) undoes it and `pkgutil --forget`s the receipt; vault data stays.
+- `secret-vault-<version>-macos-<arch>.tar.gz` with `install.sh` and the per-user launch agent `contrib/macos/dev.passwordvault.vaultd.plist` (`LimitLoadToSessionType` Aqua, core dumps off, restart on failure, log in `~/Library/Logs/vaultd.log`), installing into `~/Applications` and `~/.local/bin`. It refuses to run over a `.pkg` install.
+
+CI builds both targets, joins them with `contrib/macos/universal.sh` (`lipo`) and packages with `BIN_DIR=target/universal ARCH=universal`; the job installs the `.pkg` on the runner, checks it, upgrades in place and uninstalls. Signing with a Developer ID and notarizing: [macos-signing.md](macos-signing.md). User steps: [user-guide/13-macos.md](user-guide/13-macos.md).
 
 - **Peer check:** `getpeereid` for the UID and `LOCAL_PEERPID` for the PID shown in the approval window (Linux uses `SO_PEERCRED`). The window names the program through `proc_pidpath` and its command line through `ps`.
 - **Hardening:** `RLIMIT_CORE` 0 and `ptrace(PT_DENY_ATTACH)`. There is no `mlockall` on macOS; swap is always encrypted with a key the kernel holds.

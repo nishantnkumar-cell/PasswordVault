@@ -51,6 +51,8 @@ No GitHub account is needed. Each release has:
 | `SecretVault-Setup-<version>.exe` | Windows 10 (1903 or later) and 11, 64-bit |
 | `secret-vault_<version>_amd64.deb` | Debian 13, Ubuntu 24.04 and newer |
 | `secret-vault-<version>-linux-x86_64.tar.gz` | Other Linux distributions (64-bit) |
+| `SecretVault-<version>-macos.pkg` | macOS 11 and newer, Apple silicon and Intel: the installer ([chapter 13](13-macos.md)) |
+| `secret-vault-<version>-macos-universal.tar.gz` | macOS without an administrator password, with `install.sh` |
 | `secret-vault-extension-<version>.zip` | The browser extension, to load unpacked |
 
 The release's description is that version's section of the
@@ -153,7 +155,7 @@ browser's extensions page). It keeps its pairing.
 
 | | Windows | Linux | macOS |
 |---|---|---|---|
-| Release download | Installer (`.exe`) | `.deb`, or `.tar.gz` with `install.sh` | `.tar.gz` with `install.sh` ([chapter 13](13-macos.md)) |
+| Release download | Installer (`.exe`) | `.deb`, or `.tar.gz` with `install.sh` | Installer (`.pkg`), or `.tar.gz` with `install.sh` ([chapter 13](13-macos.md)) |
 | Upgrade | Run the newer installer | `apt install ./new.deb`, or `./install.sh` from the new archive | `./install.sh` from the new archive |
 | Daemon restarted for you | Yes | `.tar.gz`: yes; `.deb`: run `systemctl --user restart vaultd` | Yes |
 | Older over newer | Asks first (default No) | apt refuses; `install.sh` asks first | `install.sh` asks first |

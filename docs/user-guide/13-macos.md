@@ -21,11 +21,54 @@ Intel Macs.
 
 ## Install from a release
 
-1. Download `secret-vault-<version>-macos-arm64.tar.gz` (Apple silicon:
-   M1 and newer) or `...-macos-x86_64.tar.gz` (Intel) from the project's
-   [Releases page](https://github.com/nishantnkumar-cell/PasswordVault/releases).
-   To check which Mac you have, open the Apple menu > About This Mac: "Chip
-   Apple M…" means Apple silicon.
+There are two downloads on the project's
+[Releases page](https://github.com/nishantnkumar-cell/PasswordVault/releases).
+Both work on every Mac (Apple silicon and Intel) and hold the same app:
+
+| Download | Installs into | Needs |
+|---|---|---|
+| `SecretVault-<version>-macos.pkg` (**recommended**) | `/Applications`, for every account on the Mac | An administrator password |
+| `secret-vault-<version>-macos-universal.tar.gz` | `~/Applications`, for your account only | Terminal, no administrator password |
+
+Pick one. If you install the `.pkg` after the `.tar.gz`, it replaces the
+`~/Applications` copy for you.
+
+### With the installer (.pkg)
+
+1. Download `SecretVault-<version>-macos.pkg`.
+2. Double-click it in your Downloads folder. Because the installer is not
+   signed with an Apple developer ID yet, macOS stops it the first time:
+   - **macOS 15 (Sequoia) and newer:** macOS says it "cannot verify" the
+     installer. Click **Done**. Open the Apple menu > **System Settings** >
+     **Privacy & Security**, scroll down to **Security**, and click
+     **Open Anyway** next to the line about `SecretVault-...pkg`. Enter
+     your password, then click **Open Anyway** again.
+   - **macOS 11 to 14:** right-click (or Control-click) the file, choose
+     **Open**, then **Open** again.
+3. Follow the installer: **Continue**, agree to the licence, **Install**,
+   and enter your Mac's administrator password.
+4. When it says the installation was successful, click **Close**.
+
+It puts:
+
+- **Secret Vault.app** in **Applications**, where Launchpad and Spotlight
+  find it;
+- the `vault`, `vaultd` and `vault-gpg` commands in `/usr/local/bin`, which
+  every Terminal window already searches;
+- a **launch agent** in `/Library/LaunchAgents`, so `vaultd` starts now and
+  every time anyone signs in to this Mac, and starts again if it stops. Each
+  account gets its own `vaultd` and its own vault; an account that never
+  creates a vault just has an idle `vaultd`.
+
+Prefer Terminal? This does the same, with no Gatekeeper step:
+
+```sh
+sudo installer -pkg ~/Downloads/SecretVault-<version>-macos.pkg -target /
+```
+
+### With the archive (.tar.gz, no administrator password)
+
+1. Download `secret-vault-<version>-macos-universal.tar.gz`.
 2. Double-click the file in Finder to unpack it.
 3. Open **Terminal** (Applications > Utilities), type `cd ` (with a space),
    drag the unpacked folder onto the Terminal window, and press Return.
@@ -35,13 +78,13 @@ Intel Macs.
    ./install.sh
    ```
 
-This needs no administrator password. It does three things:
+It does three things:
 
 - puts **Secret Vault.app** in the `Applications` folder inside your home
   folder (`~/Applications`), where Launchpad and Spotlight find it;
 - puts the `vault`, `vaultd` and `vault-gpg` commands in `~/.local/bin`;
-- adds a **launch agent**, so `vaultd` starts now and every time you sign
-  in, and starts again if it stops.
+- adds a **launch agent** in `~/Library/LaunchAgents`, so `vaultd` starts
+  now and every time you sign in, and starts again if it stops.
 
 If it says to add `~/.local/bin` to your `PATH`, run the command it prints,
 then open a new Terminal window.
@@ -67,8 +110,11 @@ then open a new Terminal window.
    contrib/macos/package.sh 0.0.0-local
    ```
 
-4. Unpack `target/packages/secret-vault-0.0.0-local-macos-*.tar.gz` and run
-   its `./install.sh`, as in [Install from a release](#install-from-a-release).
+4. In `target/packages`, double-click `SecretVault-0.0.0-local-macos.pkg`
+   (a file you built yourself needs no Gatekeeper step), or unpack
+   `secret-vault-0.0.0-local-macos-*.tar.gz` and run its `./install.sh`, as
+   in [Install from a release](#install-from-a-release). This build is for
+   your own kind of Mac only; the release downloads are universal.
 
 To try things without installing, you can also run
 `target/release/vaultd` in one Terminal window and `target/release/vault`
@@ -163,8 +209,10 @@ Chrome, Chromium, Microsoft Edge and Firefox work. Follow
 registers the browser host for you; on the command line it is:
 
 ```sh
-"$HOME/Applications/Secret Vault.app/Contents/MacOS/vault-native-host" --install <extension-id>
+"/Applications/Secret Vault.app/Contents/MacOS/vault-native-host" --install <extension-id>
 ```
+
+(With the `.tar.gz`, the app is in `$HOME/Applications` instead.)
 
 That writes the host's manifest into each browser's folder under
 `~/Library/Application Support/` (`Google/Chrome`, `Chromium`,
@@ -199,8 +247,10 @@ Setting `SSH_AUTH_SOCK` replaces macOS's own agent for that shell. Chapter
 | The vault file | `~/Library/Application Support/vault/vault.svault` |
 | Pairing tokens and client settings | `~/Library/Application Support/vault/` |
 | Daemon state, socket and ssh-agent socket | `~/Library/Application Support/vault/state/` |
-| The app and its programs | `~/Applications/Secret Vault.app` |
-| The launch agent | `~/Library/LaunchAgents/dev.passwordvault.vaultd.plist` |
+| The app and its programs | `/Applications/Secret Vault.app` (`.pkg`) or `~/Applications/Secret Vault.app` (`.tar.gz`) |
+| The commands | `/usr/local/bin` (`.pkg`) or `~/.local/bin` (`.tar.gz`), as links into the app |
+| The launch agent | `/Library/LaunchAgents/dev.passwordvault.vaultd.plist` (`.pkg`) or `~/Library/LaunchAgents/dev.passwordvault.vaultd.plist` (`.tar.gz`) |
+| The uninstaller (`.pkg`) | `/Applications/Secret Vault.app/Contents/Resources/uninstall.sh` |
 | vaultd's messages | `~/Library/Logs/vaultd.log` (open it with the Console app) |
 
 If you set `XDG_DATA_HOME`, `XDG_CONFIG_HOME` or `XDG_STATE_HOME`, Secret
@@ -214,9 +264,13 @@ it too; the file is encrypted, so that is safe.
 
 ## Upgrading and removing
 
-**Upgrade:** download the newer release and run its `./install.sh`. It
-replaces the app, keeps your vault and settings, and restarts `vaultd`.
-See [Versions, downloads and upgrading](11-versions-and-upgrades.md).
+**Upgrade:** download the newer release and install it the same way you
+installed the first one: open the newer `.pkg`, or run the newer archive's
+`./install.sh`. Either replaces the app, keeps your vault and settings, and
+restarts `vaultd`. Neither goes back to an older version by accident: the
+`.pkg` refuses (the installer says the installation failed, and
+`/var/log/install.log` says why), and `install.sh` asks first. See
+[Versions, downloads and upgrading](11-versions-and-upgrades.md).
 
 **Stop vaultd** for now (it starts again at the next sign-in):
 
@@ -224,8 +278,19 @@ See [Versions, downloads and upgrading](11-versions-and-upgrades.md).
 launchctl bootout gui/$(id -u)/dev.passwordvault.vaultd
 ```
 
-**Remove Secret Vault** (your vault file stays, so copy it somewhere first
-if you need it, or delete the `vault` folder too):
+**Remove Secret Vault installed with the `.pkg`:**
+
+```sh
+sudo "/Applications/Secret Vault.app/Contents/Resources/uninstall.sh"
+```
+
+It stops `vaultd` for everyone signed in, and removes the app, the launch
+agent, the commands in `/usr/local/bin` and the browser registrations that
+point at the app. Your vault file stays, in every account; copy it
+somewhere first if you need it, or delete the `vault` folder too.
+
+**Remove Secret Vault installed with `install.sh`** (your vault file stays
+here too):
 
 ```sh
 launchctl bootout gui/$(id -u)/dev.passwordvault.vaultd
@@ -238,7 +303,7 @@ rm ~/.local/bin/vault ~/.local/bin/vaultd ~/.local/bin/vault-gpg
 
 | | macOS | Linux | Windows |
 |---|---|---|---|
-| Install | `.tar.gz` with `install.sh`, no admin rights | `.deb`, or `.tar.gz` with `install.sh` | Installer, no admin rights |
+| Install | Installer `.pkg` (admin password, all accounts), or `.tar.gz` with `install.sh` (no admin rights) | `.deb`, or `.tar.gz` with `install.sh` | Installer, no admin rights |
 | Starts at sign-in | Launch agent | systemd user service | Run key (`vaultw.exe`) |
 | Quick unlock | Touch ID, Apple Watch or login password | Not yet | Windows Hello |
 | TPM slot | Not applicable (no TPM) | Yes | Yes |
@@ -278,4 +343,20 @@ app it always is; if you run programs from a build folder, run `vaultd`
 from `target/release` too.
 
 **"Secret Vault can't be opened."** See the note under
-[Install from a release](#install-from-a-release).
+[With the archive](#with-the-archive-targz-no-administrator-password).
+
+**The installer "cannot be verified" or "can't be opened".** It is not
+signed with an Apple developer ID yet; step 2 of
+[With the installer](#with-the-installer-pkg) shows how to open it anyway.
+
+**The installation failed.** Open the Console app, or run
+`grep -i "secret vault" /var/log/install.log | tail`. The usual reason is
+that a newer Secret Vault is already installed; remove it first (see
+[Upgrading and removing](#upgrading-and-removing)) if you really want the
+older one.
+
+**Two `vaultd` launch agents.** If you used `install.sh` once and the
+`.pkg` later, the installer removes the `install.sh` copy (the app in
+`~/Applications`, its launch agent and its links in `~/.local/bin`) and
+points that account's browsers at the new app. The other way round,
+`install.sh` stops and asks you to run the `.pkg` uninstaller first.

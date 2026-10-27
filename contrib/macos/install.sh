@@ -19,6 +19,12 @@ agent=$HOME/Library/LaunchAgents/dev.passwordvault.vaultd.plist
 logs=$HOME/Library/Logs
 label=gui/$(id -u)/dev.passwordvault.vaultd
 
+if [ -e /Library/LaunchAgents/dev.passwordvault.vaultd.plist ]; then
+    echo "Secret Vault is installed for all accounts from the .pkg installer. Upgrade it with a newer .pkg, or remove it first:" >&2
+    echo "  sudo \"/Applications/Secret Vault.app/Contents/Resources/uninstall.sh\"" >&2
+    exit 1
+fi
+
 old=
 if [ -x "$app/Contents/MacOS/vaultd" ]; then
     old=$("$app/Contents/MacOS/vaultd" --version 2>/dev/null | awk '{ print $2 }') || true

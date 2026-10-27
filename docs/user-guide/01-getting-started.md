@@ -155,17 +155,24 @@ Set-ItemProperty HKCU:\Software\Microsoft\Windows\CurrentVersion\Run "Secret Vau
 
 ## macOS
 
-Download `secret-vault-<version>-macos-arm64.tar.gz` (Apple silicon) or
-`...-macos-x86_64.tar.gz` (Intel) from the
-[Releases page](https://github.com/nishantnkumar-cell/PasswordVault/releases),
-unpack it, and run `./install.sh` in it from Terminal. No administrator
-password is needed. It installs **Secret Vault.app** in `~/Applications`,
-the `vault` command in `~/.local/bin`, and a launch agent that starts
-`vaultd` now and at every sign-in.
+Download `SecretVault-<version>-macos.pkg` from the
+[Releases page](https://github.com/nishantnkumar-cell/PasswordVault/releases)
+and double-click it. It works on Apple silicon and Intel Macs. The installer
+puts **Secret Vault.app** in Applications, the `vault` command in
+`/usr/local/bin`, and a launch agent that starts `vaultd` now and at every
+sign-in. It asks for your Mac's administrator password. The installer is
+not signed with an Apple developer ID yet, so the first time macOS stops it:
+on macOS 15 and newer, allow it under System Settings > Privacy & Security >
+**Open Anyway**; on older versions, right-click it and choose **Open**.
+
+Without an administrator password, download
+`secret-vault-<version>-macos-universal.tar.gz` instead, unpack it, and run
+`./install.sh` in it from Terminal: that installs into `~/Applications` and
+`~/.local/bin` for your account only.
 
 To build from source instead, install Apple's command line tools
 (`xcode-select --install`) and Rust, then run `cargo build --release` and
-`contrib/macos/package.sh 0.0.0-local`, and install the archive it makes.
+`contrib/macos/package.sh 0.0.0-local`, and open the `.pkg` it makes.
 
 [Installing and running on macOS](13-macos.md) has every step, Touch ID,
 browsers, SSH and the differences from Linux and Windows. Then come back to

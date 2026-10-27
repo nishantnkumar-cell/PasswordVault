@@ -204,7 +204,7 @@ you no longer need the vault or have a copy of it.
 
 | | Windows | Linux | macOS |
 |---|---|---|---|
-| How to install | The installer described here | Build with `cargo` and install the systemd unit ([vaultd.md](../vaultd.md)) | `.tar.gz` with `install.sh` ([chapter 13](13-macos.md)) |
+| How to install | The installer described here | Build with `cargo` and install the systemd unit ([vaultd.md](../vaultd.md)) | Installer (`.pkg`), or `.tar.gz` with `install.sh` ([chapter 13](13-macos.md)) |
 | Administrator rights | None for "me only"; once during setup for "all users" | None for a per-user unit; root to install the system unit | None |
 | How vaultd starts | `vaultw.exe` at sign-in, no window | systemd user unit (`systemctl --user`) | Launch agent at sign-in |
 | vaultd log | `%LOCALAPPDATA%\vault\state\vaultd.log` | `journalctl --user -u vaultd` | `~/Library/Logs/vaultd.log` |
