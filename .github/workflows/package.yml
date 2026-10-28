@@ -79,27 +79,60 @@ jobs:
             target/packages/*.deb
             target/packages/*.tar.gz
 
+  # One universal build (Apple silicon and Intel), as an installer .pkg and
+  # an install.sh archive. The job installs the .pkg, checks it and removes
+  # it again.
   macos-package:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
       - name: Version
         run: |
           export VAULT_COMMIT=${VAULT_COMMIT_SHA::7}
           echo "VAULT_VERSION=$(contrib/release/version.sh --build)" >> "$GITHUB_ENV"
-      - run: cargo build --release --locked
+      - run: cargo build --release --locked --target aarch64-apple-darwin --target x86_64-apple-darwin
+      - run: contrib/macos/universal.sh
       - run: contrib/macos/package.sh "$VAULT_VERSION"
-      - name: Check the package
+        env:
+          BIN_DIR: target/universal
+          ARCH: universal
+      - name: Check the archive
         run: |
-          test "$(target/release/vaultd --version)" = "vaultd $VAULT_VERSION"
+          test "$(target/universal/vaultd --version)" = "vaultd $VAULT_VERSION"
           tar -tzf target/packages/*.tar.gz | grep -q "Secret Vault.app/Contents/MacOS/vaultd"
           d=$(mktemp -d) && tar -C "$d" -xzf target/packages/*.tar.gz
           codesign --verify --verbose "$d"/*/"Secret Vault.app"
+      - name: Install, check and remove the .pkg
+        run: |
+          pkg=target/packages/SecretVault-$VAULT_VERSION-macos.pkg
+          pkgutil --payload-files "$pkg" | tee payload.txt
+          grep -q "Applications/Secret Vault.app/Contents/MacOS/vaultd$" payload.txt
+          grep -q "Applications/Secret Vault.app/Contents/Resources/uninstall.sh$" payload.txt
+          grep -q "Library/LaunchAgents/dev.passwordvault.vaultd.plist$" payload.txt
+          sudo installer -verbose -pkg "$pkg" -target /
+          app="/Applications/Secret Vault.app"
+          codesign --verify --strict --verbose "$app"
+          lipo "$app/Contents/MacOS/vaultd" -verify_arch arm64 x86_64
+          test "$(/usr/local/bin/vault --version)" = "vault $VAULT_VERSION"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Contents/Info.plist")" = "$VAULT_VERSION"
+          plutil -lint /Library/LaunchAgents/dev.passwordvault.vaultd.plist
+          pkgutil --pkg-info dev.passwordvault.pkg
+          # Installing the same version again is an upgrade in place.
+          sudo installer -pkg "$pkg" -target /
+          sudo "$app/Contents/Resources/uninstall.sh"
+          test ! -e "$app"
+          test ! -e /usr/local/bin/vault
+          test ! -e /Library/LaunchAgents/dev.passwordvault.vaultd.plist
+          if pkgutil --pkg-info dev.passwordvault.pkg; then exit 1; fi
       - uses: actions/upload-artifact@v7
         with:
           name: macos-package
-          path: target/packages/*.tar.gz
+          path: |
+            target/packages/*.pkg
+            target/packages/*.tar.gz
 
   extension:
     runs-on: ubuntu-latest

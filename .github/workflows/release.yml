@@ -32,5 +32,13 @@ jobs:
           version=$(contrib/release/version.sh --build)
           contrib/release/notes.sh "$version" > notes.md
           test -s notes.md || { echo "no \"## $version\" section in docs/release-notes.md" >&2; exit 1; }
-          ls -l dist
+          # Every download a release promises (docs/user-guide/11-versions-and-upgrades.md).
+          for f in "SecretVault-Setup-$version.exe" "secret-vault_${version}_amd64.deb" \
+              "secret-vault-$version-linux-x86_64.tar.gz" "SecretVault-$version-macos.pkg" \
+              "secret-vault-$version-macos-universal.tar.gz" "secret-vault-extension-$version.zip"; do
+            test -f "dist/$f" || { echo "missing dist/$f" >&2; ls -l dist >&2; exit 1; }
+          done
+          # SHA-256 of every file, so a download can be checked before it is run.
+          (cd dist && sha256sum -- * > SHA256SUMS.txt)
+          ls -l dist && cat dist/SHA256SUMS.txt
           gh release create "v$version" dist/* --title "Secret Vault $version" --notes-file notes.md --verify-tag

@@ -54,6 +54,72 @@ unlock methods work only on the computer they were made on. Saving a new
 login from another app's sign-up form is not built yet. No vault file
 change: computers and phones read the same files.
 
+### Public downloads with checksums
+
+Every release is published on the
+[Releases page](https://github.com/nishantnkumar-cell/PasswordVault/releases/latest)
+for anyone to download, no GitHub account needed: the Windows installer, the
+Linux `.deb` and `.tar.gz`, the macOS `.pkg` and `.tar.gz`, and the browser
+extension. New with this release:
+
+- **`SHA256SUMS.txt`** is attached to every release. It holds a fingerprint
+  of each file, so you can check that a download is complete and unchanged
+  before you run it. How to check it on Linux, macOS and Windows is in
+  [Versions, downloads and upgrading](user-guide/11-versions-and-upgrades.md#checking-a-download-optional).
+- The release is only published if **all six downloads** were built, so a
+  release can never be missing one system's installer.
+- The user guide now explains the **one-time warnings** Windows (SmartScreen:
+  **More info** > **Run anyway**) and macOS (**Open Anyway** in Privacy &
+  Security) show for an unsigned installer, and what code signing would cost
+  to remove them. Linux shows no warning.
+
+Not included yet: the iPhone, iPad and Android apps, which are still in
+development and need app store accounts to be published.
+
+### A macOS installer
+
+Secret Vault now comes as a normal Mac installer, `SecretVault-<version>-macos.pkg`:
+double-click it, click through, enter your administrator password, and it is
+installed. One download works on Apple silicon and on Intel Macs.
+
+How to start:
+
+1. Download `SecretVault-<version>-macos.pkg` from the
+   [Releases page](https://github.com/nishantnkumar-cell/PasswordVault/releases).
+2. Double-click it. The first time, macOS stops it because it is not signed
+   with an Apple developer ID yet: on macOS 15 and newer, click **Done**, then
+   **Open Anyway** under System Settings > Privacy & Security; on macOS 11 to
+   14, right-click it and choose **Open**.
+3. Follow the installer, then open **Secret Vault** from Launchpad.
+
+What it installs: **Secret Vault.app** in `/Applications`, the `vault`,
+`vaultd` and `vault-gpg` commands in `/usr/local/bin` (already on every
+Terminal's `PATH`), and a launch agent in `/Library/LaunchAgents` that starts
+`vaultd` for each account when it signs in. Every account keeps its own vault.
+
+- **Upgrading:** open a newer `.pkg`. It keeps your vault and settings and
+  restarts `vaultd`. It refuses to install an older version over a newer one.
+- **Moving from `install.sh`:** the `.pkg` replaces a copy in `~/Applications`
+  (its launch agent and its links in `~/.local/bin` too) and points your
+  browsers at the new app, so autofill keeps working.
+- **Removing:** `sudo "/Applications/Secret Vault.app/Contents/Resources/uninstall.sh"`.
+  Your vault file stays.
+- **No administrator password?** The `.tar.gz` with `install.sh` is still
+  there, now also universal: `secret-vault-<version>-macos-universal.tar.gz`
+  (it replaces the separate `-arm64` archive). `install.sh` stops if the
+  `.pkg` version is installed.
+
+The whole walk-through: [Installing and running on macOS](user-guide/13-macos.md).
+
+Platform differences: macOS only. Linux (`.deb`, `.tar.gz`) and Windows
+(`SecretVault-Setup-<version>.exe`) are unchanged. Unlike the Windows
+installer, the macOS one needs an administrator password, because it
+installs for every account.
+
+Known gaps: the installer and the app are not signed with an Apple developer
+ID or notarised yet ([what that needs](macos-signing.md)). The launch agent
+starts an idle `vaultd` in accounts that never create a vault.
+
 ### Secret Vault runs on macOS
 
 Until now only the core library ran on a Mac. Now everything does: `vaultd`,
@@ -63,16 +129,18 @@ Intel.
 
 How to start:
 
-1. Download `secret-vault-<version>-macos-arm64.tar.gz` (Apple silicon) or
-   `...-macos-x86_64.tar.gz` (Intel), unpack it, and run `./install.sh` in
-   it from Terminal. No administrator password is needed.
+1. Install it with `SecretVault-<version>-macos.pkg` (see
+   [A macOS installer](#a-macos-installer) above), or, without an
+   administrator password, unpack
+   `secret-vault-<version>-macos-universal.tar.gz` and run `./install.sh`
+   in it from Terminal.
 2. Open **Secret Vault** from Launchpad or Spotlight. The setup wizard
    walks you through the master password, the recovery code, Touch ID and
    the browser.
 
-The installer puts **Secret Vault.app** in `~/Applications`, the `vault`
-command in `~/.local/bin`, and a launch agent that starts `vaultd` at every
-sign-in. Your vault lives in `~/Library/Application Support/vault/`. The
+The `.pkg` puts **Secret Vault.app** in `/Applications` and the `vault`
+command in `/usr/local/bin` (`install.sh`: `~/Applications` and
+`~/.local/bin`), and a launch agent that starts `vaultd` at every sign-in. Your vault lives in `~/Library/Application Support/vault/`. The
 whole walk-through is in
 [Installing and running on macOS](user-guide/13-macos.md).
 
@@ -109,8 +177,9 @@ Platform differences:
   core dumps and blocks debuggers. There is no memory locking on macOS, but
   macOS always encrypts swap. vaultd does not yet lock when the screen
   locks or the Mac sleeps; it locks after 15 idle minutes. The app is not
-  signed with an Apple developer ID, so install it with `install.sh`, which
-  clears the download flag (or right-click the app and choose **Open**).
+  signed with an Apple developer ID, so macOS asks you to allow the
+  installer once (or, with `install.sh`, the script clears the download
+  flag).
 - **Linux and Windows:** nothing changes. The `vault` command now also
   accepts `vault unlock --touch-id` as another name for `--hello`.
 

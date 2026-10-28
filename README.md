@@ -18,6 +18,17 @@ Status: v1 feature-complete on Linux and Windows, not yet audited. Do not trust 
 | `extension/` | Browser autofill extension (Manifest V3): logins, cards and addresses. |
 | `vault-mobile`, `mobile/` | iPhone, iPad and Android apps (SwiftUI, Jetpack Compose) over `vault-core` through UniFFI. |
 
+## Download
+
+Installers for Windows, Linux and macOS and the browser extension are on the
+[Releases page](https://github.com/nishantnkumar-cell/PasswordVault/releases/latest),
+free to download without a GitHub account. Windows and macOS warn once the
+first time you open them because they are not code-signed yet; the
+[download guide](docs/user-guide/11-versions-and-upgrades.md#where-to-download)
+says what to click and how to check a download.
+
+## Documentation
+
 New here? Read the [user guide](docs/user-guide/README.md): it walks through installing, creating a vault and using each feature on Linux, Windows and macOS. What changed in each version is in the [release notes](docs/release-notes.md).
 
 For the technical reference, start with [`docs/vaultd.md`](docs/vaultd.md), then [`docs/browser.md`](docs/browser.md) for autofill.

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The installer's pages for SecretVault-<version>-macos.pkg; package.sh
+     fills in VERSION, NUMBER and ARCHS. -->
+<installer-gui-script minSpecVersion="2">
+    <title>Secret Vault VERSION</title>
+    <welcome file="welcome.html" mime-type="text/html"/>
+    <license file="license.txt" mime-type="text/plain"/>
+    <conclusion file="conclusion.html" mime-type="text/html"/>
+    <!-- Native on these, so Apple silicon does not ask for Rosetta. -->
+    <options customize="never" require-scripts="false" hostArchitectures="ARCHS"/>
+    <!-- /Applications and /Library, for every account on this Mac. -->
+    <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>
+    <os-version min="11.0"/>
+    <choices-outline>
+        <line choice="default">
+            <line choice="dev.passwordvault.pkg"/>
+        </line>
+    </choices-outline>
+    <choice id="default"/>
+    <choice id="dev.passwordvault.pkg" visible="false">
+        <pkg-ref id="dev.passwordvault.pkg"/>
+    </choice>
+    <pkg-ref id="dev.passwordvault.pkg" version="NUMBER" onConclusion="none">SecretVault.pkg</pkg-ref>
+</installer-gui-script>

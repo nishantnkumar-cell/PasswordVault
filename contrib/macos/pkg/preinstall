@@ -1,0 +1,26 @@
+#!/bin/bash
+# Runs as root before SecretVault-<version>-macos.pkg copies its files.
+# package.sh fills in NUMBER, the version being installed.
+#
+# Refuses to go back to an older version (an older vaultd may not open a
+# vault the newer one saved), and stops vaultd in every signed-in account so
+# the files can be replaced; postinstall starts it again.
+set -u
+new=NUMBER
+plist="/Applications/Secret Vault.app/Contents/Info.plist"
+
+if [ -f "$plist" ]; then
+    old=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$plist" 2>/dev/null || true)
+    if [ -n "$old" ] && [ "$old" != "$new" ] &&
+        [ "$(printf '%s\n%s\n' "$old" "$new" | sort -t. -k1,1n -k2,2n -k3,3n | tail -n1)" != "$new" ]; then
+        echo "Secret Vault $old is installed, newer than $new. An older version may not open a vault the newer one saved." >&2
+        echo "To go back anyway, remove $old first: sudo \"/Applications/Secret Vault.app/Contents/Resources/uninstall.sh\"" >&2
+        exit 1
+    fi
+fi
+
+# Every account with a desktop session runs its own loginwindow.
+for uid in $(ps -axo uid=,comm= | awk '$2 ~ /loginwindow$/ { print $1 }' | sort -u); do
+    launchctl bootout "gui/$uid/dev.passwordvault.vaultd" 2>/dev/null || true
+done
+exit 0
