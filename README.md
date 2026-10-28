@@ -20,7 +20,8 @@ Status: v1 feature-complete on Linux and Windows, not yet audited. Do not trust 
 
 ## Download
 
-Installers for Windows, Linux and macOS and the browser extension are on the
+Installers for Windows, Linux and macOS, the browser extension and (from
+0.2.0-beta.2 on) the Android app are on the
 [Releases page](https://github.com/nishantnkumar-cell/PasswordVault/releases),
 free to download without a GitHub account. The first downloads are public
 betas (marked **Pre-release**): not security audited yet, so try them with

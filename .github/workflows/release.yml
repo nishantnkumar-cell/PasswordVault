@@ -3,6 +3,9 @@
 # both. A pre-release tag of that version (v0.2.0-beta.1, -alpha.N, -rc.N) is
 # published as a public beta: marked pre-release on GitHub, with the
 # "## Unreleased" release notes. See docs/user-guide/11-versions-and-upgrades.md.
+# The Android app is attached as an APK signed with the release key from the
+# ANDROID_KEYSTORE_BASE64 and ANDROID_KEYSTORE_PASSWORD secrets; without them
+# the release is published without it (docs/mobile.md#release-signing).
 name: Release
 
 on:
@@ -16,8 +19,54 @@ jobs:
   packages:
     uses: ./.github/workflows/package.yml
 
+  # The Android APK, signed with the release key. Skipped, with a warning on
+  # the run, when the secrets are not set.
+  android:
+    runs-on: ubuntu-latest
+    env:
+      KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      VAULT_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      VAULT_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+    steps:
+      - name: Release key
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ] || [ -z "$VAULT_ANDROID_KEYSTORE_PASSWORD" ]; then
+            echo "::warning title=No Android APK::ANDROID_KEYSTORE_BASE64 and ANDROID_KEYSTORE_PASSWORD are not set, so this release has no Android app (docs/mobile.md#release-signing)"
+            echo "HAVE_KEY=false" >> "$GITHUB_ENV"
+          else
+            echo "HAVE_KEY=true" >> "$GITHUB_ENV"
+          fi
+      - uses: actions/checkout@v7
+        if: env.HAVE_KEY == 'true'
+      - uses: dtolnay/rust-toolchain@stable
+        if: env.HAVE_KEY == 'true'
+        with:
+          targets: aarch64-linux-android,x86_64-linux-android
+      - uses: actions/setup-java@v5
+        if: env.HAVE_KEY == 'true'
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Install cargo-ndk
+        if: env.HAVE_KEY == 'true'
+        run: cargo install cargo-ndk --locked
+      - name: Build and sign the APK
+        if: env.HAVE_KEY == 'true'
+        run: |
+          export VAULT_VERSION=$(contrib/release/version.sh --build)
+          export ANDROID_NDK_HOME=${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}
+          export VAULT_ANDROID_KEYSTORE="$RUNNER_TEMP/release.jks"
+          base64 -d <<<"$KEYSTORE_BASE64" > "$VAULT_ANDROID_KEYSTORE"
+          mobile/scripts/build-android-release.sh "dist/secret-vault-$VAULT_VERSION-android.apk"
+          rm -f "$VAULT_ANDROID_KEYSTORE"
+      - uses: actions/upload-artifact@v7
+        if: env.HAVE_KEY == 'true'
+        with:
+          name: android-apk
+          path: dist/*
+
   publish:
-    needs: packages
+    needs: [packages, android]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -50,6 +99,21 @@ jobs:
           contrib/release/notes.sh "$section" > section.md
           test -s section.md || { echo "no \"## $section\" section in docs/release-notes.md" >&2; exit 1; }
           cat section.md >> notes.md
+          # The Android app, when the release key was set (the android job).
+          apk="secret-vault-$version-android.apk"
+          if [ -f "dist/$apk" ]; then
+            {
+              echo
+              echo "### Android app"
+              echo
+              echo "\`$apk\` installs on Android 9 or later; see [Phone and tablet apps](https://github.com/${{ github.repository }}/blob/v$version/docs/user-guide/14-phone-apps.md#android). Its signing certificate's SHA-256 fingerprint is:"
+              echo
+              echo "\`$(cat "dist/$apk.cert.txt")\`"
+            } >> notes.md
+            rm "dist/$apk.cert.txt"
+          else
+            echo "::warning title=No Android APK::this release has no Android app"
+          fi
           # Every download a release promises (docs/user-guide/11-versions-and-upgrades.md).
           for f in "SecretVault-Setup-$version.exe" "secret-vault_${version}_amd64.deb" \
               "secret-vault-$version-linux-x86_64.tar.gz" "SecretVault-$version-macos.pkg" \

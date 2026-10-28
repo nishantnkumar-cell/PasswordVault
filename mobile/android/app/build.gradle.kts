@@ -18,6 +18,10 @@ val vaultVersion: String = repoRoot.resolve("Cargo.toml").readLines()
 val vaultVersionCode = vaultVersion.split('.').map { it.toInt() }
     .let { (major, minor, patch) -> major * 10_000 + minor * 100 + patch }
 
+// The release key, when one is given (mobile/scripts/build-android-release.sh,
+// docs/mobile.md#release-signing). Never kept in the repository.
+val releaseKeystore: String? = System.getenv("VAULT_ANDROID_KEYSTORE")
+
 android {
     namespace = "dev.passwordvault.app"
     compileSdk = 37
@@ -26,10 +30,22 @@ android {
         applicationId = "dev.passwordvault.app"
         minSdk = 28
         targetSdk = 36
-        versionName = vaultVersion
+        // A release build names its exact version, such as 0.2.0-beta.1.
+        versionName = System.getenv("VAULT_VERSION") ?: vaultVersion
         versionCode = vaultVersionCode
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = System.getenv("VAULT_ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("VAULT_ANDROID_KEY_ALIAS") ?: "secret-vault"
+                keyPassword = System.getenv("VAULT_ANDROID_KEY_PASSWORD") ?: storePassword
+            }
+        }
     }
 
     buildTypes {
@@ -39,7 +55,7 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             // Signed with the debug key unless a release key is configured,
             // so CI can build an installable APK.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
 
