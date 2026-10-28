@@ -68,7 +68,11 @@ final class TourTests: XCTestCase {
         shot(name)
         type(phrase, into: app.secureTextFields["Password"])
         app.buttons["Unlock"].tap()
-        XCTAssertTrue(newItemButton.waitForExistence(timeout: 180))
+        // Unlocking runs Argon2 with 256 MiB; on a slow runner a UI query
+        // made meanwhile can time out ("Failed to get matching snapshots"),
+        // which fails the test outright. Let the key derivation finish first.
+        Thread.sleep(forTimeInterval: 20)
+        XCTAssertTrue(newItemButton.waitForExistence(timeout: 160))
     }
 
     private func addLogin() {
