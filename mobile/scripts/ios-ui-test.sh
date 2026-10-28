@@ -40,15 +40,19 @@ for spec in "phone:iPhone 17 Pro:iPhone" "tablet:iPad Pro 13:iPad Pro:iPad"; do
     xcrun simctl boot "$udid" 2>/dev/null || true
     xcrun simctl bootstatus "$udid" -b >/dev/null
     # A second try only when the test never started (the simulator or
-    # its test runner failed to launch); a failing test is not retried.
+    # its test runner failed to launch) or XCTest itself timed out reading
+    # the screen on a busy runner; a failing check is not retried.
     for try in 1 2; do
         rm -rf "build/$name.xcresult"
         rc=0
         TEST_RUNNER_DEVICE=$name TEST_RUNNER_PHRASE=$phrase xcodebuild test -project SecretVault.xcodeproj -scheme SecretVault \
             -destination "id=$udid" -derivedDataPath build -resultBundlePath "build/$name.xcresult" \
             CODE_SIGNING_ALLOWED=NO VAULT_SKIP_RUST=1 > "build/$name.log" 2>&1 || rc=$?
-        [ $rc -ne 0 ] && ! grep -q "Test Case .*started" "build/$name.log" || break
-        echo "The test did not start on $name (try $try); the end of its log:"
+        [ $rc -ne 0 ] || break
+        grep -q "Test Case .*started" "build/$name.log" &&
+            ! grep -qE "Timed out while fetching attributes|Failed to get matching snapshots" "build/$name.log" &&
+            break
+        echo "The test did not start, or XCTest timed out, on $name (try $try); the end of its log:"
         tail -40 "build/$name.log"
         xcrun simctl shutdown "$udid" 2>/dev/null || true
         xcrun simctl boot "$udid" 2>/dev/null || true
