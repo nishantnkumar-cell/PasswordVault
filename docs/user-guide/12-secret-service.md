@@ -21,8 +21,9 @@ and the Keychain, which Secret Vault does not replace.
   own logins, cards, identities, notes or keys.
 - **You allow each program once.** The first time a program asks, Secret
   Vault's approval window shows the program and its command line. Allow it,
-  and that program can use app passwords until vaultd restarts. Deny it,
-  and it is refused (it won't ask again for a minute).
+  and that program can use app passwords until vaultd restarts or you
+  take the approval back ([see below](#see-and-take-back-approvals)).
+  Deny it, and it is refused (it won't ask again for a minute).
 - **Nothing while locked.** While the vault is locked, apps find nothing
   and can't save. An app that asks to unlock opens the Secret Vault desktop
   app; unlock there (or with `vault unlock`) and the app carries on.
@@ -35,7 +36,26 @@ and the Keychain, which Secret Vault does not replace.
 
 ## Turn it on
 
-1. **Stop the other Secret Service.** Only one program can be the Secret
+1. **Bring your passwords over first (optional).** If GNOME Keyring or
+   KWallet already holds passwords your apps saved, copy them into the
+   vault *while that keyring is still running*, so apps find them after
+   the switch. With the vault unlocked, either
+
+   - in the desktop app, open **App passwords** in the sidebar and choose
+     **Import** under **Import from GNOME Keyring or KWallet**, or
+   - run
+
+     ```sh
+     vault apps import
+     ```
+
+   If a keyring is locked, GNOME Keyring or KWallet asks for its own
+   password first (for GNOME, usually your login password). It prints how
+   many passwords it copied and how many the vault already had, and names
+   any keyring that stayed locked. Running it again copies only what is
+   new. Nothing is removed from GNOME Keyring or KWallet.
+
+2. **Stop the other Secret Service.** Only one program can be the Secret
    Service. On GNOME:
 
    ```sh
@@ -49,7 +69,7 @@ and the Keychain, which Secret Vault does not replace.
    **Use KWallet for the Secret Service interface** (or disable KWallet).
    Log out and back in.
 
-2. **Start vaultd with `--secret-service`.** If you run vaultd as a user
+3. **Start vaultd with `--secret-service`.** If you run vaultd as a user
    service, edit it:
 
    ```sh
@@ -73,7 +93,7 @@ and the Keychain, which Secret Vault does not replace.
    Secret Service is running, step 1 didn't take; see
    [Troubleshooting](08-troubleshooting.md#common-problems) ("Apps don't save passwords in the vault").
 
-3. **Try it** (with the vault unlocked):
+4. **Try it** (with the vault unlocked):
 
    ```sh
    secret-tool store --label="Test" app test user alex@example.com
@@ -99,6 +119,26 @@ You can copy the password from the desktop app like any other. If you
 edit it there, keep the **Secret Service** and **ss:** fields, or the app
 won't find it any more. Deleting it in the desktop app deletes it for the
 app too.
+
+## See and take back approvals
+
+To see which programs you allowed, open **App passwords** in the desktop
+app's sidebar, or run:
+
+```sh
+vault apps
+```
+
+Each line names the program and when you allowed it. To take one back,
+choose **Take back** next to it (or **Take back all**), or run
+
+```sh
+vault apps revoke /usr/bin/secret-tool   # one program
+vault apps revoke --all                  # every program
+```
+
+The next time that program asks, the approval window opens again.
+Approvals also end when vaultd restarts.
 
 ## Platform differences
 

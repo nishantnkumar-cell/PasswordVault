@@ -19,7 +19,7 @@
 //! any other login and folder sync carries it: [`MARKER`] holds the content
 //! type, [`ATTR_PREFIX`]`name` each attribute.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -225,39 +225,73 @@ pub enum Cipher {
     Aes(Zeroizing<[u8; 16]>),
 }
 
-/// The `dh-ietf1024-sha256-aes128-cbc-pkcs7` exchange: from the client's
-/// public value, our public value and the session key. Also used by tests,
-/// as the client side.
+/// One side of a `dh-ietf1024-sha256-aes128-cbc-pkcs7` exchange: a
+/// private value and its public value.
+pub struct DhKey {
+    private: Zeroizing<[u8; 128]>,
+    /// Big-endian, 128 bytes.
+    pub public: Vec<u8>,
+}
+
+fn modp() -> crypto_bigint::U1024 {
+    crypto_bigint::U1024::from_be_hex(MODP1024)
+}
+
+impl DhKey {
+    /// A fresh key pair.
+    pub fn new() -> Result<DhKey, String> {
+        use crypto_bigint::modular::runtime_mod::{DynResidue, DynResidueParams};
+        use crypto_bigint::{Encoding, U1024};
+        let mut private = Zeroizing::new([0u8; 128]);
+        OsRandom
+            .fill(&mut private[..])
+            .map_err(|_| "no randomness")?;
+        let x = U1024::from_be_slice(&private[..]);
+        let public = DynResidue::new(&U1024::from_u8(2), DynResidueParams::new(&modp()))
+            .pow(&x)
+            .retrieve()
+            .to_be_bytes()
+            .to_vec();
+        Ok(DhKey { private, public })
+    }
+
+    /// The session key shared with the holder of `peer`.
+    pub fn agree(&self, peer: &[u8]) -> Result<Zeroizing<[u8; 16]>, String> {
+        use crypto_bigint::modular::runtime_mod::{DynResidue, DynResidueParams};
+        use crypto_bigint::{Encoding, U1024};
+        let peer = peer.strip_prefix(&[0u8][..]).unwrap_or(peer);
+        if peer.is_empty() || peer.len() > 128 {
+            return Err("bad public key".into());
+        }
+        let mut padded = [0u8; 128];
+        padded[128 - peer.len()..].copy_from_slice(peer);
+        let y = U1024::from_be_slice(&padded);
+        let p = modp();
+        // 1 < y < p - 1, so the shared value is not trivially known.
+        if y <= U1024::ONE || y >= p.wrapping_sub(&U1024::ONE) {
+            return Err("bad public key".into());
+        }
+        let x = U1024::from_be_slice(&self.private[..]);
+        let shared = Zeroizing::new(
+            DynResidue::new(&y, DynResidueParams::new(&p))
+                .pow(&x)
+                .retrieve()
+                .to_be_bytes(),
+        );
+        let mut key = Zeroizing::new([0u8; 16]);
+        hkdf::Hkdf::<sha2::Sha256>::new(None, &shared[..])
+            .expand(&[], &mut key[..])
+            .map_err(|_| "key derivation failed")?;
+        Ok(key)
+    }
+}
+
+/// The server side of the exchange: from the client's public value, our
+/// public value and the session key.
 pub fn dh_exchange(peer: &[u8]) -> Result<(Vec<u8>, Zeroizing<[u8; 16]>), String> {
-    use crypto_bigint::modular::runtime_mod::{DynResidue, DynResidueParams};
-    use crypto_bigint::{Encoding, U1024};
-    let peer = peer.strip_prefix(&[0u8][..]).unwrap_or(peer);
-    if peer.is_empty() || peer.len() > 128 {
-        return Err("bad public key".into());
-    }
-    let mut padded = [0u8; 128];
-    padded[128 - peer.len()..].copy_from_slice(peer);
-    let y = U1024::from_be_slice(&padded);
-    let p = U1024::from_be_hex(MODP1024);
-    // 1 < y < p - 1, so the shared value is not trivially known.
-    if y <= U1024::ONE || y >= p.wrapping_sub(&U1024::ONE) {
-        return Err("bad public key".into());
-    }
-    let mut priv_bytes = Zeroizing::new([0u8; 128]);
-    OsRandom
-        .fill(&mut priv_bytes[..])
-        .map_err(|_| "no randomness")?;
-    let x = U1024::from_be_slice(&priv_bytes[..]);
-    let params = DynResidueParams::new(&p);
-    let ours = DynResidue::new(&U1024::from_u8(2), params)
-        .pow(&x)
-        .retrieve();
-    let shared = Zeroizing::new(DynResidue::new(&y, params).pow(&x).retrieve().to_be_bytes());
-    let mut key = Zeroizing::new([0u8; 16]);
-    hkdf::Hkdf::<sha2::Sha256>::new(None, &shared[..])
-        .expand(&[], &mut key[..])
-        .map_err(|_| "key derivation failed")?;
-    Ok((ours.to_be_bytes().to_vec(), key))
+    let ours = DhKey::new()?;
+    let key = ours.agree(peer)?;
+    Ok((ours.public.clone(), key))
 }
 
 impl Cipher {
@@ -347,9 +381,6 @@ struct State {
     next: u64,
     sessions: HashMap<String, Session>,
     prompts: HashMap<String, PendingPrompt>,
-    /// Executables the user allowed, until vaultd restarts.
-    allowed: HashSet<String>,
-    declined: HashMap<String, Instant>,
 }
 
 /// The Secret Service on one bus connection.
@@ -584,21 +615,17 @@ impl Service {
         let pid = bus.get_connection_unix_process_id(name).ok();
         let program = pid.and_then(approve::program_of);
         if let Some(p) = &program {
-            let st = self.state();
-            if st.allowed.contains(p) {
+            let d = self.lock();
+            if d.app_allowed(p) {
                 return Ok(());
             }
-            if st
-                .declined
-                .get(p)
-                .is_some_and(|t| t.elapsed() < DECLINE_HOLD)
-            {
+            if d.app_declined(p, DECLINE_HOLD) {
                 return Err(Fail::Denied("declined in the approval window".into()));
             }
         }
         let _one = self.asking.lock().unwrap_or_else(|p| p.into_inner());
         if let Some(p) = &program
-            && self.state().allowed.contains(p)
+            && self.lock().app_allowed(p)
         {
             return Ok(());
         }
@@ -608,21 +635,10 @@ impl Service {
             command: pid.and_then(approve::command_of),
         });
         let answer = approver.approve(&prompt);
-        self.lock().end_app_prompt(&answer);
+        self.lock().end_app_prompt(program.as_deref(), &answer);
         match answer {
-            Ok(true) => {
-                // An unknown program is allowed this once only.
-                if let Some(p) = program {
-                    self.state().allowed.insert(p);
-                }
-                Ok(())
-            }
-            Ok(false) => {
-                if let Some(p) = program {
-                    self.state().declined.insert(p, Instant::now());
-                }
-                Err(Fail::Denied("declined in the approval window".into()))
-            }
+            Ok(true) => Ok(()),
+            Ok(false) => Err(Fail::Denied("declined in the approval window".into())),
             Err(m) => Err(Fail::Failed(format!(
                 "could not show the approval window: {m}"
             ))),
@@ -1131,6 +1147,206 @@ impl Service {
         }
         Err(Fail::Invalid(format!("no interface {iface} here")))
     }
+}
+
+// ---------------------------------------------------------------------------
+// Importing from another Secret Service
+
+/// A password read from another Secret Service.
+pub struct Found {
+    pub label: String,
+    pub attributes: HashMap<String, String>,
+    pub secret: Zeroizing<Vec<u8>>,
+    pub content_type: String,
+}
+
+/// What [`read_other`] read: the passwords, and the labels of the
+/// collections that stayed locked.
+pub struct Read {
+    pub found: Vec<Found>,
+    pub skipped: Vec<String>,
+}
+
+fn get<T>(conn: &Connection, path: &str, iface: &str, name: &str) -> Result<T, String>
+where
+    T: TryFrom<OwnedValue>,
+    <T as TryFrom<OwnedValue>>::Error: std::fmt::Display,
+{
+    let v: OwnedValue = zbus::blocking::Proxy::new(conn, NAME, path, I_PROPS)
+        .and_then(|p| p.call("Get", &(iface, name)))
+        .map_err(|e| format!("{path}: {e}"))?;
+    T::try_from(v).map_err(|e| format!("{path} {name}: {e}"))
+}
+
+/// Unlock `collection` through the other service's own prompt (GNOME
+/// Keyring asks for the login password), waiting up to `wait`. False if
+/// it stayed locked.
+fn unlock_other(
+    conn: &Connection,
+    collection: &OwnedObjectPath,
+    wait: Duration,
+) -> Result<bool, String> {
+    let service =
+        zbus::blocking::Proxy::new(conn, NAME, SERVICE, I_SERVICE).map_err(|e| e.to_string())?;
+    let (_, prompt): (Vec<OwnedObjectPath>, OwnedObjectPath) = service
+        .call("Unlock", &(vec![collection.clone()],))
+        .map_err(|e| format!("unlocking {collection}: {e}"))?;
+    if prompt.as_str() != "/" {
+        let rule = MatchRule::builder()
+            .msg_type(Type::Signal)
+            .interface(I_PROMPT)
+            .and_then(|r| r.member("Completed"))
+            .and_then(|r| r.path(prompt.as_str()))
+            .map_err(|e| e.to_string())?
+            .build();
+        let mut signals =
+            MessageIterator::for_match_rule(rule, conn, None).map_err(|e| e.to_string())?;
+        let p = zbus::blocking::Proxy::new(conn, NAME, prompt.as_str(), I_PROMPT)
+            .map_err(|e| e.to_string())?;
+        let () = p.call("Prompt", &("",)).map_err(|e| e.to_string())?;
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            if let Some(Ok(msg)) = signals.next() {
+                let _ = tx.send(
+                    msg.body()
+                        .deserialize::<(bool, OwnedValue)>()
+                        .map(|x| x.0)
+                        .unwrap_or(true),
+                );
+            }
+        });
+        match rx.recv_timeout(wait) {
+            Ok(false) => {}
+            _ => {
+                let _: zbus::Result<()> = p.call("Dismiss", &());
+                return Ok(false);
+            }
+        }
+    }
+    Ok(!get::<bool>(
+        conn,
+        collection.as_str(),
+        I_COLLECTION,
+        "Locked",
+    )?)
+}
+
+/// Read every password from the Secret Service on `conn`. Locked
+/// collections are unlocked through that service's own prompt, waiting up to
+/// `wait`; those that stay locked are skipped. The transient `session`
+/// collection is left out.
+pub fn read_other(conn: &Connection, wait: Duration) -> Result<Read, String> {
+    let service =
+        zbus::blocking::Proxy::new(conn, NAME, SERVICE, I_SERVICE).map_err(|e| e.to_string())?;
+    let dh = DhKey::new()?;
+    let (cipher, session) = match service.call::<_, _, (OwnedValue, OwnedObjectPath)>(
+        "OpenSession",
+        &(
+            "dh-ietf1024-sha256-aes128-cbc-pkcs7",
+            Value::from(dh.public.clone()),
+        ),
+    ) {
+        Ok((out, session)) => {
+            let theirs: Vec<u8> = out.try_into().map_err(|_| "bad session reply")?;
+            (Cipher::Aes(dh.agree(&theirs)?), session)
+        }
+        Err(_) => {
+            let (_, session): (OwnedValue, OwnedObjectPath) = service
+                .call("OpenSession", &("plain", Value::from("")))
+                .map_err(|e| format!("no Secret Service is running ({e})"))?;
+            (Cipher::Plain, session)
+        }
+    };
+    let collections: Vec<OwnedObjectPath> = get(conn, SERVICE, I_SERVICE, "Collections")?;
+    let mut out = Read {
+        found: Vec::new(),
+        skipped: Vec::new(),
+    };
+    for c in collections {
+        if c.as_str().ends_with("/session") {
+            continue;
+        }
+        let label: String = get(conn, c.as_str(), I_COLLECTION, "Label").unwrap_or_default();
+        let name = if label.is_empty() {
+            c.to_string()
+        } else {
+            label
+        };
+        if get::<bool>(conn, c.as_str(), I_COLLECTION, "Locked")?
+            && !unlock_other(conn, &c, wait).unwrap_or(false)
+        {
+            out.skipped.push(name);
+            continue;
+        }
+        let items: Vec<OwnedObjectPath> = get(conn, c.as_str(), I_COLLECTION, "Items")?;
+        if items.is_empty() {
+            continue;
+        }
+        let secrets: HashMap<OwnedObjectPath, SecretStruct> = service
+            .call("GetSecrets", &(items.clone(), session.clone()))
+            .map_err(|e| format!("reading {name}: {e}"))?;
+        for item in items {
+            let Some((_, params, value, ct)) = secrets.get(&item) else {
+                continue;
+            };
+            let secret = cipher.open(params, value)?;
+            out.found.push(Found {
+                label: get(conn, item.as_str(), I_ITEM, "Label").unwrap_or_default(),
+                attributes: get(conn, item.as_str(), I_ITEM, "Attributes").unwrap_or_default(),
+                secret,
+                content_type: ct.clone(),
+            });
+        }
+    }
+    let _: zbus::Result<()> = zbus::blocking::Proxy::new(conn, NAME, session.as_str(), I_SESSION)
+        .and_then(|p| p.call("Close", &()));
+    Ok(out)
+}
+
+/// Add what [`read_other`] found to the vault as app passwords. One the
+/// vault already has (same label and attributes) is left alone. Returns
+/// (added, already there).
+pub fn import(daemon: &Shared, found: Vec<Found>) -> Result<(usize, usize), String> {
+    let mut d = daemon.lock().unwrap_or_else(|p| p.into_inner());
+    let mut have: Vec<(String, HashMap<String, String>)> = d
+        .items_where(is_app_secret)?
+        .into_iter()
+        .map(|(_, it)| (it.title.clone(), attributes(&it)))
+        .collect();
+    let (mut added, mut already) = (0, 0);
+    for f in found {
+        let item = new_app_secret(&f.label, &f.attributes, &f.secret, &f.content_type);
+        let key = (item.title.clone(), f.attributes.clone());
+        if have.contains(&key) {
+            already += 1;
+            continue;
+        }
+        d.put_item(None, item)?;
+        have.push(key);
+        added += 1;
+    }
+    Ok((added, already))
+}
+
+/// `ImportAppPasswords`: read the session bus's Secret Service and import
+/// it. Called without the daemon lock held, since the other service may
+/// ask for a password first.
+pub fn import_from_session(daemon: &Shared) -> Result<(usize, usize, Vec<String>), String> {
+    let conn = Connection::session().map_err(|e| format!("no session bus: {e}"))?;
+    let bus = DBusProxy::new(&conn).map_err(|e| e.to_string())?;
+    if let Ok(owner) = bus.get_name_owner(BusName::try_from(NAME).map_err(|e| e.to_string())?)
+        && bus.get_connection_unix_process_id(owner.into()).ok() == Some(std::process::id())
+    {
+        return Err(
+            "vaultd is the Secret Service now, so there is nothing else to import from. \
+                    Turn GNOME Keyring or KWallet back on and restart vaultd without \
+                    --secret-service, then import"
+                .into(),
+        );
+    }
+    let read = read_other(&conn, UNLOCK_WAIT)?;
+    let (added, already) = import(daemon, read.found)?;
+    Ok((added, already, read.skipped))
 }
 
 fn path(p: &str) -> Result<OwnedObjectPath, Fail> {

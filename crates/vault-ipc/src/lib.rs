@@ -301,6 +301,25 @@ pub enum Request {
         prf_output: SecretBytes,
         label: String,
     },
+    /// Programs allowed to use the Secret Service (Linux) since vaultd
+    /// started.
+    AppApprovals,
+    /// Take back a program's Secret Service approval, or every program's
+    /// (`None`); it is asked again on its next use.
+    RevokeAppApproval { program: Option<String> },
+    /// Copy every password from the Secret Service running now (GNOME
+    /// Keyring or KWallet) into the vault as app passwords (Linux). Run it
+    /// before vaultd takes over the Secret Service.
+    ImportAppPasswords,
+}
+
+/// A program allowed to use the Secret Service.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct AppApproval {
+    /// Its executable.
+    pub program: String,
+    /// When it was allowed, seconds since the Unix epoch.
+    pub since: u64,
 }
 
 /// Public slot information.
@@ -438,6 +457,16 @@ pub enum Response {
     Verified(String),
     /// Slots a phone passkey can open.
     PasskeySlots(Vec<PasskeySlot>),
+    /// Programs allowed to use the Secret Service.
+    AppApprovals(Vec<AppApproval>),
+    /// Passwords copied from another Secret Service: how many were added,
+    /// how many the vault already had, and the collections that stayed
+    /// locked (their passwords were not read).
+    AppPasswordsImported {
+        imported: usize,
+        already: usize,
+        skipped: Vec<String>,
+    },
 }
 
 /// Write one frame: u32 little-endian length, then postcard bytes.
