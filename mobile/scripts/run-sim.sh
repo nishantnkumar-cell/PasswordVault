@@ -5,6 +5,7 @@
 #
 #   mobile/scripts/run-sim.sh ios ["iPhone 18 Pro"]
 #   mobile/scripts/run-sim.sh android [avd-name]
+#   mobile/scripts/run-sim.sh faceid enroll|match|nomatch
 #   mobile/scripts/run-sim.sh stop
 #
 # iOS needs Xcode 26 or later and XcodeGen; the build is signed to run
@@ -48,6 +49,9 @@ ios)
         -quiet build
     xcrun simctl boot "$device" 2>/dev/null || true
     xcrun simctl bootstatus "$device" -b
+    # A reboot forgets Face ID enrolment; enrol so the app offers it.
+    xcrun simctl spawn "$device" notifyutil -s com.apple.BiometricKit.enrollmentChanged 1
+    xcrun simctl spawn "$device" notifyutil -p com.apple.BiometricKit.enrollmentChanged
     xcrun simctl install "$device" build/Build/Products/Debug-iphonesimulator/SecretVault.app
     xcrun simctl launch "$device" $pkg
     # Xcode 27 shows simulators in Device Hub; older ones in Simulator.
@@ -70,11 +74,23 @@ android)
     "$adb" install -r "$root/mobile/android/app/build/outputs/apk/debug/app-debug.apk"
     "$adb" shell am start -n $pkg/.MainActivity
     ;;
+faceid)
+    # Simulated Face ID on the booted iOS simulator, for when Device Hub
+    # doesn't show its menu. "match" answers a Face ID prompt as you.
+    case ${2:-} in
+    enroll)
+        xcrun simctl spawn booted notifyutil -s com.apple.BiometricKit.enrollmentChanged 1
+        xcrun simctl spawn booted notifyutil -p com.apple.BiometricKit.enrollmentChanged ;;
+    match|nomatch)
+        xcrun simctl spawn booted notifyutil -p "com.apple.BiometricKit_Sim.pearl.$2" ;;
+    *) echo "usage: $0 faceid enroll|match|nomatch" >&2; exit 2 ;;
+    esac
+    ;;
 stop)
     stop_all
     ;;
 *)
-    sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
     exit 2
     ;;
 esac

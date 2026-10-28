@@ -36,6 +36,8 @@ struct ItemEditorView: View {
     let kind: Kind
     let existing: ItemDetail?
     let onDone: (String?) -> Void
+    /// Fills a new login from a code-setup link.
+    let setup: CodeSetup?
 
     @State private var title = ""
     @State private var username = ""
@@ -57,10 +59,11 @@ struct ItemEditorView: View {
     @State private var error: String?
     @State private var loaded = false
 
-    init(id: String?, kind: Kind, existing: ItemDetail?, onDone: @escaping (String?) -> Void) {
+    init(id: String?, kind: Kind, existing: ItemDetail?, setup: CodeSetup? = nil, onDone: @escaping (String?) -> Void) {
         self.id = id
         self.kind = existing?.kind ?? kind
         self.existing = existing
+        self.setup = setup
         self.onDone = onDone
     }
 
@@ -122,6 +125,13 @@ struct ItemEditorView: View {
             if kind == .login {
                 password = strongPassword()
                 urls = [UrlDraft(url: "", sub: false)]
+            }
+            if let setup {
+                title = setup.issuer.isEmpty ? setup.account : setup.issuer
+                username = setup.account
+                // The site's password is already set; don't suggest a new one.
+                password = ""
+                totpInput = setup.uri
             }
             return
         }

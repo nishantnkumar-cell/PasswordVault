@@ -170,7 +170,7 @@ struct SettingsView: View {
             Toggle("Suggest Logins Above the Keyboard", isOn: $suggestions)
                 .onChange(of: suggestions) { _, on in
                     Prefs.keyboardSuggestions = on
-                    if !on { ASCredentialIdentityStore.shared.removeAllCredentialIdentities { _, _ in } }
+                    if on { vault.refreshSuggestions() } else { ASCredentialIdentityStore.shared.removeAllCredentialIdentities { _, _ in } }
                 }
         } header: {
             Text("AutoFill")

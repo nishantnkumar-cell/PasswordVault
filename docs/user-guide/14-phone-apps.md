@@ -121,6 +121,16 @@ To add one, edit the login, and under **One-Time Codes** scan the QR code
 the website shows (tap the QR button) or paste its setup key. The app shows
 the current code so you can check it before you save.
 
+**iPhone and iPad:** you can also set up a code straight from a website's
+QR code or setup link. Open the Settings app, go to **General > AutoFill &
+Passwords > Set Up Codes In** and choose **Secret Vault**. From then on,
+when you point the Camera at a setup QR code (or tap a setup link) and
+choose **Set up verification code**, Secret Vault opens a new login with
+the code, the site's name and your account already filled in. Add the
+password if you want it saved too, then tap **Save**. If the vault is
+locked, it asks you to unlock first. Android has no system-wide setting
+like this; scan the QR code from the login's edit screen instead.
+
 On a half-folded Android foldable (tabletop position), the Codes tab shows
 the chosen code large on the top half and the list on the bottom half.
 
@@ -162,6 +172,12 @@ On iPhone and iPad, AutoFill unlocks only with Face ID or Touch ID. If
 those are off, or the 14-day password check is due, open Secret Vault and
 unlock it there once.
 
+If no suggestion appears, check that **Unlock with Face ID** (or Touch ID)
+and **Suggest Logins Above the Keyboard** are on in the app's
+**Settings**, and that the login's website is the site you are on. Then
+open the app once: it tells iOS about your logins each time it opens
+unlocked.
+
 ## Sync settings
 
 **Settings > Sync** shows when the vault last synced.
@@ -187,6 +203,7 @@ unlock it there once.
 | Unlock with security key, TPM, phone passkey | No | No | Yes |
 | AutoFill in browsers | Yes, Face ID or Touch ID to unlock inside AutoFill | Yes, full unlock inside AutoFill | Browser extension |
 | One-time codes in AutoFill | Yes | Not yet | No |
+| Set up a code from the camera or a link | Yes ("Set Up Codes In") | No, scan in the app | No, paste in the app |
 | Save a new login when you sign up in another app | Not yet | Not yet | Browser extension |
 | Sync | iCloud Drive, OneDrive, Dropbox through Files | Google Drive, OneDrive, Dropbox through the file picker | Any synced folder |
 | SSH and OpenPGP keys | Shown, not used | Shown, not used | Yes |

@@ -33,6 +33,11 @@ to work yet.
   AutoFill provider. Logins are offered only on the websites they are saved
   for, the same rule as the browser extension. On iPhone, one-time codes
   can be filled too.
+- **Set up codes from the camera (iPhone and iPad).** Choose Secret Vault
+  under Settings > General > AutoFill & Passwords > **Set Up Codes In**, and
+  a website's setup QR code or link opens a new login in Secret Vault with
+  the code filled in. Android has no system setting for this; scan the QR
+  code inside the app.
 - **Made for every screen.** On phones the app uses a tab bar (Liquid Glass
   on iOS 26) and Material 3 on Android. On iPad, tablets, unfolded
   foldables and wide split-screen windows it shows the list and the item

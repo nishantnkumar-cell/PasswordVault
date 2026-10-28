@@ -27,6 +27,9 @@ final class VaultModel {
     private(set) var sync = SyncStatus()
     /// Bumped on every change so open detail views reload.
     private(set) var revision = 0
+    /// An `otpauth://` link iOS handed us (a setup QR code or link), waiting
+    /// until the vault is open to become a new item.
+    var pendingCodeSetup: CodeSetup?
 
     @ObservationIgnored private var session: VaultSession?
     /// The AutoFill extension turns this off: it fills from the local copy
@@ -270,6 +273,12 @@ final class VaultModel {
     }
 
     // MARK: AutoFill suggestions
+
+    /// Re-send the suggestions, e.g. after AutoFill was switched on in iOS
+    /// Settings while the vault was open.
+    func refreshSuggestions() {
+        if Prefs.keyboardSuggestions { publishIdentities() }
+    }
 
     /// Tell iOS which sites have logins so the QuickType bar can offer them.
     /// Usernames and sites only; passwords stay in the vault.

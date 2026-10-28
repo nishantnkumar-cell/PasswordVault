@@ -45,9 +45,18 @@ extension ItemSummary {
 /// Manager) get three columns like the desktop app.
 struct MainView: View {
     @Environment(\.horizontalSizeClass) private var width
+    @Environment(VaultModel.self) private var vault
 
     var body: some View {
-        if width == .regular { SplitLayout() } else { TabLayout() }
+        @Bindable var vault = vault
+        Group {
+            if width == .regular { SplitLayout() } else { TabLayout() }
+        }
+        .sheet(item: $vault.pendingCodeSetup) { setup in
+            NavigationStack {
+                ItemEditorView(id: nil, kind: .login, existing: nil, setup: setup) { _ in vault.pendingCodeSetup = nil }
+            }
+        }
     }
 }
 

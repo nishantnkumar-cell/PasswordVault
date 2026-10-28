@@ -57,6 +57,10 @@ targets:
         NSFaceIDUsageDescription: Unlock your vault with Face ID instead of typing the master password.
         NSCameraUsageDescription: Scan a website's QR code to set up its one-time codes.
         ITSAppUsesNonExemptEncryption: false
+        # Opening otpauth links puts Secret Vault in iOS's "Set Up Codes In" list.
+        CFBundleURLTypes:
+          - CFBundleURLName: dev.passwordvault.app.otpauth
+            CFBundleURLSchemes: [otpauth, apple-otpauth]
     entitlements:
       path: SecretVault/SecretVault.entitlements
       properties:
