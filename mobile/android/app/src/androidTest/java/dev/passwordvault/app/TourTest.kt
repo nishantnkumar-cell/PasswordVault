@@ -3,7 +3,6 @@ package dev.passwordvault.app
 import android.content.Intent
 import android.graphics.Bitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
-import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsNodeInteraction
@@ -21,11 +20,11 @@ import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
-import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.printToString
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
+import androidx.test.espresso.Espresso
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Rule
@@ -173,17 +172,15 @@ class TourTest {
     }
 
     /**
-     * Scrolls [node] into view and clicks it. A control with a click action
-     * gets it directly rather than a touch, which can miss while the
-     * keyboard is still moving the page (seen on Create vault).
+     * Scrolls [node] into view and clicks it. The keyboard is closed first: a
+     * touch sent while it is still moving the page can miss (seen on Create
+     * vault).
      */
     private fun press(node: SemanticsNodeInteraction) {
+        Espresso.closeSoftKeyboard()
+        rule.waitForIdle()
         runCatching { node.performScrollTo() }
-        if (SemanticsActions.OnClick in node.fetchSemanticsNode().config) {
-            node.performSemanticsAction(SemanticsActions.OnClick)
-        } else {
-            node.performClick()
-        }
+        node.performClick()
     }
 
     private fun exists(s: String) =
