@@ -18,8 +18,11 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -36,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -78,14 +82,24 @@ fun CodesScreen(vault: VaultRepository) {
     val copy = rememberCopier(vault)
     var selected by rememberSaveable { mutableStateOf<String?>(null) }
     val posture = currentWindowAdaptiveInfo().windowPosture
+    var adding by rememberSaveable { mutableStateOf(false) }
+    if (adding) AddCodeDialog(vault, all) { adding = false }
 
     if (items.isEmpty()) {
         Box(Modifier.fillMaxSize().statusBarsPadding().padding(32.dp), contentAlignment = Alignment.Center) {
-            Text(
-                "No one-time codes yet. Edit a login and scan the site's QR code under One-time code.",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text(
+                    "No one-time codes yet. Scan a site's QR code or paste its setup key to keep its two-factor codes here.",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
+                Button(onClick = { adding = true }) {
+                    Icon(Icons.Outlined.Add, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Add code")
+                }
+            }
         }
         return
     }
@@ -102,7 +116,13 @@ fun CodesScreen(vault: VaultRepository) {
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center,
                 ) {
-                    Text("${focus.title} · ${focus.subtitle}", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    Text(
+                        "${focus.title} · ${focus.subtitle}",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 24.dp),
+                    )
                     Text(
                         code?.let { groupCode(it.code) } ?: "",
                         fontFamily = Mono,
@@ -133,11 +153,17 @@ fun CodesScreen(vault: VaultRepository) {
     }
 
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
-        Text(
-            "One-time codes",
-            style = MaterialTheme.typography.headlineMedium,
-            modifier = Modifier.padding(start = 24.dp, top = 16.dp, bottom = 8.dp),
-        )
+        Row(
+            Modifier.fillMaxWidth().padding(start = 24.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("One-time codes", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
+            FilledTonalButton(onClick = { adding = true }) {
+                Icon(Icons.Outlined.Add, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("Add code")
+            }
+        }
         CodeGrid(items, codes, selectedId = null, onPick = { s -> codes[s.id]?.let { copy("One-time code", it.code, true) } })
     }
 }
@@ -166,7 +192,7 @@ private fun CodeGrid(
                     LetterTile(s.title, size = 40.dp)
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(s.title, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(s.title, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Text(code?.let { groupCode(it.code) } ?: "––– –––", style = CodeStyle.copy(fontSize = 26.sp))
                     }
                     if (code != null) TotpRing(code.remaining.toInt(), code.period.toInt(), size = 36.dp)

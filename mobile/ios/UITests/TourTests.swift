@@ -28,8 +28,10 @@ final class TourTests: XCTestCase {
         }
         addLogin()
         addCard()
-        open("Codes"); shot("codes")
+        addCode()
         open("Generator"); shot("generator")
+        app.buttons["3 Words"].tap(); sleep(1); shot("generator-words")
+        app.buttons["Apple Style"].tap(); sleep(1); shot("generator-apple")
         open("Settings"); shot("settings")
         tapScrolling(app.buttons["Lock Now"])
         XCTAssertTrue(app.buttons["Unlock"].waitForExistence(timeout: 10))
@@ -101,6 +103,21 @@ final class TourTests: XCTestCase {
         shot("card")
         open("Items")
         shot("items")
+    }
+
+    /// Adds a code straight from the Codes tab, as a new login.
+    private func addCode() {
+        open("Codes")
+        if !app.staticTexts["Example Chat"].exists {
+            app.buttons["Add Code"].firstMatch.tap()
+            XCTAssertTrue(app.buttons["Save"].waitForExistence(timeout: 10))
+            type("JBSWY3DPEHPK3PXP", into: app.textFields["Setup key or otpauth:// link"])
+            type("Example Chat", into: app.textFields["Name, e.g. Example Mail"])
+            shot("add-code")
+            save()
+        }
+        XCTAssertTrue(app.staticTexts["Example Chat"].waitForExistence(timeout: 10))
+        shot("codes")
     }
 
     // MARK: Helpers

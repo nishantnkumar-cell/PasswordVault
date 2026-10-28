@@ -171,7 +171,7 @@ impl Prompt {
                 ui.add(egui::Label::new(text).wrap());
             };
             ui.horizontal(|ui| {
-                theme::lock_tile(ui, 32.0);
+                theme::lock_tile(ui, 32.0, false);
                 ui.add_space(4.0);
                 ui.label(RichText::new("Secret Vault").size(13.0).color(theme::MUTED));
             });

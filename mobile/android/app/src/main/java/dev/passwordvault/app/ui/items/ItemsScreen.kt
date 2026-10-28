@@ -18,14 +18,13 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -53,10 +52,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.passwordvault.app.data.VaultRepository
+import dev.passwordvault.app.ui.components.AppIcon
 import dev.passwordvault.app.ui.components.LetterTile
 import dev.passwordvault.app.ui.components.segmentShape
 import kotlinx.coroutines.launch
@@ -235,10 +237,9 @@ private fun SearchPill(query: String, onQuery: (String) -> Unit, onLock: () -> U
             if (query.isNotEmpty()) {
                 IconButton(onClick = { onQuery("") }) { Icon(Icons.Outlined.Close, contentDescription = "Clear search") }
             }
-            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.size(44.dp)) {
-                IconButton(onClick = onLock) {
-                    Icon(Icons.Outlined.Lock, contentDescription = "Lock vault", tint = MaterialTheme.colorScheme.onPrimaryContainer)
-                }
+            // The app icon, green while unlocked; tapping it locks.
+            IconButton(onClick = onLock, modifier = Modifier.semantics { contentDescription = "Lock vault" }) {
+                AppIcon(size = 36.dp, unlocked = true)
             }
         }
     }
@@ -255,9 +256,10 @@ private fun ItemRow(item: ItemSummary, selected: Boolean, shape: androidx.compos
             LetterTile(item.title)
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
-                Text(item.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(item.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 val sub = item.subtitle.ifEmpty { kindLabel(item.kind) }
-                Text(sub, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                // Middle ellipsis keeps both ends of a long email address.
+                Text(sub, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.MiddleEllipsis)
             }
             val tag = when {
                 item.hasKey -> "Key"

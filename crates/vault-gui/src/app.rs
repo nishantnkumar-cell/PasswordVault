@@ -12,8 +12,8 @@ use vault_core::item::{Card, CustomField, FieldKind, Identity, ItemData, ItemKin
 use vault_core::origin::MatchMode;
 use vault_core::totp::TotpConfig;
 use vault_ipc::{
-    ClientScope, ClientToken, GenerateOptions, ImportFormat, ItemId, ItemSummary, KeyKind, Request,
-    Response, Secret, SlotId, SlotInfo, StatusInfo, UnlockMethod,
+    ClientScope, ClientToken, GenerateOptions, ImportFormat, ItemId, ItemSummary, KeyKind,
+    PasswordStyle, Request, Response, Secret, SlotId, SlotInfo, StatusInfo, UnlockMethod,
 };
 use zeroize::Zeroizing;
 
@@ -662,7 +662,7 @@ pub struct App {
     /// The open key item's public half, to show and copy.
     public_key: Option<(ItemId, String)>,
 
-    gen_options: GenerateOptions,
+    generator: Generator,
     generated: Option<Secret>,
 
     import_format: ImportFormat,
@@ -731,11 +731,7 @@ impl App {
             pgp: keys::PgpTools::default(),
             confirm_delete: false,
             public_key: None,
-            gen_options: GenerateOptions {
-                length: 24,
-                symbols: true,
-                avoid_ambiguous: false,
-            },
+            generator: Generator::default(),
             generated: None,
             import_format: ImportFormat::BitwardenJson,
             import_path: String::new(),
@@ -1190,7 +1186,7 @@ impl App {
     fn unlock_methods(&mut self, ui: &mut Ui, pair: bool) {
         ui.horizontal(|ui| {
             ui.add_space(4.0);
-            theme::lock_tile(ui, 36.0);
+            theme::lock_tile(ui, 36.0, false);
             ui.add_space(2.0);
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = 1.0;
@@ -1270,7 +1266,7 @@ impl App {
             Screen::Locked | Screen::Unlocked => "Locked",
         };
         ui.horizontal(|ui| {
-            theme::lock_tile(ui, 40.0);
+            theme::lock_tile(ui, 40.0, false);
             ui.add_space(2.0);
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = 1.0;
@@ -1802,7 +1798,7 @@ impl App {
         let mut widen = false;
         ui.horizontal_centered(|ui| {
             ui.add_space(18.0);
-            theme::lock_tile(ui, 30.0);
+            theme::lock_tile(ui, 30.0, true);
             ui.add_space(2.0);
             ui.label(theme::title("Secret Vault", 15.0));
             let used = ui.cursor().left() - full.left();
@@ -2892,8 +2888,8 @@ impl App {
             Action::Pgp(task) => self.open_pgp(task),
             Action::Generate => {
                 self.go(View::Generator);
-                let options = self.gen_options;
-                self.send(Op::Generate, Request::Generate { options });
+                let style = self.generator.style();
+                self.send(Op::Generate, Request::GenerateStyled { style });
             }
             Action::Go(v) => self.go(v),
             Action::Lock => self.act("Locking…", Op::Lock, Request::Lock),
@@ -3040,8 +3036,8 @@ impl App {
             cancel = ui.button("Cancel").clicked();
         });
         if generate {
-            let options = self.gen_options;
-            self.send(Op::GenerateForEdit, Request::Generate { options });
+            let style = self.generator.style();
+            self.send(Op::GenerateForEdit, Request::GenerateStyled { style });
         }
         if cancel {
             self.edit = None;
@@ -3204,23 +3200,78 @@ impl App {
         page_header(
             ui,
             "Password generator",
-            "Make a long random password. New items use these settings when you press \
+            "Pick a style and make a password. New items use these settings when you press \
              Generate there.",
         );
         let mut copy = None;
+        let mut generate = false;
         theme::card().show(ui, |ui| {
             ui.set_width(ui.available_width());
-            let o = &mut self.gen_options;
-            ui.horizontal(|ui| {
-                ui.spacing_mut().slider_width = 260.0;
-                ui.add(egui::Slider::new(&mut o.length, 8..=64).text("characters"));
-            });
-            ui.checkbox(&mut o.symbols, "Symbols");
-            ui.checkbox(&mut o.avoid_ambiguous, "Avoid look-alike characters");
+            let g = &mut self.generator;
+            for (kind, name, about) in [
+                (
+                    GenKind::Random,
+                    "Random characters",
+                    "Strongest for its length. Best when you never type it.",
+                ),
+                (
+                    GenKind::Words,
+                    "Three random words",
+                    "The UK NCSC's advice: easy to remember and type, like CupFishBiscuit.",
+                ),
+                (
+                    GenKind::Apple,
+                    "Apple style",
+                    "Three groups of six letters, like fokjyb-Xewpud-hamu4s. Easy to type on a phone.",
+                ),
+            ] {
+                if theme::choice_row(ui, g.kind == kind, name, about).clicked() && g.kind != kind {
+                    g.kind = kind;
+                    generate = true;
+                }
+                ui.add_space(4.0);
+            }
+            ui.add_space(6.0);
+            match g.kind {
+                GenKind::Random => {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.spacing_mut().slider_width = 260.0;
+                        ui.add(egui::Slider::new(&mut g.options.length, 8..=64).text("characters"));
+                    });
+                    ui.checkbox(&mut g.options.symbols, "Symbols");
+                    ui.checkbox(&mut g.options.avoid_ambiguous, "Avoid look-alike characters");
+                }
+                GenKind::Words => {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.add(egui::Slider::new(&mut g.words, 3..=10).text("words"));
+                    });
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label("Between words");
+                        for (sep, name) in [("", "Nothing"), ("-", "-"), (".", "."), (" ", "Space")] {
+                            ui.selectable_value(&mut g.separator, sep.to_owned(), name);
+                        }
+                    });
+                    ui.checkbox(&mut g.capitalize, "Capital letter at the start of each word");
+                    ui.checkbox(
+                        &mut g.number_and_symbol,
+                        "Add a number and a symbol at the end, for sites that demand them",
+                    );
+                }
+                GenKind::Apple => {}
+            }
+            let bits = g.style().to_core().strength_bits();
+            ui.add_space(4.0);
+            ui.add(
+                egui::Label::new(
+                    RichText::new(strength_text(g.kind, bits))
+                        .size(12.5)
+                        .color(theme::MUTED),
+                )
+                .wrap(),
+            );
             ui.add_space(4.0);
             if theme::primary_icon(ui, true, Icon::Dice, "Generate").clicked() {
-                let options = *o;
-                self.send(Op::Generate, Request::Generate { options });
+                generate = true;
             }
             if let Some(p) = &self.generated {
                 ui.add_space(8.0);
@@ -3237,7 +3288,8 @@ impl App {
                                     .size(16.0)
                                     .color(theme::INK),
                             )
-                            .wrap(),
+                            .wrap_mode(egui::TextWrapMode::Wrap)
+                            .selectable(true),
                         );
                     },
                     |ui| {
@@ -3248,6 +3300,10 @@ impl App {
                 );
             }
         });
+        if generate {
+            let style = self.generator.style();
+            self.send(Op::Generate, Request::GenerateStyled { style });
+        }
         if let Some(p) = copy {
             self.copy(&p, "Password");
         }
@@ -3792,6 +3848,69 @@ fn detail_row(ui: &mut Ui, left: impl FnOnce(&mut Ui), right: impl FnOnce(&mut U
         },
     );
     ui.add_space(12.0);
+}
+
+/// The generator's chosen style and the settings of each.
+struct Generator {
+    kind: GenKind,
+    options: GenerateOptions,
+    words: u8,
+    separator: String,
+    capitalize: bool,
+    number_and_symbol: bool,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum GenKind {
+    Random,
+    Words,
+    Apple,
+}
+
+impl Default for Generator {
+    fn default() -> Self {
+        Generator {
+            kind: GenKind::Random,
+            options: GenerateOptions::default(),
+            words: 3,
+            separator: String::new(),
+            capitalize: true,
+            number_and_symbol: false,
+        }
+    }
+}
+
+impl Generator {
+    fn style(&self) -> PasswordStyle {
+        match self.kind {
+            GenKind::Random => PasswordStyle::Random(self.options),
+            GenKind::Words => PasswordStyle::Words {
+                words: self.words,
+                separator: self.separator.clone(),
+                capitalize: self.capitalize,
+                number_and_symbol: self.number_and_symbol,
+            },
+            GenKind::Apple => PasswordStyle::Apple,
+        }
+    }
+}
+
+/// How strong a style is, in words.
+fn strength_text(kind: GenKind, bits: f64) -> String {
+    let rating = match bits {
+        b if b >= 100.0 => "Very strong",
+        b if b >= 70.0 => "Strong",
+        b if b >= 50.0 => "Good for a website that limits guesses",
+        _ => {
+            "Fine for a website that limits guesses; use 4 or more words for anything that matters"
+        }
+    };
+    let words = if kind == GenKind::Words {
+        " Each word is one of 7,772 (the EFF word list)."
+    } else {
+        ""
+    };
+    format!("{rating}: about {bits:.0} bits.{words}")
 }
 
 /// A one-time code with a space in the middle, as sites print them.

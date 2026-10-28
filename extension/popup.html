@@ -18,7 +18,14 @@
   <div id="forms"></div>
   <div id="frames" hidden></div>
   <p id="message"></p>
-  <footer><button id="generate">Generate password</button></footer>
+  <footer>
+    <select id="style" aria-label="Password style">
+      <option value="random">Random characters</option>
+      <option value="words">Three random words</option>
+      <option value="apple">Apple style (abcdef-ghijkl-mnopqr)</option>
+    </select>
+    <button id="generate">Generate password</button>
+  </footer>
   <script type="module" src="popup.js"></script>
 </body>
 </html>

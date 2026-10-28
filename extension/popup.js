@@ -136,11 +136,17 @@ $("lock").onclick = async () => {
   await ask({ type: "lock" });
   refresh();
 };
+const generated = {
+  random: "A new 24-character password was copied.",
+  words: "Three random words were copied.",
+  apple: "A new password in the xxxxxx-xxxxxx-xxxxxx style was copied.",
+};
 $("generate").onclick = async () => {
-  const r = await ask({ type: "generate" });
+  const style = $("style").value;
+  const r = await ask({ type: "generate", style });
   if (!r.ok) return say(r.error);
   await navigator.clipboard.writeText(r.password);
-  say("A new 24-character password was copied.");
+  say(generated[style]);
 };
 
 refresh();

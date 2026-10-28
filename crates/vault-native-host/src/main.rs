@@ -17,8 +17,8 @@ use std::path::PathBuf;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use vault_ipc::{
-    ClientScope, ClientToken, Envelope, GenerateOptions, Request, Response, UnlockMethod, hex,
-    local, parse_id, read_frame, write_frame,
+    ClientScope, ClientToken, Envelope, GenerateOptions, PasswordStyle, Request, Response,
+    UnlockMethod, hex, local, parse_id, read_frame, write_frame,
 };
 use zeroize::Zeroizing;
 
@@ -74,6 +74,8 @@ enum HostRequest {
     },
     Generate {
         length: Option<u16>,
+        /// "random" (the default), "words" or "apple".
+        style: Option<String>,
     },
 }
 
@@ -108,11 +110,15 @@ fn handle(req: HostRequest, call: &mut dyn FnMut(Request) -> Response) -> Value 
             Ok(id) => Request::CardForFill { id, origin },
             Err(e) => return json!({ "ok": false, "error": e }),
         },
-        HostRequest::Generate { length } => Request::Generate {
-            options: GenerateOptions {
-                length: length.unwrap_or(24),
-                symbols: true,
-                avoid_ambiguous: false,
+        HostRequest::Generate { length, style } => Request::GenerateStyled {
+            style: match style.as_deref() {
+                None | Some("random") => PasswordStyle::Random(GenerateOptions {
+                    length: length.unwrap_or(24),
+                    ..GenerateOptions::default()
+                }),
+                Some("words") => PasswordStyle::three_random_words(),
+                Some("apple") => PasswordStyle::Apple,
+                Some(_) => return json!({ "ok": false, "error": "unknown password style" }),
             },
         },
     };

@@ -14,8 +14,8 @@ use vault_core::totp::TotpConfig;
 use vault_hw::phone::{self, PasskeyCred, PhoneEvent};
 use vault_ipc::{
     ClientScope, ClientToken, Envelope, GenerateOptions, ImportFormat, ItemSummary, KeyKind,
-    QuickUnlockInfo, Request, Response, Secret, SecretBytes, SlotInfo, SyncInfo, UnlockMethod, hex,
-    local, parse_id, read_frame, write_frame,
+    PasswordStyle, QuickUnlockInfo, Request, Response, Secret, SecretBytes, SlotInfo, SyncInfo,
+    UnlockMethod, hex, local, parse_id, read_frame, write_frame,
 };
 use zeroize::Zeroizing;
 
@@ -51,6 +51,10 @@ ITEMS                          ID may be any unique prefix of an item ID
   totp ID                      current TOTP code
   find ORIGIN                  items that may be filled on ORIGIN, e.g. https://example.com
   gen [--length N] [--no-symbols] [--no-ambiguous]
+                               a random password (24 characters unless --length)
+  gen --words [N] [--separator S] [--no-capitals] [--number-and-symbol]
+                               N random words, 3 by default (UK NCSC style)
+  gen --apple                  Apple style: three groups of six, like abcdef-gh1jkl-Mnopqr
   import bitwarden|csv FILE    import an unencrypted export (delete the file afterwards)
 
 SSH KEYS                       keys stay in vaultd; ssh and git use them through its agent
@@ -961,16 +965,37 @@ fn main() {
             }
         }
         "gen" => {
-            let length = flag_value(rest, "--length").map_or(24, |v| {
-                v.parse()
-                    .unwrap_or_else(|_| die("--length must be a number"))
-            });
-            let options = GenerateOptions {
-                length,
-                symbols: !rest.iter().any(|a| a == "--no-symbols"),
-                avoid_ambiguous: rest.iter().any(|a| a == "--no-ambiguous"),
+            let has = |f: &str| rest.iter().any(|a| a == f);
+            let style = if has("--apple") {
+                PasswordStyle::Apple
+            } else if has("--words") {
+                let words = rest
+                    .iter()
+                    .skip_while(|a| *a != "--words")
+                    .nth(1)
+                    .filter(|a| !a.starts_with("--"))
+                    .map_or(3, |v| {
+                        v.parse()
+                            .unwrap_or_else(|_| die("--words takes a number from 3 to 10"))
+                    });
+                PasswordStyle::Words {
+                    words,
+                    separator: flag_value(rest, "--separator").unwrap_or_default(),
+                    capitalize: !has("--no-capitals"),
+                    number_and_symbol: has("--number-and-symbol"),
+                }
+            } else {
+                let length = flag_value(rest, "--length").map_or(24, |v| {
+                    v.parse()
+                        .unwrap_or_else(|_| die("--length must be a number"))
+                });
+                PasswordStyle::Random(GenerateOptions {
+                    length,
+                    symbols: !has("--no-symbols"),
+                    avoid_ambiguous: has("--no-ambiguous"),
+                })
             };
-            let Response::Generated(p) = Client::connect().call(Request::Generate { options })
+            let Response::Generated(p) = Client::connect().call(Request::GenerateStyled { style })
             else {
                 die("unexpected response")
             };

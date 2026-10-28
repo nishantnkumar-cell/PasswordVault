@@ -7,11 +7,9 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -22,7 +20,7 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -52,12 +50,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -69,6 +63,7 @@ import androidx.fragment.app.FragmentActivity
 import dev.passwordvault.app.data.QuickUnlock
 import dev.passwordvault.app.data.VaultRepository
 import dev.passwordvault.app.data.VaultState
+import dev.passwordvault.app.ui.components.AppIcon
 import dev.passwordvault.app.ui.components.SecureClipboard
 import dev.passwordvault.app.ui.theme.Mono
 import kotlinx.coroutines.launch
@@ -80,27 +75,6 @@ fun Context.findActivity(): FragmentActivity {
         c = c.baseContext
     }
     error("no activity")
-}
-
-/** The app icon: a white keyhole on the signal-red tile. */
-@Composable
-fun AppIcon(size: androidx.compose.ui.unit.Dp = 88.dp) {
-    Box(
-        Modifier
-            .size(size)
-            .clip(RoundedCornerShape(size * 0.32f))
-            .background(Brush.linearGradient(listOf(Color(0xFFEE3B36), Color(0xFFB5161B)))),
-        contentAlignment = Alignment.Center,
-    ) {
-        androidx.compose.foundation.Canvas(Modifier.size(size * 0.5f)) {
-            val s = this.size.width / 40f
-            drawCircle(Color.White, radius = 7f * s, center = androidx.compose.ui.geometry.Offset(20f * s, 15f * s))
-            val p = Path().apply {
-                moveTo(16f * s, 19f * s); lineTo(14f * s, 32f * s); lineTo(26f * s, 32f * s); lineTo(24f * s, 19f * s); close()
-            }
-            drawPath(p, Color.White)
-        }
-    }
 }
 
 /** Centred, width-limited column so phones, tablets and foldables all look right. */

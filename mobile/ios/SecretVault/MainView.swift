@@ -159,14 +159,14 @@ struct StatusPill: View {
     @Environment(VaultModel.self) private var vault
 
     var body: some View {
-        HStack(spacing: 8) {
-            Circle().fill(vault.sync.error == nil ? Palette.ok : Palette.warn).frame(width: 8, height: 8)
+        HStack(spacing: 10) {
+            AppIconView(size: 28, unlocked: true)
             VStack(alignment: .leading, spacing: 0) {
-                Text("Unlocked").font(.subheadline.weight(.medium))
+                Text("Unlocked").font(.subheadline.weight(.medium)).foregroundStyle(Palette.ok)
                 if let last = vault.sync.last {
                     Text("Synced \(last, format: .relative(presentation: .named))").font(.caption).foregroundStyle(.secondary)
                 } else if let e = vault.sync.error {
-                    Text(e).font(.caption).foregroundStyle(Palette.warn).lineLimit(1)
+                    Text(e).font(.caption).foregroundStyle(Palette.warn).lineLimit(3).fixedSize(horizontal: false, vertical: true)
                 }
             }
             Spacer()

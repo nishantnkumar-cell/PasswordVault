@@ -340,39 +340,81 @@ pub fn monogram(ui: &mut Ui, title: &str, size: f32) {
     paint_monogram(ui, rect, title);
 }
 
-/// The app's mark: a padlock on a dark tile.
-pub fn lock_tile(ui: &mut Ui, size: f32) {
-    let (rect, _) = ui.allocate_exact_size(Vec2::splat(size), Sense::hover());
-    let p = ui.painter();
-    p.rect_filled(rect, CornerRadius::same((size / 4.0) as u8), INK);
-    let u = size / 28.0;
-    let c = rect.center();
-    let line = Stroke::new(1.8 * u, Color32::WHITE);
-    let body = Rect::from_center_size(c + Vec2::new(0.0, 3.0 * u), Vec2::new(12.0 * u, 8.5 * u));
-    p.rect_stroke(
-        body,
-        CornerRadius::same((1.6 * u) as u8),
-        line,
-        egui::StrokeKind::Middle,
+/// The app's mark, drawn like the app icon (contrib/icons): a white keyhole
+/// on a red tile, or on a green one while the vault is unlocked.
+pub fn lock_tile(ui: &mut Ui, size: f32, unlocked: bool) {
+    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(size), Sense::hover());
+    resp.widget_info(|| {
+        WidgetInfo::labeled(
+            egui::Role::Image,
+            true,
+            if unlocked {
+                "Secret Vault, unlocked"
+            } else {
+                "Secret Vault"
+            },
+        )
+    });
+    if ui.is_rect_visible(rect) {
+        paint_mark(ui.painter(), rect, unlocked);
+    }
+}
+
+/// The icon's tile gradient, top left to bottom right.
+pub const MARK_RED: [Color32; 2] = [
+    Color32::from_rgb(0xEE, 0x3B, 0x36),
+    Color32::from_rgb(0xB5, 0x16, 0x1B),
+];
+/// The same tile while the vault is unlocked.
+pub const MARK_GREEN: [Color32; 2] = [
+    Color32::from_rgb(0x2E, 0xB8, 0x6B),
+    Color32::from_rgb(0x15, 0x75, 0x42),
+];
+
+fn paint_mark(p: &egui::Painter, rect: Rect, unlocked: bool) {
+    let [from, to] = if unlocked { MARK_GREEN } else { MARK_RED };
+    // Fill a rounded rectangle, then shade its vertices along the diagonal.
+    let mut mesh = egui::Mesh::default();
+    let mut tess = egui::epaint::Tessellator::new(
+        p.pixels_per_point(),
+        egui::epaint::TessellationOptions::default(),
+        [0, 0],
+        Vec::new(),
     );
-    // The shackle: two posts joined by a half circle.
-    let r = 3.6 * u;
-    let top = body.top() - 2.6 * u;
-    let pts: Vec<Pos2> = (0..=16)
-        .map(|i| {
-            let a = std::f32::consts::PI * (1.0 + i as f32 / 16.0);
-            Pos2::new(c.x + r * a.cos(), top + r * a.sin())
-        })
-        .collect();
-    p.line_segment(
-        [Pos2::new(c.x - r, body.top()), Pos2::new(c.x - r, top)],
-        line,
+    tess.tessellate_rect(
+        &egui::epaint::RectShape::filled(
+            rect,
+            CornerRadius::same((rect.width() * 96.0 / 512.0).round() as u8),
+            Color32::WHITE,
+        ),
+        &mut mesh,
     );
-    p.line_segment(
-        [Pos2::new(c.x + r, body.top()), Pos2::new(c.x + r, top)],
-        line,
-    );
-    p.add(Shape::line(pts, line));
+    let span = rect.width() + rect.height();
+    for v in &mut mesh.vertices {
+        let t = ((v.pos.x - rect.left()) + (v.pos.y - rect.top())) / span;
+        let shade = from.lerp_to_gamma(to, t.clamp(0.0, 1.0));
+        v.color = Color32::from_rgba_premultiplied(
+            (shade.r() as f32 * v.color.a() as f32 / 255.0) as u8,
+            (shade.g() as f32 * v.color.a() as f32 / 255.0) as u8,
+            (shade.b() as f32 * v.color.a() as f32 / 255.0) as u8,
+            v.color.a(),
+        );
+    }
+    p.add(Shape::mesh(mesh));
+    // The keyhole of secret-vault-small.svg, in 512ths of the tile.
+    let at = |x: f32, y: f32| rect.min + Vec2::new(x, y) * (rect.width() / 512.0);
+    let k = rect.width() / 512.0;
+    p.circle_filled(at(256.0, 195.6), 86.8 * k, Color32::WHITE);
+    p.add(Shape::convex_polygon(
+        vec![
+            at(216.8, 237.6),
+            at(295.2, 237.6),
+            at(326.0, 411.2),
+            at(186.0, 411.2),
+        ],
+        Color32::WHITE,
+        Stroke::NONE,
+    ));
 }
 
 /// A ring that empties as a one-time code nears its end.

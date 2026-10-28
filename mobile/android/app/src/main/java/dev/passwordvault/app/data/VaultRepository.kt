@@ -220,6 +220,17 @@ class VaultRepository(private val context: Context) {
         }
     }
 
+    /** Add a one-time code to the login [to], or to a new login; returns its ID. */
+    suspend fun addCode(input: String, title: String, account: String, to: String?): String = withContext(Dispatchers.IO) {
+        lock.withLock {
+            val s = session ?: throw IllegalStateException("locked")
+            mergeFolder(s, null)
+            val id = s.addCode(input, title, account, to)
+            persist(s)
+            id
+        }
+    }
+
     suspend fun delete(id: String) = withContext(Dispatchers.IO) {
         lock.withLock {
             val s = session ?: return@withLock

@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use vault_core::generator::{Charset, generate_password};
+use vault_core::generator;
 use vault_core::item::{ItemData, ItemKind, ItemMerge, KeyData};
 use vault_core::origin::may_fill;
 use vault_core::{
@@ -15,8 +15,8 @@ use vault_core::{
 };
 use vault_hw::protect::ProtectedKey;
 use vault_ipc::{
-    ClientScope, ClientToken, Envelope, ImportFormat, ItemSummary, PasskeySlot, QuickUnlockInfo,
-    Request, Response, Secret, SlotInfo, StatusInfo, SyncInfo, UnlockMethod,
+    ClientScope, ClientToken, Envelope, ImportFormat, ItemSummary, PasskeySlot, PasswordStyle,
+    QuickUnlockInfo, Request, Response, Secret, SlotInfo, StatusInfo, SyncInfo, UnlockMethod,
 };
 use zeroize::Zeroizing;
 
@@ -727,6 +727,7 @@ impl Daemon {
                     | Request::IdentityForFill { .. }
                     | Request::CardForFill { .. }
                     | Request::Generate { .. }
+                    | Request::GenerateStyled { .. }
             )
         {
             return Err("not allowed for an autofill client".into());
@@ -787,16 +788,15 @@ impl Daemon {
                 Ok(Response::Ok)
             }
             Request::Generate { options } => {
-                let cs = Charset {
-                    symbols: options.symbols,
-                    avoid_ambiguous: options.avoid_ambiguous,
-                    ..Charset::default()
-                };
-                let pw =
-                    generate_password(&mut OsRandom, usize::from(options.length.clamp(8, 256)), cs)
-                        .map_err(e)?;
-                Ok(Response::Generated(pw))
+                let style = PasswordStyle::Random(options).to_core();
+                Ok(Response::Generated(
+                    generator::generate(&mut OsRandom, &style).map_err(e)?,
+                ))
             }
+            Request::GenerateStyled { style: s } => Ok(Response::Generated(
+                generator::generate(&mut OsRandom, &s.to_core())
+                    .map_err(|_| "choose 3 to 10 words and a separator of up to 3 characters")?,
+            )),
             Request::PasskeySlots => self.passkey_slots(),
             other => self.unlocked(other),
         }
@@ -1595,7 +1595,8 @@ impl Daemon {
             | Request::SetSync { .. }
             | Request::Lock
             | Request::LockFully
-            | Request::Generate { .. } => {
+            | Request::Generate { .. }
+            | Request::GenerateStyled { .. } => {
                 unreachable!("handled in dispatch")
             }
             Request::SetQuickUnlock { hours } => {

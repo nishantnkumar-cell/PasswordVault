@@ -218,3 +218,80 @@ fn helpers() {
         30
     );
 }
+
+#[test]
+fn add_code_to_a_new_or_existing_login() {
+    let v = new_vault();
+    let s = v.session;
+    let link = "otpauth://totp/Example:alex%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=Example";
+    assert_eq!(
+        code_label(link.into()),
+        Some(CodeLabel {
+            issuer: "Example".into(),
+            account: "alex@example.com".into()
+        })
+    );
+    assert!(code_label("JBSWY3DPEHPK3PXP".into()).is_none());
+
+    // A new login takes its name from the link.
+    let id = s
+        .add_code(link.into(), String::new(), String::new(), None)
+        .unwrap();
+    let d = s.item(id.clone()).unwrap();
+    assert_eq!(
+        (d.title.as_str(), d.username.as_str()),
+        ("Example", "alex@example.com")
+    );
+    assert!(d.has_totp && d.password.is_empty());
+    // A bare key needs a name.
+    assert!(
+        s.add_code("JBSWY3DPEHPK3PXP".into(), " ".into(), String::new(), None)
+            .is_err()
+    );
+
+    // An existing login keeps everything else.
+    let mut edit = login("Mail", "https://mail.example.com");
+    edit.totp = TotpEdit::Keep;
+    let mail = s.save_item(None, edit).unwrap();
+    assert!(!s.item(mail.clone()).unwrap().has_totp);
+    let same = s
+        .add_code(
+            "JBSWY3DPEHPK3PXP".into(),
+            String::new(),
+            String::new(),
+            Some(mail.clone()),
+        )
+        .unwrap();
+    assert_eq!(same, mail);
+    let d = s.item(mail).unwrap();
+    assert!(d.has_totp);
+    assert_eq!(d.password, ["pa", "ss", "word"].concat());
+    assert!(
+        s.add_code("not a key!".into(), "X".into(), String::new(), None)
+            .is_err()
+    );
+}
+
+#[test]
+fn styled_passwords() {
+    let words = generate_styled(PasswordStyle::Words {
+        words: 4,
+        separator: "-".into(),
+        capitalize: false,
+        number_and_symbol: false,
+    })
+    .unwrap();
+    assert_eq!(words.split('-').count(), 4);
+    let apple = generate_styled(PasswordStyle::Apple).unwrap();
+    assert_eq!(apple.len(), 20);
+    assert!(password_strength(PasswordStyle::Apple) > 70.0);
+    assert_eq!(
+        password_strength(PasswordStyle::Words {
+            words: 1,
+            separator: String::new(),
+            capitalize: true,
+            number_and_symbol: false
+        }) as u32,
+        12
+    );
+}

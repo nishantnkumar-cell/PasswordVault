@@ -409,6 +409,73 @@ pub struct GeneratorOptions {
     pub avoid_ambiguous: bool,
 }
 
+/// What [`generate_styled`] makes.
+#[derive(Debug, Clone, uniffi::Enum)]
+pub enum PasswordStyle {
+    /// Random characters.
+    Random {
+        /// Which characters, and how many.
+        options: GeneratorOptions,
+    },
+    /// Random words: the UK NCSC's "three random words".
+    Words {
+        /// 3 to 10.
+        words: u32,
+        /// Up to 3 characters between words; may be empty.
+        separator: String,
+        /// Start each word with a capital letter.
+        capitalize: bool,
+        /// End with a digit and a symbol, for sites that demand them.
+        number_and_symbol: bool,
+    },
+    /// Three groups of six letters with one capital and one digit, as Apple
+    /// devices suggest: `fokjyb-Xewpud-hamu4s`.
+    Apple,
+}
+
+impl PasswordStyle {
+    fn to_core(&self) -> R<generator::Style> {
+        Ok(match self {
+            PasswordStyle::Random { options } => {
+                if !(4..=128).contains(&options.length) {
+                    return Err(invalid("Choose a length from 4 to 128."));
+                }
+                generator::Style::Random {
+                    length: options.length as usize,
+                    charset: Charset {
+                        lower: options.lower,
+                        upper: options.upper,
+                        digits: options.digits,
+                        symbols: options.symbols,
+                        avoid_ambiguous: options.avoid_ambiguous,
+                    },
+                }
+            }
+            PasswordStyle::Words {
+                words,
+                separator,
+                capitalize,
+                number_and_symbol,
+            } => generator::Style::Words {
+                words: *words as usize,
+                separator: separator.clone(),
+                capitalize: *capitalize,
+                number_and_symbol: *number_and_symbol,
+            },
+            PasswordStyle::Apple => generator::Style::Apple,
+        })
+    }
+}
+
+/// Who a one-time code is for, read from an `otpauth://` link.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct CodeLabel {
+    /// The site or app, e.g. "Example"; may be empty.
+    pub issuer: String,
+    /// The account, e.g. "alex@example.com"; may be empty.
+    pub account: String,
+}
+
 // ---------------------------------------------------------------------------
 // Converting between the records and vault-core's item
 // ---------------------------------------------------------------------------
@@ -734,6 +801,29 @@ pub fn generate_password(options: GeneratorOptions) -> R<String> {
     Ok(p.to_string())
 }
 
+/// A password in any style.
+#[uniffi::export]
+pub fn generate_styled(style: PasswordStyle) -> R<String> {
+    let p = generator::generate(&mut OsRandom, &style.to_core()?).map_err(|_| match style {
+        PasswordStyle::Random { .. } => invalid("Turn on at least one kind of character."),
+        _ => invalid("Choose 3 to 10 words and a separator of up to 3 characters."),
+    })?;
+    Ok(p.to_string())
+}
+
+/// How hard a style's passwords are to guess, in bits; 0 when the settings
+/// are out of range.
+#[uniffi::export]
+pub fn password_strength(style: PasswordStyle) -> f64 {
+    style.to_core().map_or(0.0, |s| s.strength_bits())
+}
+
+/// The issuer and account an `otpauth://` link names; `None` for a bare key.
+#[uniffi::export]
+pub fn code_label(input: String) -> Option<CodeLabel> {
+    TotpConfig::label(&input).map(|(issuer, account)| CodeLabel { issuer, account })
+}
+
 /// Check a one-time code seed before saving it; returns the current code.
 #[uniffi::export]
 pub fn preview_totp(input: String, now: u64) -> R<TotpCode> {
@@ -840,6 +930,59 @@ impl VaultSession {
             None => (v.new_item_id(&mut OsRandom)?, ItemData::default()),
         };
         apply(&mut item, edit, now())?;
+        v.put_item(&mut OsRandom, &id, &item.to_bytes())?;
+        Ok(hex(&id))
+    }
+
+    /// Add a one-time code from the Codes screen: to the login or note `to`,
+    /// or else to a new login named `title` (or the link's issuer or account)
+    /// with `account` as its username. Returns the item's ID.
+    pub fn add_code(
+        &self,
+        input: String,
+        title: String,
+        account: String,
+        to: Option<String>,
+    ) -> R<String> {
+        let totp =
+            TotpConfig::parse(input.trim()).map_err(|e| invalid(format!("One-time code: {e}")))?;
+        let mut v = self.lock();
+        let (id, mut item) = match to {
+            Some(s) => {
+                let id = item_id(&s)?;
+                let item = Self::read(&v, &id)?;
+                if !matches!(item.kind, ItemKind::Login | ItemKind::Note) {
+                    return Err(invalid("Codes go on a login or a secure note."));
+                }
+                (id, item)
+            }
+            None => {
+                let label = TotpConfig::label(&input).unwrap_or_default();
+                let title = [
+                    title.trim(),
+                    label.0.as_str(),
+                    account.trim(),
+                    label.1.as_str(),
+                ]
+                .into_iter()
+                .find(|t| !t.is_empty())
+                .ok_or_else(|| invalid("Give the code a name, such as the site it's for."))?
+                .to_owned();
+                let mut item = ItemData::default();
+                item.kind = ItemKind::Login;
+                item.title = title;
+                item.username = if account.trim().is_empty() {
+                    label.1
+                } else {
+                    account.trim().to_owned()
+                };
+                item.created = now();
+                (v.new_item_id(&mut OsRandom)?, item)
+            }
+        };
+        item.totp = Some(totp);
+        item.modified = now();
+        item.normalize();
         v.put_item(&mut OsRandom, &id, &item.to_bytes())?;
         Ok(hex(&id))
     }
