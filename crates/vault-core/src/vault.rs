@@ -214,10 +214,59 @@ pub(crate) fn unwrap_slot(vault_id: &[u8; 16], kek: &Key, slot: &Keyslot) -> Res
 
 /// The vault key of a locked vault, wrapped under a random key that lives
 /// only in `vaultd`'s memory, so that the vault can be opened again without
-/// a factor (quick unlock, format.md section 4.6). Never written to disk.
+/// a factor (quick unlock, format.md section 4.6). `vaultd` never writes it
+/// to disk; the phone apps store it, with the wrap key in the platform
+/// keystore behind a biometric check.
 pub struct ParkedKey {
     vault_id: [u8; 16],
     sealed: crypto::Sealed,
+}
+
+/// Tag and length of an encoded [`ParkedKey`]: tag, vault ID, nonce, key
+/// commitment, then the sealed 32-byte vault key with its tag.
+const PARKED_TAG: &[u8; 8] = b"VPARK\x00\x00\x01";
+const PARKED_LEN: usize = 8 + 16 + NONCE_LEN + 32 + 32 + TAG_LEN;
+
+impl ParkedKey {
+    /// Encode for a phone app that keeps the parked key in its own storage
+    /// across restarts (format.md section 4.6). The bytes are useless without
+    /// the wrap key, which the app keeps in the platform keystore.
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(PARKED_LEN);
+        out.extend_from_slice(PARKED_TAG);
+        out.extend_from_slice(&self.vault_id);
+        out.extend_from_slice(&self.sealed.nonce);
+        out.extend_from_slice(&self.sealed.commit);
+        out.extend_from_slice(&self.sealed.ciphertext);
+        out
+    }
+
+    /// Decode [`ParkedKey::to_bytes`].
+    pub fn from_bytes(bytes: &[u8]) -> Result<ParkedKey, Error> {
+        if bytes.len() != PARKED_LEN || !bytes.starts_with(PARKED_TAG) {
+            return Err(Error::Malformed);
+        }
+        let rest = &bytes[PARKED_TAG.len()..];
+        let (vault_id, rest) = rest.split_at(16);
+        let (nonce, rest) = rest.split_at(NONCE_LEN);
+        let (commit, ciphertext) = rest.split_at(32);
+        fn arr<const N: usize>(b: &[u8]) -> Result<[u8; N], Error> {
+            b.try_into().map_err(|_| Error::Malformed)
+        }
+        Ok(ParkedKey {
+            vault_id: arr(vault_id)?,
+            sealed: crypto::Sealed {
+                nonce: arr(nonce)?,
+                commit: arr(commit)?,
+                ciphertext: ciphertext.to_vec(),
+            },
+        })
+    }
+
+    /// The vault this key opens.
+    pub fn vault_id(&self) -> [u8; 16] {
+        self.vault_id
+    }
 }
 
 fn parked_aad(vault_id: &[u8; 16]) -> Vec<u8> {

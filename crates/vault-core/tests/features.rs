@@ -236,3 +236,89 @@ fn key_items_round_trip() {
     k.set_confirm(false);
     assert!(!k.confirm());
 }
+
+#[test]
+fn three_random_words() {
+    let list = vault_core::generator::wordlist();
+    assert_eq!(list.len(), 7772);
+    assert!(
+        list.iter()
+            .all(|w| w.chars().all(|c| c.is_ascii_lowercase()))
+    );
+    let p = generator::generate(&mut OsRandom, &generator::Style::three_random_words()).unwrap();
+    // Three capitalized words run together: split before each capital.
+    let words: Vec<String> =
+        p.split_inclusive(|_| true)
+            .fold(Vec::new(), |mut v: Vec<String>, c| {
+                if c.chars().all(|c| c.is_ascii_uppercase()) || v.is_empty() {
+                    v.push(c.to_owned());
+                } else {
+                    v.last_mut().unwrap().push_str(c);
+                }
+                v
+            });
+    assert_eq!(words.len(), 3, "{}", p.as_str());
+    assert!(
+        words
+            .iter()
+            .all(|w| list.contains(&w.to_lowercase().as_str()))
+    );
+
+    let style = generator::Style::Words {
+        words: 5,
+        separator: "-".into(),
+        capitalize: false,
+        number_and_symbol: true,
+    };
+    let p = generator::generate(&mut OsRandom, &style).unwrap();
+    let (body, tail) = p.split_at(p.len() - 2);
+    assert_eq!(body.split('-').count(), 5);
+    assert!(body.split('-').all(|w| list.contains(&w)));
+    assert!(tail.as_bytes()[0].is_ascii_digit() && "!#$%&*?@".contains(&tail[1..]));
+    assert!((style.strength_bits() - (5.0 * 7772f64.log2() + 80f64.log2())).abs() < 1e-9);
+
+    for words in [2, 11] {
+        let bad = generator::Style::Words {
+            words,
+            separator: String::new(),
+            capitalize: true,
+            number_and_symbol: false,
+        };
+        assert!(generator::generate(&mut OsRandom, &bad).is_err());
+    }
+}
+
+#[test]
+fn apple_style_passwords() {
+    for _ in 0..200 {
+        let p = generator::generate(&mut OsRandom, &generator::Style::Apple).unwrap();
+        let groups: Vec<&str> = p.split('-').collect();
+        assert_eq!(groups.len(), 3, "{}", p.as_str());
+        assert!(groups.iter().all(|g| g.len() == 6));
+        assert_eq!(p.chars().filter(char::is_ascii_digit).count(), 1);
+        assert_eq!(p.chars().filter(char::is_ascii_uppercase).count(), 1);
+        assert!(!p.contains(['l', 'L']));
+    }
+    let bits = generator::Style::Apple.strength_bits();
+    assert!((70.0..78.0).contains(&bits), "{bits}");
+}
+
+#[test]
+fn otpauth_labels() {
+    let l = |s: &str| TotpConfig::label(s);
+    assert_eq!(
+        l(
+            "otpauth://totp/Example:alex%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=Example%20Mail"
+        ),
+        Some(("Example Mail".into(), "alex@example.com".into()))
+    );
+    assert_eq!(
+        l("otpauth://totp/Example%3A%20alex?secret=JBSWY3DPEHPK3PXP"),
+        Some(("Example".into(), "alex".into()))
+    );
+    assert_eq!(
+        l("otpauth://totp/alex?secret=JBSWY3DPEHPK3PXP"),
+        Some((String::new(), "alex".into()))
+    );
+    assert_eq!(l("JBSWY3DPEHPK3PXP"), None);
+}

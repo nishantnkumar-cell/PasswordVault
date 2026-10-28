@@ -965,7 +965,7 @@ fn strength(ui: &mut Ui, pw: &str) {
 /// green, the current one in blue, joined by a line.
 fn rail(ui: &mut Ui, step: Step) {
     ui.horizontal(|ui| {
-        theme::lock_tile(ui, 34.0);
+        theme::lock_tile(ui, 34.0, false);
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
             ui.label(theme::title("Secret Vault", 15.0));

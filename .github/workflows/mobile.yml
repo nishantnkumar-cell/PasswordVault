@@ -1,0 +1,149 @@
+# Builds and tests the iPhone/iPad and Android apps (mobile/, docs/mobile.md).
+name: Mobile
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  VAULT_COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,x86_64-linux-android
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Latest library versions (for keeping libs.versions.toml current)
+        continue-on-error: true
+        run: |
+          for p in androidx/test/runner androidx/test/ext/junit com/android/tools/build/gradle androidx/compose/compose-bom androidx/compose/material3/adaptive/adaptive \
+                   androidx/activity/activity-compose androidx/biometric/biometric androidx/core/core-ktx \
+                   androidx/lifecycle/lifecycle-runtime-compose androidx/window/window \
+                   com/google/android/gms/play-services-code-scanner; do
+            echo "$p: $(curl -s https://dl.google.com/dl/android/maven2/$p/maven-metadata.xml | grep -o '<release>[^<]*\|<version>[^<]*' | sed 's/<[a-z]*>//' | grep -v -i 'alpha\|beta\|rc\|dev' | tail -3 | tr '\n' ' ')"
+          done
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
+      - name: Build the Rust library, then the app
+        working-directory: mobile/android
+        run: |
+          export ANDROID_NDK_HOME=${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}
+          ./gradlew --no-daemon assembleDebug assembleRelease assembleDebugAndroidTest testDebugUnitTest lintDebug
+      - uses: actions/upload-artifact@v7
+        with:
+          name: secret-vault-android
+          path: |
+            mobile/android/app/build/outputs/apk/release/*.apk
+            mobile/android/app/build/reports/lint-results-debug.html
+      - uses: actions/upload-artifact@v7
+        with:
+          name: android-test-apks
+          path: |
+            mobile/android/app/build/outputs/apk/debug/app-debug.apk
+            mobile/android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+
+  # The UI tour on emulators of three sizes, with a screenshot of each screen.
+  android-ui:
+    needs: android
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: phone
+            profile: pixel_6
+          - name: tablet
+            profile: pixel_tablet
+          - name: foldable
+            profile: pixel_fold
+            fold: foldable
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v7
+        with:
+          name: android-test-apks
+          path: mobile/android/app/build/outputs/apk
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: ${{ matrix.profile }}
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: mobile/scripts/android-ui-test.sh ${{ matrix.name }} ${{ matrix.fold }}
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: android-screenshots-${{ matrix.name }}
+          path: mobile/android/build/screenshots
+      # Small JPEG copies in the log, for reviewing without downloading artifacts.
+      - name: Screenshots for review
+        if: always()
+        run: |
+          cd mobile/android/build/screenshots 2>/dev/null || exit 0
+          mkdir -p /tmp/review
+          python3 -m pip install --quiet --user --break-system-packages pillow
+          python3 - <<'PY'
+          import glob
+          from PIL import Image
+          for f in glob.glob("*.png"):
+              im = Image.open(f).convert("RGB")
+              im.thumbnail((900, 900))
+              im.save("/tmp/review/" + f[:-4] + ".jpg", quality=70)
+          PY
+          tar -C /tmp/review -cz . | base64 -w 0 | fold -w 4000 | sed 's/^/SHOTS:/'
+
+  ios:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-ios
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Build the Rust library and Swift bindings
+        run: mobile/scripts/build-ios.sh release
+      - name: Build the app and AutoFill extension for the simulator
+        working-directory: mobile/ios
+        run: |
+          xcodegen generate
+          xcodebuild -project SecretVault.xcodeproj -scheme SecretVault -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO VAULT_SKIP_RUST=1 build
+      - name: Run the UI tour on iPhone and iPad simulators
+        run: mobile/scripts/ios-ui-test.sh
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ios-screenshots
+          path: mobile/ios/build/screenshots
+      - name: Screenshots for review
+        if: always()
+        run: |
+          cd mobile/ios/build/screenshots 2>/dev/null || exit 0
+          mkdir -p /tmp/review
+          for f in *.png; do sips -Z 900 -s format jpeg -s formatOptions 70 "$f" --out "/tmp/review/${f%.png}.jpg" >/dev/null || true; done
+          tar -C /tmp/review -cz . | base64 | tr -d '\n' | fold -w 4000 | sed 's/^/SHOTS:/'

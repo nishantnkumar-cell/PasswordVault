@@ -1,0 +1,8 @@
+Generated/
+*.xcodeproj/
+build/
+build-*/
+DerivedData/
+# Written by xcodegen from project.yml.
+*/Info.plist
+*/*.entitlements

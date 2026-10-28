@@ -14,6 +14,106 @@ to work yet.
 
 ## Unreleased
 
+### Easier passwords, codes added from the Codes screen, and the real app icon
+
+- **Three random words.** The generator can now make passwords the way the
+  UK National Cyber Security Centre recommends: three random words run
+  together, such as `CupFishBiscuit`. They are easy to remember and to type
+  on a phone. You can pick 3 to 10 words, what goes between them, whether
+  each starts with a capital, and an optional digit and symbol at the end
+  for sites that insist on them. Words come from the EFF's list of 7,772
+  common words.
+- **Apple-style passwords.** A second new style makes passwords like the
+  ones iPhones and Macs suggest: three groups of six letters joined by
+  hyphens, with one capital and one digit, such as `fokjyb-Xewpud-hamu4s`.
+  About 74 bits, roughly as hard to guess as an 11-character random password,
+  but much easier to type.
+- **Every app has the styles.** Desktop app (Generator page), command line
+  (`vault gen --words`, `vault gen --apple`), browser extension (a style
+  menu next to **Generate password**), iPhone, iPad and Android (Generator
+  tab). Each shows roughly how strong its passwords are. The style you pick
+  is also what **Generate** (or the dice) uses in the item editor.
+- **Add a one-time code from the Codes screen (iPhone, iPad and Android).**
+  The Codes tab has an **Add Code** button: scan the site's QR code or
+  paste its setup key, then keep the code on a new login or on a login you
+  already have. Before, you had to edit a login to add a code.
+- **The real app icon inside the app, green when unlocked.** The plain dark
+  padlock at the top left of the desktop app is replaced by the app's own
+  keyhole icon. It is red while the vault is locked and green while it is
+  unlocked. The iPhone Items screen, the iPad status pill and the Android
+  items screen show the same green icon; tap it to lock.
+- **Long text wraps instead of overlapping (desktop).** Long item names,
+  usernames, web addresses and descriptions now wrap. Edit and Delete no
+  longer cover a long item name, and move under it in a narrow window; copy
+  buttons move under their value too. The item list shows names on two
+  lines, the sidebar scrolls instead of running into the version line, and
+  the top bar hides the lock timer before anything overlaps. In a narrow
+  window the sidebar, item list and margins slim down so an item's details
+  stay inside the window instead of running off its left edge. On phones,
+  item names take up to two lines and long email addresses are shortened in
+  the middle so both ends stay visible.
+- How to start: [the generator](user-guide/03-items.md#password-generator),
+  [the desktop Generator page](user-guide/05-desktop-app.md#generator) and
+  [one-time codes on phones](user-guide/14-phone-apps.md#one-time-codes).
+
+| | Linux, Windows, macOS desktop app | Command line | Browser extension | iPhone and iPad | Android |
+| --- | --- | --- | --- | --- | --- |
+| Three random words | Yes, with all options | `vault gen --words` with all options | Yes, 3 words with capitals | Yes, with all options | Yes, with all options |
+| Apple style | Yes | `vault gen --apple` | Yes | Yes | Yes |
+| Add a code from the Codes screen | Not yet (edit the login) | Not yet (`vault edit`) | No | Yes, with the camera | Yes, with the camera (Google Play services scanner) |
+| Green icon when unlocked | Top left of the window | No | No | Items screen (phone), status pill (iPad) | Items screen |
+
+Known limits: the browser extension always makes three capitalised words
+(change the details in the desktop app or with `vault gen`). The desktop app
+has no Add Code button on its own yet. The extension needs the matching new
+`vault-native-host` and `vaultd`; an older `vaultd` answers "unknown
+request" for the new styles. No vault file change.
+
+### Apps for iPhone, iPad and Android
+
+- **Your vault on your phone and tablet.** New apps for iPhone and iPad
+  (iOS 26) and for Android phones, tablets and foldables (Android 9 or
+  later). Look up and copy passwords, cards and identities, add and edit
+  items, see every one-time code in one place, and make passwords with the
+  same generator as the desktop.
+- **The same vault as your computer.** Pick the vault file your computer
+  syncs (iCloud Drive, OneDrive, Google Drive or Dropbox) and the phone
+  merges with it, exactly like another computer. Or start a vault on the
+  phone and join it from a computer later.
+- **Face ID, Touch ID or fingerprint unlock.** After you unlock once with
+  the master password, your face or fingerprint opens the vault for up to
+  14 days. The key behind it stays in the phone's secure hardware and is
+  dropped when a new face or fingerprint is added.
+- **AutoFill in your browser.** Turn on Secret Vault as the phone's
+  AutoFill provider. Logins are offered only on the websites they are saved
+  for, the same rule as the browser extension. On iPhone, one-time codes
+  can be filled too.
+- **Set up codes from the camera (iPhone and iPad).** Choose Secret Vault
+  under Settings > General > AutoFill & Passwords > **Set Up Codes In**, and
+  a website's setup QR code or link opens a new login in Secret Vault with
+  the code filled in. Android has no system setting for this; scan the QR
+  code inside the app.
+- **Made for every screen.** On phones the app uses a tab bar (Liquid Glass
+  on iOS 26) and Material 3 on Android. On iPad, tablets, unfolded
+  foldables and wide split-screen windows it shows the list and the item
+  side by side, with three columns on iPad like the desktop app. On a
+  half-folded Android foldable the Codes tab shows the code on the top half.
+- How to start: [Phone and tablet apps](user-guide/14-phone-apps.md).
+  Technical details: [mobile.md](mobile.md).
+
+| | iPhone and iPad | Android |
+| --- | --- | --- |
+| Face or fingerprint unlock | Face ID, Touch ID | Strong biometrics (fingerprint, some face unlock) |
+| AutoFill unlock | Face ID or Touch ID only | Biometrics or master password |
+| One-time codes in AutoFill | Yes | Not yet |
+| How you get it | Build with Xcode on a Mac | APK from the Mobile CI run |
+
+Known limits: not yet in the App Store or on Google Play. Tried on a real
+iPhone; Android so far only on emulators. Security keys, TPM and phone-passkey
+unlock methods work only on the computer they were made on. Saving a new
+login from another app's sign-up form is not built yet. No vault file
+change: computers and phones read the same files.
+
 ### See and take back app approvals, and import from GNOME Keyring or KWallet
 
 - **See and take back approvals.** The programs you allowed to use app

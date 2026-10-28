@@ -91,6 +91,29 @@ impl TotpConfig {
         Ok(cfg)
     }
 
+    /// The issuer and account an `otpauth://` link names, as in
+    /// `otpauth://totp/Example:alex@example.com?issuer=Example`; empty
+    /// strings for parts it leaves out, `None` for anything else.
+    pub fn label(s: &str) -> Option<(String, String)> {
+        let u = url::Url::parse(s.trim()).ok()?;
+        if !u.scheme().eq_ignore_ascii_case("otpauth") {
+            return None;
+        }
+        let path = percent_encoding::percent_decode_str(u.path().trim_start_matches('/'))
+            .decode_utf8_lossy();
+        let (from_label, account) = match path.split_once(':') {
+            Some((i, a)) => (i.trim().to_owned(), a.trim().to_owned()),
+            None => (String::new(), path.trim().to_owned()),
+        };
+        let issuer = u
+            .query_pairs()
+            .find(|(k, _)| k == "issuer")
+            .map(|(_, v)| v.trim().to_owned())
+            .filter(|v| !v.is_empty())
+            .unwrap_or(from_label);
+        Some((issuer, account))
+    }
+
     /// The code for Unix time `now` (seconds).
     pub fn code_at(&self, now: u64) -> Result<String, Error> {
         if !(6..=8).contains(&self.digits) || self.period == 0 {

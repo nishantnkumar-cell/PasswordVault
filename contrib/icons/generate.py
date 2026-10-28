@@ -86,6 +86,20 @@ def macos_svg():
     )
 
 
+def ios_svg():
+    """iOS and iPadOS mask the corners themselves: an opaque, square 1024 tile."""
+    return (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">'
+        f"<defs>{gradient(0, 0, 512)}</defs>"
+        '<rect width="512" height="512" fill="url(#bg)"/>'
+        f'<circle cx="256" cy="256" r="184" fill="{HALO}" fill-opacity="0.16"/>'
+        f'<path fill="{RING}" fill-rule="evenodd" d="M72 256a184 184 0 1 0 368 0a184 184 0 1 0 -368 0Z'
+        'M84 256a172 172 0 1 0 344 0a172 172 0 1 0 -344 0Z"/>'
+        f'<g fill="{GLYPH}">{KEYHOLE}</g>'
+        "</svg>"
+    )
+
+
 def symbolic_svg():
     """GNOME symbolic icon: the keyhole alone, one colour, on a 16 px grid."""
     return (
@@ -138,6 +152,11 @@ def main():
     icns_sizes = (16, 32, 64, 128, 256, 512, 1024)
     icns = [render(macos_svg(), s) for s in icns_sizes]
     icns[-1].save(os.path.join(OUT, "secret-vault.icns"), format="ICNS", append_images=icns[:-1])
+
+    # iPhone and iPad: one opaque 1024 PNG in the app's asset catalog.
+    ios = os.path.join(OUT, "../../mobile/ios/SecretVault/Assets.xcassets/AppIcon.appiconset/icon-1024.png")
+    os.makedirs(os.path.dirname(ios), exist_ok=True)
+    render(ios_svg(), 1024).convert("RGB").save(ios, optimize=True)
 
 
 if __name__ == "__main__":

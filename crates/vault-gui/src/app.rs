@@ -12,8 +12,8 @@ use vault_core::item::{Card, CustomField, FieldKind, Identity, ItemData, ItemKin
 use vault_core::origin::MatchMode;
 use vault_core::totp::TotpConfig;
 use vault_ipc::{
-    ClientScope, ClientToken, GenerateOptions, ImportFormat, ItemId, ItemSummary, KeyKind, Request,
-    Response, Secret, SlotId, SlotInfo, StatusInfo, UnlockMethod,
+    ClientScope, ClientToken, GenerateOptions, ImportFormat, ItemId, ItemSummary, KeyKind,
+    PasswordStyle, Request, Response, Secret, SlotId, SlotInfo, StatusInfo, UnlockMethod,
 };
 use zeroize::Zeroizing;
 
@@ -31,6 +31,21 @@ const CLIENT_NAME: &str = "desktop app";
 const TOP_BAR: f32 = 60.0;
 /// Width of the sidebar, and of the app's name above it.
 const SIDEBAR: f32 = 236.0;
+/// The sidebar in a window narrower than [`NARROW`].
+const SIDEBAR_NARROW: f32 = 216.0;
+/// Below this window width the sidebar, list and page margins tighten so
+/// the open item keeps room to wrap its text.
+const NARROW: f32 = 900.0;
+
+/// Whether the window is narrow enough to tighten the layout.
+fn narrow(ctx: &egui::Context) -> bool {
+    ctx.content_rect().width() < NARROW
+}
+
+/// The sidebar's width for the window's size.
+fn sidebar_width(ctx: &egui::Context) -> f32 {
+    if narrow(ctx) { SIDEBAR_NARROW } else { SIDEBAR }
+}
 
 /// The system clipboard, or a stand-in for tests.
 pub trait Clip {
@@ -668,7 +683,7 @@ pub struct App {
     /// The open key item's public half, to show and copy.
     public_key: Option<(ItemId, String)>,
 
-    gen_options: GenerateOptions,
+    generator: Generator,
     generated: Option<Secret>,
 
     import_format: ImportFormat,
@@ -739,11 +754,7 @@ impl App {
             pgp: keys::PgpTools::default(),
             confirm_delete: false,
             public_key: None,
-            gen_options: GenerateOptions {
-                length: 24,
-                symbols: true,
-                avoid_ambiguous: false,
-            },
+            generator: Generator::default(),
             generated: None,
             import_format: ImportFormat::BitwardenJson,
             import_path: String::new(),
@@ -1171,7 +1182,8 @@ impl App {
     /// form on the right.
     fn unlock_card(&mut self, ui: &mut Ui) {
         const LEFT: f32 = 248.0;
-        const WIDTH: f32 = 800.0;
+        // 800 wide, less in a narrow window so the card keeps a margin.
+        let width = (ui.available_width() - 48.0).clamp(640.0, 800.0);
         let pair = self.screen == Screen::Pair;
         let shadow = egui::Shadow {
             offset: [0, 12],
@@ -1184,7 +1196,7 @@ impl App {
             .corner_radius(16)
             .shadow(shadow)
             .show(ui, |ui| {
-                ui.set_width(WIDTH);
+                ui.set_width(width);
                 ui.spacing_mut().item_spacing = Vec2::ZERO;
                 ui.horizontal_top(|ui| {
                     let left = egui::Frame::new()
@@ -1210,7 +1222,7 @@ impl App {
                     egui::Frame::new()
                         .inner_margin(Margin::symmetric(44, 40))
                         .show(ui, |ui| {
-                            ui.set_width(WIDTH - LEFT - 88.0);
+                            ui.set_width(width - LEFT - 88.0);
                             ui.spacing_mut().item_spacing = Vec2::new(8.0, 8.0);
                             ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
                                 self.messages(ui);
@@ -1225,7 +1237,7 @@ impl App {
     fn unlock_methods(&mut self, ui: &mut Ui, pair: bool) {
         ui.horizontal(|ui| {
             ui.add_space(4.0);
-            theme::lock_tile(ui, 36.0);
+            theme::lock_tile(ui, 36.0, false);
             ui.add_space(2.0);
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = 1.0;
@@ -1305,7 +1317,7 @@ impl App {
             Screen::Locked | Screen::Unlocked => "Locked",
         };
         ui.horizontal(|ui| {
-            theme::lock_tile(ui, 40.0);
+            theme::lock_tile(ui, 40.0, false);
             ui.add_space(2.0);
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = 1.0;
@@ -1816,22 +1828,31 @@ impl App {
             .show(ui, |ui| self.top_bar(ui));
         egui::Panel::left("nav")
             .resizable(false)
-            .exact_size(SIDEBAR)
+            .exact_size(sidebar_width(ui.ctx()))
             .frame(
                 egui::Frame::new()
                     .fill(theme::SIDEBAR)
                     .inner_margin(Margin::symmetric(12, 16)),
             )
             .show(ui, |ui| self.sidebar(ui));
+        let tight = narrow(ui.ctx());
         let page = egui::Frame::new()
             .fill(theme::GROUND)
-            .inner_margin(Margin::symmetric(32, 26));
+            .inner_margin(if tight {
+                Margin::symmetric(16, 20)
+            } else {
+                Margin::symmetric(32, 26)
+            });
         match self.view {
             View::Items => {
+                // The list gives way in a narrow window, so the item beside
+                // it keeps room to show its text.
+                let least = if tight { 200.0 } else { 240.0 };
+                let most = (ui.available_width() - 360.0).clamp(least, 480.0);
                 egui::Panel::left("list")
                     .resizable(true)
                     .default_size(340.0)
-                    .size_range(280.0..=480.0)
+                    .size_range(least..=most)
                     .frame(
                         egui::Frame::new()
                             .fill(theme::SURFACE)
@@ -1924,7 +1945,8 @@ impl App {
     /// button for the open category, and Lock.
     fn top_bar(&mut self, ui: &mut Ui) {
         let full = ui.max_rect();
-        let brand = Rect::from_min_size(full.min, Vec2::new(SIDEBAR, full.height()));
+        let side = sidebar_width(ui.ctx());
+        let brand = Rect::from_min_size(full.min, Vec2::new(side, full.height()));
         ui.painter().rect_filled(brand, 0.0, theme::SIDEBAR);
         ui.painter().vline(
             brand.right(),
@@ -1944,14 +1966,23 @@ impl App {
         let mut widen = false;
         ui.horizontal_centered(|ui| {
             ui.add_space(18.0);
-            theme::lock_tile(ui, 30.0);
+            theme::lock_tile(ui, 30.0, true);
             ui.add_space(2.0);
             ui.label(theme::title("Secret Vault", 15.0));
             let used = ui.cursor().left() - full.left();
-            ui.add_space(SIDEBAR - used + 20.0);
+            ui.add_space(side - used + 20.0);
 
             // Search: as wide as the room the buttons on the right leave.
-            let room = (ui.available_width() - 430.0).clamp(240.0, 640.0);
+            // In a narrow window the lock timer goes, then the shortcut
+            // hint, so nothing overlaps.
+            let avail = ui.available_width();
+            let show_timer = avail - 430.0 >= 240.0;
+            let room = if show_timer {
+                (avail - 430.0).min(640.0)
+            } else {
+                (avail - 290.0).max(150.0)
+            };
+            let show_kbd = room >= 260.0;
             let scoped = self.filter != Filter::All;
             egui::Frame::new()
                 .fill(theme::GROUND)
@@ -1986,7 +2017,7 @@ impl App {
                         } else {
                             "Search all items".to_owned()
                         };
-                        let kbd = 54.0;
+                        let kbd = if show_kbd { 54.0 } else { 0.0 };
                         let r = ui.add(
                             TextEdit::singleline(&mut self.search)
                                 .hint_text(hint)
@@ -1998,13 +2029,15 @@ impl App {
                         ui.ctx()
                             .accesskit_node_builder(r.id, |n| n.set_label("Search"));
                         search_changed = r.changed();
-                        ui.label(
-                            RichText::new(PALETTE_KEY)
-                                .monospace()
-                                .size(11.0)
-                                .color(theme::MUTED),
-                        )
-                        .on_hover_text("Find items and actions");
+                        if show_kbd {
+                            ui.label(
+                                RichText::new(PALETTE_KEY)
+                                    .monospace()
+                                    .size(11.0)
+                                    .color(theme::MUTED),
+                            )
+                            .on_hover_text("Find items and actions");
+                        }
                     });
                 });
 
@@ -2013,7 +2046,7 @@ impl App {
                 lock = theme::button(ui, Icon::Lock, "Lock").clicked();
                 ui.add_space(2.0);
                 start = self.new_buttons(ui);
-                if let Some(t) = idle {
+                if let Some(t) = idle.filter(|_| show_timer) {
                     ui.add_space(6.0);
                     ui.label(RichText::new(t).small().color(theme::MUTED));
                     status_dot(ui, theme::OK);
@@ -2176,35 +2209,43 @@ impl App {
             );
         }
         let mut go = None;
-        ui.spacing_mut().item_spacing.y = 2.0;
-        for (f, name) in Filter::NAV {
-            let on = self.view == View::Items && self.filter == f;
-            let count = self.items.iter().filter(|i| f.admits(i)).count();
-            if theme::nav_row(ui, on, f.icon(), name, Some(count)).clicked() {
-                go = Some((View::Items, f));
-            }
-        }
-        ui.add_space(14.0);
-        ui.horizontal(|ui| {
-            ui.add_space(10.0);
-            theme::caption(ui, "Tools");
-        });
-        ui.add_space(2.0);
-        for (v, icon, name) in [
-            (View::Generator, Icon::Dice, "Generator"),
-            (View::Import, Icon::Import, "Import"),
-            (View::Slots, Icon::Shield, "Unlock methods"),
-            (View::Sync, Icon::Sync, "Sync"),
-            (View::Pgp, Icon::Mail, "Encrypt and sign"),
-            (View::Apps, Icon::Key, "App passwords"),
-        ] {
-            if v == View::Apps && !cfg!(target_os = "linux") {
-                continue;
-            }
-            if theme::nav_row(ui, self.view == v, icon, name, None).clicked() {
-                go = Some((v, self.filter));
-            }
-        }
+        // The version and hints at the bottom keep their room; on a short
+        // window the categories and tools scroll instead of running under them.
+        let footer = if sync.is_some() { 96.0 } else { 76.0 };
+        egui::ScrollArea::vertical()
+            .id_salt("sidebar")
+            .max_height((ui.available_height() - footer).max(80.0))
+            .show(ui, |ui| {
+                ui.spacing_mut().item_spacing.y = 2.0;
+                for (f, name) in Filter::NAV {
+                    let on = self.view == View::Items && self.filter == f;
+                    let count = self.items.iter().filter(|i| f.admits(i)).count();
+                    if theme::nav_row(ui, on, f.icon(), name, Some(count)).clicked() {
+                        go = Some((View::Items, f));
+                    }
+                }
+                ui.add_space(14.0);
+                ui.horizontal(|ui| {
+                    ui.add_space(10.0);
+                    theme::caption(ui, "Tools");
+                });
+                ui.add_space(2.0);
+                for (v, icon, name) in [
+                    (View::Generator, Icon::Dice, "Generator"),
+                    (View::Import, Icon::Import, "Import"),
+                    (View::Slots, Icon::Shield, "Unlock methods"),
+                    (View::Sync, Icon::Sync, "Sync"),
+                    (View::Pgp, Icon::Mail, "Encrypt and sign"),
+                    (View::Apps, Icon::Key, "App passwords"),
+                ] {
+                    if v == View::Apps && !cfg!(target_os = "linux") {
+                        continue;
+                    }
+                    if theme::nav_row(ui, self.view == v, icon, name, None).clicked() {
+                        go = Some((v, self.filter));
+                    }
+                }
+            });
         ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
             ui.spacing_mut().item_spacing.y = 4.0;
             ui.horizontal(|ui| {
@@ -2388,13 +2429,45 @@ impl App {
         let mut set_confirm = None;
         let mut export_pgp = None;
 
-        ui.horizontal(|ui| {
-            theme::monogram(ui, &item.title, 56.0);
+        // Edit and Delete sit right of the title when there is room, and
+        // under it in a narrow window, so a long title wraps in readable lines.
+        let mut buttons = |ui: &mut Ui| {
+            if self.confirm_delete {
+                if ui.button("Cancel").clicked() {
+                    self.confirm_delete = false;
+                }
+                if ui
+                    .add(
+                        egui::Button::new(RichText::new("Yes, delete").color(egui::Color32::WHITE))
+                            .fill(theme::ERROR),
+                    )
+                    .clicked()
+                {
+                    delete = true;
+                }
+                ui.label("Delete this item for good?");
+            } else {
+                if theme::danger(ui, Icon::Trash, "Delete").clicked() {
+                    self.confirm_delete = true;
+                }
+                if theme::button(ui, Icon::Pencil, "Edit").clicked() {
+                    edit = true;
+                }
+            }
+        };
+        let w = ui.available_width();
+        let (tile, size) = if w < 400.0 {
+            (40.0, 18.0)
+        } else {
+            (56.0, 22.0)
+        };
+        let title = |ui: &mut Ui| {
+            theme::monogram(ui, &item.title, tile);
             ui.add_space(6.0);
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = 2.0;
                 ui.add_space(6.0);
-                ui.label(theme::title(&item.title, 22.0));
+                ui.add(egui::Label::new(theme::title(&item.title, size)).wrap());
                 let kind = if let Some(k) = &key {
                     if k.starts_with("OpenPGP") {
                         "OpenPGP key"
@@ -2406,33 +2479,29 @@ impl App {
                 };
                 ui.label(RichText::new(kind).size(13.0).color(theme::MUTED));
             });
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if self.confirm_delete {
-                    if ui.button("Cancel").clicked() {
-                        self.confirm_delete = false;
-                    }
-                    if ui
-                        .add(
-                            egui::Button::new(
-                                RichText::new("Yes, delete").color(egui::Color32::WHITE),
-                            )
-                            .fill(theme::ERROR),
-                        )
-                        .clicked()
-                    {
-                        delete = true;
-                    }
-                    ui.label("Delete this item for good?");
-                } else {
-                    if theme::danger(ui, Icon::Trash, "Delete").clicked() {
-                        self.confirm_delete = true;
-                    }
-                    if theme::button(ui, Icon::Pencil, "Edit").clicked() {
-                        edit = true;
-                    }
-                }
-            });
-        });
+        };
+        if w < 520.0 {
+            ui.allocate_ui_with_layout(
+                Vec2::new(w, 0.0),
+                egui::Layout::left_to_right(egui::Align::Min),
+                title,
+            );
+            ui.add_space(10.0);
+            ui.allocate_ui_with_layout(
+                Vec2::new(w, 0.0),
+                egui::Layout::right_to_left(egui::Align::Min),
+                buttons,
+            );
+        } else {
+            ui.allocate_ui_with_layout(
+                Vec2::new(w, 0.0),
+                egui::Layout::right_to_left(egui::Align::Min),
+                |ui| {
+                    buttons(ui);
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), title);
+                },
+            );
+        }
         ui.add_space(18.0);
 
         // A row: the label over the value, and on the right a Copy button.
@@ -2455,16 +2524,25 @@ impl App {
                     ui.label(RichText::new(label).size(12.0).color(theme::MUTED));
                     // Code font only for secrets, where telling 0 from O matters.
                     if secret && !reveal {
-                        ui.label(RichText::new("••••••••••••").monospace().size(15.0));
+                        ui.add(
+                            egui::Label::new(RichText::new("••••••••").monospace().size(15.0))
+                                .wrap_mode(egui::TextWrapMode::Extend),
+                        );
                     } else if secret {
-                        ui.label(
-                            RichText::new(value)
-                                .monospace()
-                                .size(15.0)
-                                .color(theme::INK),
+                        ui.add(
+                            egui::Label::new(
+                                RichText::new(value)
+                                    .monospace()
+                                    .size(15.0)
+                                    .color(theme::INK),
+                            )
+                            .wrap(),
                         );
                     } else {
-                        ui.label(RichText::new(value).size(15.0).color(theme::INK));
+                        ui.add(
+                            egui::Label::new(RichText::new(value).size(15.0).color(theme::INK))
+                                .wrap(),
+                        );
                     }
                 },
                 |ui| {
@@ -2640,10 +2718,13 @@ impl App {
                     if u.allow_http {
                         how += ", http allowed";
                     }
-                    ui.horizontal(|ui| {
-                        ui.label(RichText::new(&u.url).monospace().color(theme::INK));
-                        ui.label(RichText::new(how).small().color(theme::MUTED));
-                    });
+                    // Long addresses wrap inside the card.
+                    ui.add(
+                        egui::Label::new(RichText::new(&u.url).monospace().color(theme::INK))
+                            .wrap(),
+                    );
+                    ui.label(RichText::new(how).small().color(theme::MUTED));
+                    ui.add_space(4.0);
                 }
             });
         }
@@ -3042,8 +3123,8 @@ impl App {
             Action::Pgp(task) => self.open_pgp(task),
             Action::Generate => {
                 self.go(View::Generator);
-                let options = self.gen_options;
-                self.send(Op::Generate, Request::Generate { options });
+                let style = self.generator.style();
+                self.send(Op::Generate, Request::GenerateStyled { style });
             }
             Action::Go(v) => self.go(v),
             Action::Lock => self.act("Locking…", Op::Lock, Request::Lock),
@@ -3190,8 +3271,8 @@ impl App {
             cancel = ui.button("Cancel").clicked();
         });
         if generate {
-            let options = self.gen_options;
-            self.send(Op::GenerateForEdit, Request::Generate { options });
+            let style = self.generator.style();
+            self.send(Op::GenerateForEdit, Request::GenerateStyled { style });
         }
         if cancel {
             self.edit = None;
@@ -3354,28 +3435,14 @@ impl App {
         page_header(
             ui,
             "Password generator",
-            "Make a long random password. New items use these settings when you press \
+            "Pick a style and make a password. New items use these settings when you press \
              Generate there.",
         );
         let mut copy = None;
+        let mut generate = false;
         theme::card().show(ui, |ui| {
             ui.set_width(ui.available_width());
-            let o = &mut self.gen_options;
-            ui.horizontal(|ui| {
-                ui.spacing_mut().slider_width = 260.0;
-                ui.add(egui::Slider::new(&mut o.length, 8..=64).text("characters"));
-            });
-            ui.checkbox(&mut o.symbols, "Symbols");
-            ui.checkbox(&mut o.avoid_ambiguous, "Avoid look-alike characters");
-            ui.add_space(4.0);
-            if theme::primary_icon(ui, true, Icon::Dice, "Generate").clicked() {
-                let options = *o;
-                self.send(Op::Generate, Request::Generate { options });
-            }
             if let Some(p) = &self.generated {
-                ui.add_space(8.0);
-                theme::divider(ui);
-                ui.add_space(4.0);
                 detail_row(
                     ui,
                     |ui| {
@@ -3384,20 +3451,99 @@ impl App {
                             egui::Label::new(
                                 RichText::new(p.as_str())
                                     .monospace()
-                                    .size(16.0)
+                                    .size(18.0)
                                     .color(theme::INK),
                             )
-                            .wrap(),
+                            .wrap_mode(egui::TextWrapMode::Wrap)
+                            .selectable(true),
                         );
                     },
                     |ui| {
                         if theme::primary_small(ui, Icon::Copy, "Copy password").clicked() {
                             copy = Some(p.clone());
                         }
+                        if theme::soft_icon(ui, Icon::Dice, "New").clicked() {
+                            generate = true;
+                        }
                     },
                 );
+                theme::divider(ui);
+                ui.add_space(12.0);
+            }
+            let g = &mut self.generator;
+            for (kind, name, about) in [
+                (
+                    GenKind::Random,
+                    "Random characters",
+                    "Strongest for its length. Best when you never type it.",
+                ),
+                (
+                    GenKind::Words,
+                    "Three random words",
+                    "The UK NCSC's advice: easy to remember and type, like CupFishBiscuit.",
+                ),
+                (
+                    GenKind::Apple,
+                    "Apple style",
+                    "Three groups of six letters, like fokjyb-Xewpud-hamu4s. Easy to type on a phone.",
+                ),
+            ] {
+                if theme::choice_row(ui, g.kind == kind, name, about).clicked() && g.kind != kind {
+                    g.kind = kind;
+                    generate = true;
+                }
+                ui.add_space(4.0);
+            }
+            ui.add_space(6.0);
+            match g.kind {
+                GenKind::Random => {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.spacing_mut().slider_width = 260.0;
+                        ui.add(egui::Slider::new(&mut g.options.length, 8..=64).text("characters"));
+                    });
+                    ui.checkbox(&mut g.options.symbols, "Symbols");
+                    ui.checkbox(&mut g.options.avoid_ambiguous, "Avoid look-alike characters");
+                }
+                GenKind::Words => {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.spacing_mut().slider_width = 200.0;
+                        ui.add(egui::Slider::new(&mut g.words, 3..=10).text("words"));
+                    });
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label("Between words");
+                        for (sep, name) in [("", "Nothing"), ("-", "-"), (".", "."), (" ", "Space")] {
+                            ui.selectable_value(&mut g.separator, sep.to_owned(), name);
+                        }
+                    });
+                    ui.checkbox(&mut g.capitalize, "Capital letter at the start of each word");
+                    ui.checkbox(
+                        &mut g.number_and_symbol,
+                        "Add a number and a symbol at the end, for sites that demand them",
+                    );
+                }
+                GenKind::Apple => {}
+            }
+            let bits = g.style().to_core().strength_bits();
+            ui.add_space(4.0);
+            ui.add(
+                egui::Label::new(
+                    RichText::new(strength_text(g.kind, bits))
+                        .size(12.5)
+                        .color(theme::MUTED),
+                )
+                .wrap(),
+            );
+            ui.add_space(4.0);
+            if self.generated.is_none()
+                && theme::primary_icon(ui, true, Icon::Dice, "Generate").clicked()
+            {
+                generate = true;
             }
         });
+        if generate {
+            let style = self.generator.style();
+            self.send(Op::Generate, Request::GenerateStyled { style });
+        }
         if let Some(p) = copy {
             self.copy(&p, "Password");
         }
@@ -3929,6 +4075,26 @@ fn login_fields(ui: &mut Ui, e: &mut Edit) -> bool {
 fn detail_row(ui: &mut Ui, left: impl FnOnce(&mut Ui), right: impl FnOnce(&mut Ui)) {
     ui.add_space(12.0);
     let w = ui.available_width();
+    // In a narrow pane the buttons go under the value, which then has the
+    // whole width to wrap in.
+    if w < 480.0 {
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = 3.0;
+            left(ui);
+        });
+        ui.add_space(6.0);
+        // The buttons wrap onto another line rather than run past the card.
+        ui.allocate_ui_with_layout(
+            Vec2::new(w, 0.0),
+            egui::Layout::right_to_left(egui::Align::Center).with_main_wrap(true),
+            |ui| {
+                ui.spacing_mut().item_spacing = Vec2::new(8.0, 8.0);
+                right(ui);
+            },
+        );
+        ui.add_space(12.0);
+        return;
+    }
     ui.allocate_ui_with_layout(
         Vec2::new(w, 0.0),
         egui::Layout::right_to_left(egui::Align::Center),
@@ -3942,6 +4108,70 @@ fn detail_row(ui: &mut Ui, left: impl FnOnce(&mut Ui), right: impl FnOnce(&mut U
         },
     );
     ui.add_space(12.0);
+}
+
+/// The generator's chosen style and the settings of each.
+struct Generator {
+    kind: GenKind,
+    options: GenerateOptions,
+    words: u8,
+    separator: String,
+    capitalize: bool,
+    number_and_symbol: bool,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum GenKind {
+    Random,
+    Words,
+    Apple,
+}
+
+impl Default for Generator {
+    fn default() -> Self {
+        Generator {
+            kind: GenKind::Random,
+            options: GenerateOptions::default(),
+            words: 3,
+            separator: String::new(),
+            capitalize: true,
+            number_and_symbol: false,
+        }
+    }
+}
+
+impl Generator {
+    fn style(&self) -> PasswordStyle {
+        match self.kind {
+            GenKind::Random => PasswordStyle::Random(self.options),
+            GenKind::Words => PasswordStyle::Words {
+                words: self.words,
+                separator: self.separator.clone(),
+                capitalize: self.capitalize,
+                number_and_symbol: self.number_and_symbol,
+            },
+            GenKind::Apple => PasswordStyle::Apple,
+        }
+    }
+}
+
+/// How strong a style is, in words.
+fn strength_text(kind: GenKind, bits: f64) -> String {
+    let rating = match bits {
+        b if b >= 100.0 => "Very strong.",
+        b if b >= 70.0 => "Strong.",
+        b if b >= 50.0 => "Good for websites, which limit how fast anyone can guess.",
+        _ => {
+            "Fine for websites, which limit how fast anyone can guess. Use 4 or more words \
+             for anything that matters most, such as a master password."
+        }
+    };
+    let words = if kind == GenKind::Words {
+        " Each word is one of 7,772 in the EFF word list."
+    } else {
+        ""
+    };
+    format!("About {bits:.0} bits. {rating}{words}")
 }
 
 /// A one-time code with a space in the middle, as sites print them.

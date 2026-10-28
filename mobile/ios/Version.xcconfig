@@ -1,0 +1,5 @@
+// Overwritten by mobile/scripts/build-ios.sh from [workspace.package] in
+// Cargo.toml; these values only apply before the first build.
+VAULT_VERSION = 0.0.0
+VAULT_BUILD = 1
+#include? "Generated/Version.xcconfig"

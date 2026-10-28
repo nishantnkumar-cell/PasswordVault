@@ -59,6 +59,9 @@ random program on your computer cannot just ask for your passwords.
     KWallet's job) keep them in the vault instead.
 13. [Installing and running on macOS](13-macos.md): the app, the launch
     agent, Touch ID quick unlock, browsers, SSH, and what differs on a Mac.
+14. [Phone and tablet apps](14-phone-apps.md): Secret Vault on iPhone, iPad
+    and Android, with Face ID or fingerprint unlock, AutoFill and sync with
+    your computer.
 
 ## What works where
 
@@ -75,6 +78,7 @@ random program on your computer cannot just ask for your passwords.
 | Quick unlock with Windows Hello or Touch ID (after a full unlock) | Not yet | Yes (Windows Hello) | Yes (Touch ID) |
 | Unlock: password + phone passkey | Yes (Bluetooth) | Yes (Windows 11 23H2 or later) | Not yet |
 | Face or fingerprint quick unlock on Linux | Not yet | Not applicable | Not applicable |
+| iPhone, iPad and Android apps sync with this computer | Yes | Yes | Yes |
 | SSH agent and git signing | Yes | Yes (untested on real hardware) | Yes |
 | OpenPGP keys | Yes | Yes | Yes |
 | `vault-gpg` for git and NeoMutt | Yes | git only (untested on real hardware) | Yes (untested on real hardware) |
@@ -93,5 +97,5 @@ one system.
 The guide covers how to use each feature. For the technical details behind
 it, see [`vaultd.md`](../vaultd.md), [`windows.md`](../windows.md),
 [`browser.md`](../browser.md), [`desktop.md`](../desktop.md),
-[`items.md`](../items.md), [`ssh.md`](../ssh.md), [`pgp.md`](../pgp.md),
+[`items.md`](../items.md), [`mobile.md`](../mobile.md), [`ssh.md`](../ssh.md), [`pgp.md`](../pgp.md),
 [`format.md`](../format.md) and the [threat model](../threat-model.md).

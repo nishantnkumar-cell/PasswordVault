@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Secret Vault</string>
+    <string name="autofill_unlock">Unlock Secret Vault</string>
+    <string name="autofill_search">Search Secret Vault</string>
+</resources>

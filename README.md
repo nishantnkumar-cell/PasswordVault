@@ -16,6 +16,7 @@ Status: v1 feature-complete on Linux and Windows, not yet audited. Do not trust 
 | `vault-gpg` | A gpg-compatible front end, so git, pass and mail programs can use OpenPGP keys held in the vault. |
 | `vault-native-host` | Native messaging host for the browser extension. |
 | `extension/` | Browser autofill extension (Manifest V3): logins, cards and addresses. |
+| `vault-mobile`, `mobile/` | iPhone, iPad and Android apps (SwiftUI, Jetpack Compose) over `vault-core` through UniFFI. |
 
 ## Download
 
@@ -39,6 +40,7 @@ For the technical reference, start with [`docs/vaultd.md`](docs/vaultd.md), then
 - [`docs/desktop.md`](docs/desktop.md): the desktop app and its approval window.
 - [`docs/windows.md`](docs/windows.md): what differs on Windows (installer, background start, TPM, Windows Hello).
 - [`docs/sync.md`](docs/sync.md): syncing devices through OneDrive, Google Drive or Dropbox.
+- [`docs/mobile.md`](docs/mobile.md): the iPhone, iPad and Android apps, phone quick unlock and AutoFill.
 - [`docs/ssh.md`](docs/ssh.md): SSH keys in the vault, the ssh-agent and git commit signing.
 - [`docs/pgp.md`](docs/pgp.md): OpenPGP keys in the vault, classic and post-quantum, and the gpg-compatible front end.
 - [`docs/architecture-review.md`](docs/architecture-review.md): the review that produced brief Revision 2.
@@ -59,3 +61,7 @@ use, change and share it for personal, research, educational and other
 noncommercial purposes; commercial use is not permitted.
 
 Required Notice: Copyright 2026 Nishant (https://github.com/nishantnkumar-cell)
+
+The password generator's word list is the EFF Long Wordlist by the
+Electronic Frontier Foundation, used under CC BY 3.0 US
+([details](crates/vault-core/src/wordlist/README.md)).
