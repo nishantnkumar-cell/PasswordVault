@@ -91,6 +91,12 @@ SYNC                           through a folder that OneDrive, Google Drive or D
   sync off                     stop syncing (the copy in the folder stays)
   sync now                     merge now instead of at the next check
 
+APP PASSWORDS (Linux)          what apps keep through the Secret Service (vaultd --secret-service)
+  apps                         programs allowed to use them since vaultd started
+  apps revoke PROGRAM|--all    take an approval back; the program is asked again next time
+  apps import                  copy every password from GNOME Keyring or KWallet into the
+                               vault (run it before vaultd takes over the Secret Service)
+
 ENVIRONMENT
   VAULT_SOCKET                 socket or pipe [default: $XDG_RUNTIME_DIR/vault/vaultd.sock,
                                on Windows \\.\pipe\vaultd-<your SID>]
@@ -1100,9 +1106,83 @@ fn main() {
             }
             println!("Copies of the old file can still be opened with the old factors.");
         }
+        "apps" => apps(rest),
         "ssh" => ssh(rest),
         "pgp" => pgp(rest),
         _ => die(format!("unknown command {cmd}; see `vault help`")),
+    }
+}
+
+/// `vault apps ...`.
+fn apps(args: &[String]) {
+    let mut c = Client::connect();
+    match args.first().map(String::as_str) {
+        None | Some("ls") => {
+            let Response::AppApprovals(list) = c.call(Request::AppApprovals) else {
+                die("unexpected response")
+            };
+            if list.is_empty() {
+                println!("No program is allowed to use app passwords (since vaultd started).");
+                return;
+            }
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_or(0, |d| d.as_secs());
+            for a in list {
+                println!(
+                    "{}  (allowed {} ago)",
+                    a.program,
+                    duration(now.saturating_sub(a.since))
+                );
+            }
+        }
+        Some("revoke") => {
+            let program = match args.get(1).map(String::as_str) {
+                Some("--all") => None,
+                Some(p) => Some(p.to_owned()),
+                None => die("usage: vault apps revoke PROGRAM|--all"),
+            };
+            let all = program.is_none();
+            let Response::Ok = c.call(Request::RevokeAppApproval { program }) else {
+                die("unexpected response")
+            };
+            println!(
+                "{}",
+                if all {
+                    "Every approval taken back."
+                } else {
+                    "Approval taken back."
+                }
+            );
+        }
+        Some("import") => {
+            eprintln!(
+                "Reading the Secret Service (GNOME Keyring or KWallet may ask for its password)..."
+            );
+            let Response::AppPasswordsImported {
+                imported,
+                already,
+                skipped,
+            } = c.call(Request::ImportAppPasswords)
+            else {
+                die("unexpected response")
+            };
+            println!("Imported {imported} app password(s); {already} were already in the vault.");
+            for s in skipped {
+                println!("Not imported, still locked: {s}");
+            }
+        }
+        Some(other) => die(format!("unknown apps command {other}; see `vault help`")),
+    }
+}
+
+/// "5 min", "2 h", "3 days".
+fn duration(secs: u64) -> String {
+    match secs {
+        0..60 => format!("{secs} s"),
+        60..3600 => format!("{} min", secs / 60),
+        3600..86400 => format!("{} h", secs / 3600),
+        _ => format!("{} days", secs / 86400),
     }
 }
 
