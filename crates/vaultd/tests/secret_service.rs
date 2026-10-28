@@ -104,18 +104,9 @@ fn collection_locked(c: &Connection) -> bool {
     bool::try_from(v).unwrap()
 }
 
-#[test]
-fn apps_keep_passwords_with_approval_and_locking() {
-    let Some(bus) = bus() else {
-        eprintln!("skipped: dbus-daemon is not installed");
-        return;
-    };
-    let dir = tempfile::tempdir().unwrap();
-    let store = Store::open(
-        dir.path().join("data/vault.svault"),
-        dir.path().join("state"),
-    )
-    .unwrap();
+/// A new, unlocked vault in `dir`, and a full client's token.
+fn new_daemon(dir: &std::path::Path) -> (Shared, ClientToken) {
+    let store = Store::open(dir.join("data/vault.svault"), dir.join("state")).unwrap();
     let d: Shared = Arc::new(Mutex::new(Daemon::new(
         store,
         Hardware {
@@ -136,6 +127,24 @@ fn apps_keep_passwords_with_approval_and_locking() {
     ) else {
         panic!("init failed")
     };
+    (d, token)
+}
+
+fn approvals(d: &Shared, token: &ClientToken) -> Vec<String> {
+    let Response::AppApprovals(list) = call(d, Some(token), Request::AppApprovals) else {
+        panic!("no approvals list")
+    };
+    list.into_iter().map(|a| a.program).collect()
+}
+
+#[test]
+fn apps_keep_passwords_with_approval_and_locking() {
+    let Some(bus) = bus() else {
+        eprintln!("skipped: dbus-daemon is not installed");
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let (d, token) = new_daemon(dir.path());
     // One of the user's own logins, which no app may see.
     let mut mine = ItemData::new(ItemKind::Login, "My bank");
     mine.password = "x".repeat(20);
@@ -267,6 +276,35 @@ fn apps_keep_passwords_with_approval_and_locking() {
         assert!(ok, "secret-tool clear: {out}");
         let (ok, _) = secret_tool(a, &["lookup", "service", "mail"], "");
         assert!(!ok);
+
+        // The approval is listed, and once taken back the program is asked
+        // again.
+        let allowed = approvals(&d, &token);
+        assert_eq!(allowed.len(), 1);
+        assert!(allowed[0].ends_with("/secret-tool"), "{allowed:?}");
+        assert!(matches!(
+            call(
+                &d,
+                Some(&token),
+                Request::RevokeAppApproval {
+                    program: Some("/usr/bin/nothing".into())
+                }
+            ),
+            Response::Error(_)
+        ));
+        assert!(matches!(
+            call(
+                &d,
+                Some(&token),
+                Request::RevokeAppApproval {
+                    program: Some(allowed[0].clone())
+                }
+            ),
+            Response::Ok
+        ));
+        assert!(approvals(&d, &token).is_empty());
+        let _ = secret_tool(a, &["lookup", "service", "mail"], "");
+        assert_eq!(asked.load(Ordering::SeqCst), 2);
     } else {
         eprintln!("skipped the secret-tool part: not installed");
     }
@@ -307,6 +345,43 @@ print("ok")
     } else {
         eprintln!("skipped the python part: secretstorage is not installed");
     }
+
+    // Import into a second vault, reading this one as the "other" Secret
+    // Service. Twice: the second time finds everything already there.
+    let dir2 = tempfile::tempdir().unwrap();
+    let (d2, _) = new_daemon(dir2.path());
+    let read = secret_service::read_other(&client, Duration::from_secs(5)).unwrap();
+    assert!(read.skipped.is_empty());
+    let n = read.found.len();
+    assert!(n >= 1);
+    if python_ok {
+        let chat = read
+            .found
+            .iter()
+            .find(|f| f.label == "Chat (work)")
+            .unwrap();
+        assert_eq!(&chat.secret[..], b"new");
+        assert_eq!(chat.attributes.get("team").map(String::as_str), Some("ops"));
+    }
+    assert_eq!(secret_service::import(&d2, read.found).unwrap(), (n, 0));
+    let again = secret_service::read_other(&client, Duration::from_secs(5)).unwrap();
+    assert_eq!(secret_service::import(&d2, again.found).unwrap(), (0, n));
+    let imported = d2
+        .lock()
+        .unwrap()
+        .items_where(secret_service::is_app_secret)
+        .unwrap();
+    assert_eq!(imported.len(), n);
+    // Take every approval back, so this test program is asked again below.
+    assert!(matches!(
+        call(
+            &d,
+            Some(&token),
+            Request::RevokeAppApproval { program: None }
+        ),
+        Response::Ok
+    ));
+    assert!(approvals(&d, &token).is_empty());
 
     // Locked: nothing is found, secrets are refused, and an unlock prompt
     // completes once the user unlocks (here, through the daemon).
@@ -399,4 +474,120 @@ print("ok")
         programs.lock().unwrap().last().unwrap().as_deref(),
         Some(me.as_str())
     );
+}
+
+/// Import from a real GNOME Keyring on a private bus, where installed.
+#[test]
+fn imports_from_gnome_keyring() {
+    if !has("gnome-keyring-daemon") || !has("secret-tool") {
+        eprintln!("skipped: gnome-keyring-daemon or secret-tool is not installed");
+        return;
+    }
+    let Some(bus) = bus() else {
+        eprintln!("skipped: dbus-daemon is not installed");
+        return;
+    };
+    let home = tempfile::tempdir().unwrap();
+    let run = home.path().join("run");
+    std::fs::create_dir_all(&run).unwrap();
+    std::fs::set_permissions(&run, std::os::unix::fs::PermissionsExt::from_mode(0o700)).unwrap();
+    let mut keyring = Command::new("gnome-keyring-daemon")
+        .args(["--foreground", "--components=secrets", "--unlock"])
+        .env("DBUS_SESSION_BUS_ADDRESS", &bus.addr)
+        .env("XDG_DATA_HOME", home.path().join("data"))
+        .env("XDG_RUNTIME_DIR", &run)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    // The login keyring's password, for --unlock.
+    keyring
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"keyring password")
+        .unwrap();
+    let a = bus.addr.as_str();
+    // Wait for it to take the name, so the bus does not start another copy
+    // through D-Bus activation.
+    let conn = connection::Builder::address(a).unwrap().build().unwrap();
+    let dbus = zbus::blocking::fdo::DBusProxy::new(&conn).unwrap();
+    let start = Instant::now();
+    while !dbus
+        .name_has_owner(NAME.try_into().unwrap())
+        .unwrap_or(false)
+    {
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "gnome-keyring did not start"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    loop {
+        let (ok, _) = secret_tool(
+            a,
+            &[
+                "store",
+                "--label=Work mail",
+                "server",
+                "imap.example.com",
+                "user",
+                "alex",
+            ],
+            "imap secret",
+        );
+        if ok {
+            break;
+        }
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "gnome-keyring did not start"
+        );
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    let (ok, out) = secret_tool(a, &["store", "--label=Chat", "app", "chat"], "chat secret");
+    assert!(ok, "{out}");
+
+    let read = secret_service::read_other(&conn, Duration::from_secs(5)).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let (d, _) = new_daemon(dir.path());
+    let n = read.found.len();
+    assert_eq!(secret_service::import(&d, read.found).unwrap(), (n, 0));
+    let items = d
+        .lock()
+        .unwrap()
+        .items_where(secret_service::is_app_secret)
+        .unwrap();
+    let mail = items
+        .iter()
+        .find(|(_, it)| it.title == "Work mail")
+        .unwrap();
+    assert_eq!(mail.1.password, "imap secret");
+    assert_eq!(
+        secret_service::attributes(&mail.1)
+            .get("server")
+            .map(String::as_str),
+        Some("imap.example.com")
+    );
+    assert!(
+        items
+            .iter()
+            .any(|(_, it)| it.title == "Chat" && it.password == "chat secret")
+    );
+    // A keyring that stays locked (no one answers its password prompt here)
+    // is skipped, not an error.
+    let login = OwnedObjectPath::try_from("/org/freedesktop/secrets/collection/login").unwrap();
+    let (_, _): (Vec<OwnedObjectPath>, OwnedObjectPath) = proxy(
+        &conn,
+        "/org/freedesktop/secrets",
+        "org.freedesktop.Secret.Service",
+    )
+    .call("Lock", &(vec![login],))
+    .unwrap();
+    let read = secret_service::read_other(&conn, Duration::from_secs(2)).unwrap();
+    assert!(read.found.is_empty());
+    assert_eq!(read.skipped.len(), 1, "{:?}", read.skipped);
+    let _ = keyring.kill();
+    let _ = keyring.wait();
 }

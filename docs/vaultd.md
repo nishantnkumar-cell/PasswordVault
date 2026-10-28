@@ -101,6 +101,17 @@ session bus and serves the freedesktop Secret Service API:
   app (`VAULT_GUI`, else `vault-gui` next to vaultd) and completes when the
   vault is unlocked by any means, within 5 minutes. `Lock` locks the vault.
 - Secret Service calls don't reset the idle timer.
+- Approvals are kept in the daemon (not on disk). `AppApprovals` lists them
+  (program and time) and `RevokeAppApproval { program }` removes one, or all
+  with `None`; both need a full client (`vault apps`, `vault apps revoke`,
+  the desktop app's App passwords page).
+- `ImportAppPasswords` (full client, vault unlocked) connects to the session
+  bus as a client, refuses if vaultd itself owns `org.freedesktop.secrets`,
+  opens a DH session (plain if refused), unlocks locked collections through
+  the other service's own prompt (5 minutes, else skipped), reads every
+  collection but `session` with `GetSecrets`, and adds each item as an app
+  password unless one with the same label and attributes exists. It runs
+  without the daemon lock held while the other service prompts.
 - Not served when another process owns the name, or when vaultd runs as a
   separate system user (no session bus).
 
@@ -129,5 +140,5 @@ It creates throwaway credentials, asks for hmac-secret twice in touch-only mode 
 
 - Identifying the pairing client by pidfd (`SO_PEERPIDFD`) instead of its PID.
 - macOS: Secure Enclave slots and locking on screen lock or sleep (see [macOS](#macos)). Windows: see windows.md.
-- Secret Service: approvals can't be listed or revoked, and nothing is imported from GNOME Keyring or KWallet.
+- Secret Service: approvals are not saved across restarts, and import cannot read GNOME Keyring or KWallet files without their service running.
 - The desktop app (docs/desktop.md) has no file picker for imports and no revoke; use the CLI for revoke.

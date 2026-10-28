@@ -103,6 +103,29 @@ fn confirm_use(
     }
 }
 
+/// Copy passwords from the running Secret Service (Linux) without holding
+/// the daemon lock: GNOME Keyring may ask for its password first.
+fn import_app_passwords(daemon: &Shared, token: Option<&ClientToken>) -> Response {
+    if let Err(m) = daemon
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .full_client(token)
+    {
+        return Response::Error(m);
+    }
+    #[cfg(all(feature = "secret-service", target_os = "linux"))]
+    return match crate::secret_service::import_from_session(daemon) {
+        Ok((imported, already, skipped)) => Response::AppPasswordsImported {
+            imported,
+            already,
+            skipped,
+        },
+        Err(m) => Response::Error(m),
+    };
+    #[cfg(not(all(feature = "secret-service", target_os = "linux")))]
+    Response::Error("app passwords come from the Secret Service, which is on Linux only".into())
+}
+
 /// Serve one client. `pid` is the peer process, for the pairing prompt.
 pub fn connection(mut s: impl Read + Write, daemon: &Shared, pid: Option<u32>) -> io::Result<()> {
     loop {
@@ -123,6 +146,7 @@ pub fn connection(mut s: impl Read + Write, daemon: &Shared, pid: Option<u32>) -
             Request::CardForFill { id, origin } => {
                 card_by_prompt(daemon, env.token.as_ref(), id, origin, pid)
             }
+            Request::ImportAppPasswords => import_app_passwords(daemon, env.token.as_ref()),
             request => {
                 let (resp, pending) = {
                     let mut d = daemon.lock().unwrap_or_else(|p| p.into_inner());

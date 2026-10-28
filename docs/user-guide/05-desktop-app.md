@@ -644,6 +644,23 @@ program changes its line endings.
 | Encrypt and sign page | Yes | Yes | Yes |
 | Decrypted files saved | Readable only by you | Folder's permissions: keep in your user folder | — |
 
+## App passwords
+
+On Linux, **App passwords** under Tools is about the passwords apps keep
+in the vault through the Secret Service
+([chapter 12](12-secret-service.md)):
+
+- **Programs allowed** lists each program you allowed in the approval
+  window, and when. **Take back** next to one (or **Take back all**) makes
+  it ask again the next time.
+- **Import from GNOME Keyring or KWallet** copies every password they hold
+  into the vault. Do it before vaultd takes over the Secret Service; the
+  keyring may ask for its own password first.
+
+| | Linux | Windows | macOS |
+|---|---|---|---|
+| App passwords page | Yes | Not shown | Not shown |
+
 ## Good to know
 
 ![A login with a long name and web address, wrapped](images/desktop-long-title.png)

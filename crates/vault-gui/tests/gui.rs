@@ -1326,3 +1326,32 @@ fn generator_makes_words_and_apple_style_passwords() {
     let saved = copied(&mut h);
     assert_eq!(saved.split('-').count(), 3, "{saved}");
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn app_passwords_lists_and_takes_back_approvals() {
+    let dir = tempdir();
+    let (sock, d) = start_daemon(&dir, Duration::from_secs(300));
+    let mut h = created_on(sock, &dir, FakeClip::default());
+    click(&mut h, "App passwords");
+    settle(&mut h);
+    assert!(h.query_by_label("None since vaultd started.").is_some());
+    assert!(
+        h.query_by_label("Import from GNOME Keyring or KWallet")
+            .is_some()
+    );
+
+    // A program allowed in the approval window shows up, and can be taken back.
+    d.lock()
+        .unwrap()
+        .end_app_prompt(Some("/usr/bin/example-mail"), &Ok(true));
+    click(&mut h, "Sync");
+    settle(&mut h);
+    click(&mut h, "App passwords");
+    settle(&mut h);
+    assert!(h.query_by_label("/usr/bin/example-mail").is_some());
+    click(&mut h, "Take back");
+    settle(&mut h);
+    assert!(h.query_by_label("None since vaultd started.").is_some());
+    assert!(!d.lock().unwrap().app_allowed("/usr/bin/example-mail"));
+}

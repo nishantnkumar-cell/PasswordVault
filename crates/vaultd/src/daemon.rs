@@ -1,7 +1,7 @@
 //! Request handling: authorization, unlock with rate limiting, the vault
 //! operations, rollback refusal and idle lock.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -15,8 +15,9 @@ use vault_core::{
 };
 use vault_hw::protect::ProtectedKey;
 use vault_ipc::{
-    ClientScope, ClientToken, Envelope, ImportFormat, ItemSummary, PasskeySlot, PasswordStyle,
-    QuickUnlockInfo, Request, Response, Secret, SlotInfo, StatusInfo, SyncInfo, UnlockMethod,
+    AppApproval, ClientScope, ClientToken, Envelope, ImportFormat, ItemSummary, PasskeySlot,
+    PasswordStyle, QuickUnlockInfo, Request, Response, Secret, SlotInfo, StatusInfo, SyncInfo,
+    UnlockMethod,
 };
 use zeroize::Zeroizing;
 
@@ -63,6 +64,11 @@ pub struct Daemon {
     quick_until: Option<SystemTime>,
     /// While locked with quick unlock on: the vault key, wrapped.
     parked: Option<Parked>,
+    /// Programs allowed to use the Secret Service, with when; kept until
+    /// vaultd exits or the user takes the approval back.
+    app_allowed: BTreeMap<String, u64>,
+    /// Programs declined in the approval window, and when.
+    app_declined: HashMap<String, Instant>,
 }
 
 /// A locked vault's key kept for quick unlock (format.md section 4.6). The
@@ -199,6 +205,8 @@ impl Daemon {
             quick_hours: 0,
             quick_until: None,
             parked: None,
+            app_allowed: BTreeMap::new(),
+            app_declined: HashMap::new(),
         };
         d.quick_hours = d.store.quick_unlock_hours().min(MAX_QUICK_HOURS);
         d.join_from_sync();
@@ -528,6 +536,19 @@ impl Daemon {
         }
     }
 
+    /// Check that `token` belongs to a client paired for everything, and
+    /// that the vault is unlocked.
+    pub fn full_client(&mut self, token: Option<&ClientToken>) -> R<()> {
+        let t = token.ok_or("this client is not paired; run `vault pair`")?;
+        match self.store.client_scope(t) {
+            Some(ClientScope::Full) => {}
+            Some(_) => return Err("not allowed for an autofill client".into()),
+            None => return Err("unknown client token; pair again".into()),
+        }
+        self.last_activity = Instant::now();
+        self.vault().map(|_| ())
+    }
+
     /// Whether the vault is unlocked.
     pub fn is_unlocked(&self) -> bool {
         self.vault.is_some()
@@ -588,9 +609,34 @@ impl Daemon {
         )
     }
 
-    /// Release the prompt from [`Self::begin_app_prompt`].
-    pub fn end_app_prompt(&mut self, answer: &Result<bool, String>) {
+    /// Release the prompt from [`Self::begin_app_prompt`], and remember
+    /// the answer for `program`. An unknown program is allowed this once only.
+    pub fn end_app_prompt(&mut self, program: Option<&str>, answer: &Result<bool, String>) {
         self.finish_prompt(answer);
+        if let Some(p) = program {
+            match answer {
+                Ok(true) => {
+                    self.app_declined.remove(p);
+                    self.app_allowed.insert(p.to_owned(), now());
+                }
+                Ok(false) => {
+                    self.app_declined.insert(p.to_owned(), Instant::now());
+                }
+                Err(_) => {}
+            }
+        }
+    }
+
+    /// Whether `program` may use the Secret Service without asking.
+    pub fn app_allowed(&self, program: &str) -> bool {
+        self.app_allowed.contains_key(program)
+    }
+
+    /// Whether `program` was declined in the approval window within `hold`.
+    pub fn app_declined(&self, program: &str, hold: Duration) -> bool {
+        self.app_declined
+            .get(program)
+            .is_some_and(|t| t.elapsed() < hold)
     }
 
     /// Claim the one prompt that may be open at a time. The caller asks
@@ -798,6 +844,28 @@ impl Daemon {
                     .map_err(|_| "choose 3 to 10 words and a separator of up to 3 characters")?,
             )),
             Request::PasskeySlots => self.passkey_slots(),
+            Request::AppApprovals => Ok(Response::AppApprovals(
+                self.app_allowed
+                    .iter()
+                    .map(|(program, since)| AppApproval {
+                        program: program.clone(),
+                        since: *since,
+                    })
+                    .collect(),
+            )),
+            Request::RevokeAppApproval { program: None } => {
+                self.app_allowed.clear();
+                Ok(Response::Ok)
+            }
+            Request::RevokeAppApproval {
+                program: Some(program),
+            } => match self.app_allowed.remove(&program) {
+                Some(_) => Ok(Response::Ok),
+                None => Err(format!("{program} was not allowed")),
+            },
+            Request::ImportAppPasswords => {
+                Err("importing app passwords goes through the server".into())
+            }
             other => self.unlocked(other),
         }
     }
@@ -1596,6 +1664,9 @@ impl Daemon {
             | Request::Lock
             | Request::LockFully
             | Request::Generate { .. }
+            | Request::AppApprovals
+            | Request::RevokeAppApproval { .. }
+            | Request::ImportAppPasswords
             | Request::GenerateStyled { .. } => {
                 unreachable!("handled in dispatch")
             }

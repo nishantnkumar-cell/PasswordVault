@@ -209,9 +209,13 @@ browser ([chapter 4](04-browser-autofill.md#2-register-the-native-host)).
 - An app asks again for a password it saved before: the vault was
   probably locked, and apps can't find anything then. Unlock the vault and
   restart the app.
-- Passwords from GNOME Keyring are missing: they stay in GNOME Keyring,
-  nothing is moved over. Save them again in the app with the vault
-  unlocked.
+- Passwords from GNOME Keyring are missing: they stay in GNOME Keyring
+  until you import them. Turn GNOME Keyring's Secret Service back on,
+  restart vaultd without `--secret-service`, run `vault apps import` (or
+  **App passwords → Import** in the desktop app), then switch again
+  ([chapter 12](12-secret-service.md#turn-it-on)).
+- `vault apps import` says "vaultd is the Secret Service now": vaultd is
+  serving it, so there is no other keyring to read. Do the same as above.
 
 ## Unpair a program
 
