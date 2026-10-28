@@ -157,8 +157,12 @@ Things to know:
 
 - **Code** next to a login copies its current one-time code to the
   clipboard.
-- **Generate password** at the bottom copies a new random password to the
-  clipboard, to paste into a sign-up or change-password form. Then save it
+- **Generate password** at the bottom copies a new password to the
+  clipboard, to paste into a sign-up or change-password form. The menu next
+  to it picks the style: **Random characters** (24 characters),
+  **Three random words** (the UK NCSC's advice, such as `CupFishBiscuit`) or
+  **Apple style** (such as `fokjyb-Xewpud-hamu4s`).
+  [Which to choose](03-items.md#password-generator). Then save the password
   in the vault with `vault add` or the desktop app.
 
 The extension does not save new logins on its own.

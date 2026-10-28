@@ -198,6 +198,9 @@ button disappears and the password is needed again.
 [Chapter 2](02-unlocking.md#quick-unlock-with-windows-hello-windows)
 explains the details.
 
+While the vault is unlocked, the app's icon at the top left (the white
+keyhole) is green. On the lock screen it is red, like the app icon.
+
 Lock with the **Lock** button at the top right (next to the time left
 before the vault locks by itself) or **Ctrl+L**. The vault also locks when idle,
 when the screen locks or the computer sleeps, or when another program locks
@@ -465,10 +468,30 @@ clipboard history (Win+V) and cloud clipboard sync.
 
 ## Generator
 
-**Generator**, under Tools in the sidebar, makes passwords of 8 to 64 characters, with or
-without **Symbols**, optionally avoiding look-alike characters. **Copy
-password** copies the result. New items use these settings when you press
+![The Generator page with three random words picked](images/desktop-generator-styles.png)
+
+**Generator**, under Tools in the sidebar, makes a password in one of three
+styles ([which to choose](03-items.md#password-generator)):
+
+1. Open **Generator**. The password appears at the top of the page.
+2. Pick a style. Choosing one makes a new password in it straight away.
+   - **Random characters**: 8 to 64 characters, with or without
+     **Symbols**, optionally avoiding look-alike characters such as 0 and O.
+   - **Three random words**: the UK NCSC's advice, such as
+     `CupFishBiscuit`. Choose 3 to 10 words, what goes **Between words**
+     (nothing, a hyphen, a dot or a space), whether each word starts with a
+     capital, and whether to add a digit and a symbol at the end for sites
+     that demand them.
+   - **Apple style**: three groups of six letters, such as
+     `fokjyb-Xewpud-hamu4s`. It has no settings.
+3. Under the settings, the page says roughly how strong the style is, in
+   bits. Each extra bit doubles the guesses needed.
+4. Press **New** for another password, or **Copy password** to copy it.
+
+New items use the style and settings you picked here when you press
 **Generate** in the item form.
+
+The page is the same on Linux, Windows and macOS.
 
 ## Import
 
@@ -622,6 +645,16 @@ program changes its line endings.
 | Decrypted files saved | Readable only by you | Folder's permissions: keep in your user folder | — |
 
 ## Good to know
+
+![A login with a long name and web address, wrapped](images/desktop-long-title.png)
+
+- **Long names and addresses wrap.** A long item name, username or web
+  address wraps onto more lines. When the window is narrow, **Edit** and
+  **Delete** move under the item's name, and the copy buttons move under
+  their value, so nothing overlaps. In the item list a long name takes two
+  lines; make the window wider or open the item to see all of it. On a
+  small window the sidebar scrolls, and the top bar hides the lock timer
+  (and then the Ctrl K hint) to keep the search box usable.
 
 - The app checks the vault's state every 2 seconds without counting as
   activity, so the idle lock still happens while the window is open.

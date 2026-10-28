@@ -2312,7 +2312,7 @@ impl App {
                 ui.label(RichText::new(kind).size(13.0).color(theme::MUTED));
             });
         };
-        if w < 560.0 {
+        if w < 520.0 {
             ui.allocate_ui_with_layout(
                 Vec2::new(w, 0.0),
                 egui::Layout::left_to_right(egui::Align::Min),
@@ -3985,19 +3985,20 @@ impl Generator {
 /// How strong a style is, in words.
 fn strength_text(kind: GenKind, bits: f64) -> String {
     let rating = match bits {
-        b if b >= 100.0 => "Very strong",
-        b if b >= 70.0 => "Strong",
-        b if b >= 50.0 => "Good for a website that limits guesses",
+        b if b >= 100.0 => "Very strong.",
+        b if b >= 70.0 => "Strong.",
+        b if b >= 50.0 => "Good for websites, which limit how fast anyone can guess.",
         _ => {
-            "Fine for a website that limits guesses; use 4 or more words for anything that matters"
+            "Fine for websites, which limit how fast anyone can guess. Use 4 or more words \
+             for anything that matters most, such as a master password."
         }
     };
     let words = if kind == GenKind::Words {
-        " Each word is one of 7,772 (the EFF word list)."
+        " Each word is one of 7,772 in the EFF word list."
     } else {
         ""
     };
-    format!("{rating}: about {bits:.0} bits.{words}")
+    format!("About {bits:.0} bits. {rating}{words}")
 }
 
 /// A one-time code with a space in the middle, as sites print them.

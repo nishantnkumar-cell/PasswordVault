@@ -90,6 +90,11 @@ computer. The phone app lists them under **Settings > Unlock Methods** as
 **Generator**, **Settings** and a search button. On iPhone the tab bar
 shrinks while you scroll.
 
+While the vault is unlocked, the app icon (the white keyhole) shows in
+green: at the top left of the Items screen on iPhone and Android, and in the
+status pill at the bottom of the sidebar on iPad. Tap it on the Items screen
+to lock the vault. On the lock screen the icon is red.
+
 **On a tablet, an unfolded foldable, or a wide split-screen window**, the
 app shows the list and the item side by side. On iPad there are three
 columns, as in the desktop app: categories, items, and the chosen item.
@@ -117,9 +122,31 @@ deleted item is deleted on every device that syncs this vault.
 The **Codes** tab shows the current code for every login that has one, with
 a ring that empties as the code ages. Tap a code to copy it.
 
-To add one, edit the login, and under **One-Time Codes** scan the QR code
-the website shows (tap the QR button) or paste its setup key. The app shows
-the current code so you can check it before you save.
+To add a code from the Codes tab:
+
+1. On the website, turn on two-factor sign-in (it may be called 2-step
+   verification or an authenticator app). The site shows a QR code.
+2. In Secret Vault, open **Codes** and tap **+** (iPhone and iPad) or
+   **Add code** (Android). With no codes yet, the button is in the middle
+   of the screen.
+3. Tap **Scan QR Code** (iPhone and iPad) or the QR button (Android) and
+   point the camera at the site's QR code. If you can't scan it, tap "Can't
+   scan?" (or similar) on the website and paste the setup key it shows
+   instead.
+4. The app shows the current code so you can check it. Type it into the
+   website to finish turning on two-factor sign-in.
+5. Under **Save To**, keep **A new login** and give it a name and account,
+   or pick the login you already have for that site. A login only shows
+   in the list if it has no code yet. When the QR code names the site, the
+   name and account are filled in for you, and if exactly one of your
+   logins matches, it is picked.
+6. Tap **Save**.
+
+Keeping the code on the same login as the password lets AutoFill offer the
+code right after the password (iPhone and iPad).
+
+You can also add or replace a code by editing a login: under **One-Time
+Codes**, scan the QR code or paste the setup key.
 
 **iPhone and iPad:** you can also set up a code straight from a website's
 QR code or setup link. Open the Settings app, go to **General > AutoFill &
@@ -136,9 +163,22 @@ the chosen code large on the top half and the list on the bottom half.
 
 ### Password generator
 
-The **Generator** tab makes a random password. Move the slider for length
-and switch kinds of characters on or off to suit a site's rules, then tap
-**Copy**.
+The **Generator** tab makes a password in one of three styles. Pick one at
+the top ([which to choose](03-items.md#password-generator)):
+
+- **Random**: move the slider for length and switch kinds of characters on
+  or off to suit a site's rules.
+- **3 Words** (Android: **3 words**): three random words, the UK NCSC's
+  advice, such as `CupFishBiscuit`. Change the number of words, what goes
+  between them, capitals, and an optional digit and symbol at the end.
+- **Apple Style** (Android: **Apple style**): such as
+  `fokjyb-Xewpud-hamu4s`, easy to type on a phone keyboard.
+
+The text under the choice says how strong the style is. Tap **New** for
+another password and **Copy** to copy it. The dice button in the item
+editor, and the password a new login starts with, use the style you picked
+here. On Android the random style's own settings are not remembered for the
+editor, which uses 20 characters of every kind.
 
 ## Fill passwords in other apps (AutoFill)
 

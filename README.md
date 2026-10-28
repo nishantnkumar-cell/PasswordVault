@@ -61,3 +61,7 @@ use, change and share it for personal, research, educational and other
 noncommercial purposes; commercial use is not permitted.
 
 Required Notice: Copyright 2026 Nishant (https://github.com/nishantnkumar-cell)
+
+The password generator's word list is the EFF Long Wordlist by the
+Electronic Frontier Foundation, used under CC BY 3.0 US
+([details](crates/vault-core/src/wordlist/README.md)).
