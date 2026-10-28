@@ -39,11 +39,21 @@ for spec in "phone:iPhone 17 Pro:iPhone" "tablet:iPad Pro 13:iPad Pro:iPad"; do
     # Boot first: a cold simulator can take longer than XCTest waits for the app to launch.
     xcrun simctl boot "$udid" 2>/dev/null || true
     xcrun simctl bootstatus "$udid" -b >/dev/null
-    rm -rf "build/$name.xcresult"
-    rc=0
-    TEST_RUNNER_DEVICE=$name TEST_RUNNER_PHRASE=$phrase xcodebuild test -project SecretVault.xcodeproj -scheme SecretVault \
-        -destination "id=$udid" -derivedDataPath build -resultBundlePath "build/$name.xcresult" \
-        CODE_SIGNING_ALLOWED=NO VAULT_SKIP_RUST=1 > "build/$name.log" 2>&1 || rc=$?
+    # A second try only when the test never started (the simulator or
+    # its test runner failed to launch); a failing test is not retried.
+    for try in 1 2; do
+        rm -rf "build/$name.xcresult"
+        rc=0
+        TEST_RUNNER_DEVICE=$name TEST_RUNNER_PHRASE=$phrase xcodebuild test -project SecretVault.xcodeproj -scheme SecretVault \
+            -destination "id=$udid" -derivedDataPath build -resultBundlePath "build/$name.xcresult" \
+            CODE_SIGNING_ALLOWED=NO VAULT_SKIP_RUST=1 > "build/$name.log" 2>&1 || rc=$?
+        [ $rc -ne 0 ] && ! grep -q "Test Case .*started" "build/$name.log" || break
+        echo "The test did not start on $name (try $try); the end of its log:"
+        tail -40 "build/$name.log"
+        xcrun simctl shutdown "$udid" 2>/dev/null || true
+        xcrun simctl boot "$udid" 2>/dev/null || true
+        xcrun simctl bootstatus "$udid" -b >/dev/null
+    done
     # The test steps and any failure, without the build noise.
     grep -E "error:|Test Case|t = .*(Tap|Swipe|Type|Find|Wait|Assert)|TEST (FAILED|SUCCEEDED)" "build/$name.log" | tail -80 || true
     [ $rc -eq 0 ] || status=1
