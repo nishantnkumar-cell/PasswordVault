@@ -3,6 +3,7 @@ package dev.passwordvault.app
 import android.content.Intent
 import android.graphics.Bitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsNodeInteraction
@@ -20,6 +21,7 @@ import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.printToString
 import androidx.test.core.app.ActivityScenario
@@ -96,9 +98,7 @@ class TourTest {
         shot(name)
         rule.onAllNodes(hasSetTextAction()).onFirst().performTextInput(phrase)
         // The keyboard can cover the button; scroll it into view first.
-        val button = rule.onNode(hasText("Unlock") and hasClickAction())
-        runCatching { button.performScrollTo() }
-        button.performClick()
+        press(rule.onNode(hasText("Unlock") and hasClickAction()))
         waitFor("New item", 180_000)
     }
 
@@ -168,10 +168,22 @@ class TourTest {
 
     /** Clicks a control by its text, scrolling it into view first when it is in a scrolling page. */
     private fun tap(s: String) {
-        val node = text(s)
-        runCatching { node.performScrollTo() }
-        node.performClick()
+        press(text(s))
         rule.waitForIdle()
+    }
+
+    /**
+     * Scrolls [node] into view and clicks it. A control with a click action
+     * gets it directly rather than a touch, which can miss while the
+     * keyboard is still moving the page (seen on Create vault).
+     */
+    private fun press(node: SemanticsNodeInteraction) {
+        runCatching { node.performScrollTo() }
+        if (SemanticsActions.OnClick in node.fetchSemanticsNode().config) {
+            node.performSemanticsAction(SemanticsActions.OnClick)
+        } else {
+            node.performClick()
+        }
     }
 
     private fun exists(s: String) =
