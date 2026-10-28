@@ -146,7 +146,7 @@ the newest Google Maven versions in its "Latest library versions" step.
 | Rust | stable, with the Android or iOS targets |
 | UniFFI | 0.32 |
 | Android | JDK 21, Gradle 9.8, Android Gradle plugin 9.4 (built-in Kotlin), compile SDK 37, target SDK 36, NDK (latest), `cargo-ndk`; minimum Android 9 (API 28) |
-| iOS | Xcode 26, XcodeGen; minimum iOS and iPadOS 26 |
+| iOS | Xcode 26 or later (tested with 27.1), XcodeGen; minimum iOS and iPadOS 26 |
 
 ### Android
 
@@ -171,6 +171,26 @@ Set your team under Signing for both targets (the app and
 `SecretVaultAutoFill`). The App Group `group.dev.passwordvault.app` and the
 keychain group need a paid developer account; on a free account the app
 runs without AutoFill and keeps its files in its own container.
+
+To try the app in the simulator without a developer account, sign it
+"to run locally". The simulator honours ad hoc entitlements, so AutoFill
+shows up under Settings › General › AutoFill & Passwords. A build with
+`CODE_SIGNING_ALLOWED=NO` (as CI uses) runs, but iOS doesn't list it as
+an AutoFill provider.
+
+```sh
+cd mobile/ios
+xcodebuild -project SecretVault.xcodeproj -scheme SecretVault \
+  -destination 'platform=iOS Simulator,name=iPhone 18 Pro' -derivedDataPath build \
+  CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= VAULT_SKIP_RUST=1 build
+xcrun simctl install booted build/Build/Products/Debug-iphonesimulator/SecretVault.app
+xcrun simctl launch booted dev.passwordvault.app
+```
+
+Xcode 27 replaces the Simulator app with Device Hub (Xcode › Open
+Developer Tool › Device Hub). Face ID is simulated from its Device menu:
+choose Enrolled, then Matching Face or Non-matching Face. Xcode 27 also
+adds an iPhone Duo simulator for the foldable layout.
 
 ### CI
 
