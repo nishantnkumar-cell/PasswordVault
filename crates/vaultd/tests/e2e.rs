@@ -437,7 +437,9 @@ fn rate_limits_failed_unlocks() {
 #[test]
 fn locks_when_idle() {
     let dir = tempfile::tempdir().unwrap();
-    let sock = start(dir.path(), server::current_user(), Duration::from_secs(1));
+    // 3 s, not 1: a slow Windows runner can take over a second to answer
+    // Init, and the vault was then already locked at the first check.
+    let sock = start(dir.path(), server::current_user(), Duration::from_secs(3));
     let mut c = C::new(&sock);
     let Response::Initialized { token, .. } = c.ok(Request::Init {
         password: s(PW),
@@ -447,7 +449,7 @@ fn locks_when_idle() {
     };
     c.token = Some(token);
     assert!(status(&mut c).unlocked);
-    std::thread::sleep(Duration::from_millis(2500));
+    std::thread::sleep(Duration::from_millis(4500));
     assert!(!status(&mut c).unlocked);
 }
 
