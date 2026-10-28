@@ -34,7 +34,7 @@ if grep -q "CN=Android Debug" <<<"$certs"; then
     echo "build-android-release.sh: $apk is signed with a debug key, not the release key" >&2
     exit 1
 fi
-fingerprint=$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' <<<"$certs" \
+fingerprint=$(sed -n 's/^.*Signer[^:]*:\? certificate SHA-256 digest: //p' <<<"$certs" | head -1 \
     | tr a-f A-F | sed 's/../&:/g; s/:$//')
 [ -n "$fingerprint" ] || { echo "build-android-release.sh: no certificate fingerprint" >&2; exit 1; }
 
