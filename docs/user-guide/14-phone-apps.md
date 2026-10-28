@@ -21,14 +21,78 @@ Use them when:
 - **iPhone and iPad:** iOS or iPadOS 26 or later. The app isn't in the App
   Store yet; for now it is built from source with Xcode on a Mac (see
   [mobile.md](../mobile.md#ios)).
-- **Android:** Android 9 or later. The app isn't on Google Play yet;
-  download the `secret-vault-android` APK from the latest *Mobile* run on
-  the project's GitHub Actions page and open it on the phone. Android asks
-  you to allow installing apps from your browser or file manager once.
+- **Android:** Android 9 or later. The app isn't on Google Play; install
+  it from the project's Releases page as described in
+  [Install the Android app](#android) below.
 - **To use your computer's vault**, turn on sync on the computer first
   ([chapter 10](10-sync.md)) with a folder in iCloud Drive, OneDrive,
   Google Drive or Dropbox, and install that service's app on the phone.
   The phone uses the same synced file.
+
+## Install the Android app
+
+The Android app is published on the project's
+[Releases page](https://github.com/nishantnkumar-cell/PasswordVault/releases)
+as an APK file (an Android app package), from version `0.2.0-beta.2` on.
+Installing an app from outside Google Play is called *sideloading*. It is
+free and needs no Google account.
+
+### Android
+
+1. On the phone, open the
+   [Releases page](https://github.com/nishantnkumar-cell/PasswordVault/releases)
+   in Chrome (or any browser). The newest version is at the top.
+2. Under **Assets**, tap `secret-vault-<version>-android.apk`, for example
+   `secret-vault-0.2.0-beta.2-android.apk`. If Chrome says the file may be
+   harmful, tap **Download anyway**.
+3. When the download finishes, tap **Open** (or open it later from the
+   *Files* app, under *Downloads*).
+4. The first time, Android says that for your security the phone isn't
+   allowed to install unknown apps from this source. Tap **Settings**, turn
+   on **Allow from this source**, then go back. You only do this once for
+   each browser or file manager; you can turn it off again afterwards in
+   *Settings > Apps > Special app access > Install unknown apps*.
+5. Tap **Install**. Google Play Protect may say it hasn't seen this app
+   before or that the developer is unrecognised; tap **More details** and
+   then **Install anyway**. (It may offer to send the app for a scan; that
+   is up to you.)
+6. Tap **Open**, or find **Secret Vault** in your apps, and carry on with
+   [Set up the app](#set-up-the-app).
+
+Menu names differ a little between phone makers (Samsung calls the switch
+*Allow permission*), but the steps are the same.
+
+**Checking the app (optional).** Every Secret Vault APK is signed with the
+same project key. The release's description ends with the key's SHA-256
+fingerprint, and the APK is listed in `SHA256SUMS.txt` like every other
+download (see [Checking a download](11-versions-and-upgrades.md#checking-a-download-optional)).
+On a computer with Java or Android Studio installed you can compare the
+key yourself: `keytool -printcert -jarfile secret-vault-<version>-android.apk`
+prints a *SHA256* line that must match the fingerprint in the release
+description.
+
+**Updating.** Download and install the newer APK the same way, over the top
+of the old one. Your vault, quick unlock and settings stay. The app doesn't
+check for updates itself; watch the Releases page (on GitHub, **Watch >
+Custom > Releases** sends you an email for each new version).
+
+**If Android says "App not installed" or that the package conflicts with
+an existing one,** you have a copy from somewhere else: one built by hand,
+or downloaded from a GitHub Actions run before the app was on the Releases
+page. Those are signed with a different key, so Android won't update them.
+Make sure everything on that phone is synced to your computer
+([Sync settings](#sync-settings)) or that you have a backup, because
+uninstalling deletes the vault on the phone. Then uninstall the old Secret
+Vault, install the APK from the Releases page, and set it up again with
+**Use a vault from my computer**.
+
+Google has announced that certified Android phones will only install apps
+from verified developers, rolling out country by country from late 2026.
+If your phone refuses to install the APK for that reason, please report
+it on the project's Issues page.
+
+There's no app store version for iPhone and iPad yet; on those the app is
+built from source (see [mobile.md](../mobile.md#ios)).
 
 ## Set up the app
 

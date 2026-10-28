@@ -14,6 +14,34 @@ to work yet.
 
 ## Unreleased
 
+### Android app on the Releases page
+
+- **Install the Android app without Google Play.** From `0.2.0-beta.2` on,
+  each release (betas too) has `secret-vault-<version>-android.apk` for
+  Android 9 and newer phones, tablets and foldables. Download it on the
+  phone, allow your browser to install apps once, and tap **Install**. It is
+  free, with no Google account and no store.
+- **Updates install over the top.** Every APK is signed with the same
+  project key, so a newer one installs over the old app and keeps your
+  vault and quick unlock. The release description shows the key's SHA-256
+  fingerprint, and the APK is in `SHA256SUMS.txt`, so you can check a
+  download.
+- How to start: [Install the Android app](user-guide/14-phone-apps.md#android).
+
+| | Android | iPhone and iPad | Windows, Linux, macOS |
+| --- | --- | --- | --- |
+| On the Releases page | Yes, `.apk` (from 0.2.0-beta.2) | No, build from source | Yes, as before |
+| One-time warning | Allow installing from your browser; Play Protect may ask you to confirm | n/a | As before |
+
+Known limits: not on Google Play, and the app doesn't tell you about
+updates (watch the Releases page instead). A copy installed earlier from a
+GitHub Actions run or built by hand has a different signature, so Android
+won't update it: sync, uninstall it and install the release APK. Google
+has announced that certified Android phones will only install apps from
+verified developers, rolling out country by country from late 2026; this
+may later need an extra step or block sideloading in some countries. No
+vault file change.
+
 ### Public beta downloads
 
 - **Try Secret Vault before 0.2.0 is final.** Public betas are published on
@@ -37,8 +65,10 @@ to work yet.
 | One-time warning (unsigned) | SmartScreen: **More info** > **Run anyway** | None | **Open Anyway** in Privacy & Security |
 
 Known limits: betas are not security audited, so do not trust one with real
-secrets yet and keep a backup of your vault file. The iPhone, iPad and
-Android apps are not on the Releases page (they need app store accounts);
+secrets yet and keep a backup of your vault file. `0.2.0-beta.1` has no
+phone apps; the Android app joins from `0.2.0-beta.2` (below), and the
+iPhone and iPad app is not on the Releases page (it needs a paid Apple
+developer account);
 see [Phone and tablet apps](user-guide/14-phone-apps.md). GitHub's
 "latest release" link skips betas, so link to the Releases page itself
 while only betas exist. No vault file change.
