@@ -21,8 +21,10 @@ Status: v1 feature-complete on Linux and Windows, not yet audited. Do not trust 
 ## Download
 
 Installers for Windows, Linux and macOS and the browser extension are on the
-[Releases page](https://github.com/nishantnkumar-cell/PasswordVault/releases/latest),
-free to download without a GitHub account. Windows and macOS warn once the
+[Releases page](https://github.com/nishantnkumar-cell/PasswordVault/releases),
+free to download without a GitHub account. The first downloads are public
+betas (marked **Pre-release**): not security audited yet, so try them with
+test data and keep a backup of your vault. Windows and macOS warn once the
 first time you open them because they are not code-signed yet; the
 [download guide](docs/user-guide/11-versions-and-upgrades.md#where-to-download)
 says what to click and how to check a download.

@@ -1,6 +1,8 @@
 # Publishes a GitHub Release when a version tag (v0.2.0, ...) is pushed. The
 # tag must match the version in Cargo.toml; contrib/release/release.sh makes
-# both. See docs/user-guide/11-versions-and-upgrades.md.
+# both. A pre-release tag of that version (v0.2.0-beta.1, -alpha.N, -rc.N) is
+# published as a public beta: marked pre-release on GitHub, with the
+# "## Unreleased" release notes. See docs/user-guide/11-versions-and-upgrades.md.
 name: Release
 
 on:
@@ -30,8 +32,24 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           version=$(contrib/release/version.sh --build)
-          contrib/release/notes.sh "$version" > notes.md
-          test -s notes.md || { echo "no \"## $version\" section in docs/release-notes.md" >&2; exit 1; }
+          if [[ "$version" == *-* ]]; then
+            # A beta: the notes so far, under a warning, and marked pre-release.
+            section=Unreleased
+            title="Secret Vault $version (public beta)"
+            prerelease=--prerelease
+            {
+              echo "> **Public beta.** A preview of $(contrib/release/version.sh) for testing. It has not had a security audit: do not trust it with real secrets yet, and keep a backup of your vault file."
+              echo
+            } > notes.md
+          else
+            section=$version
+            title="Secret Vault $version"
+            prerelease=
+            : > notes.md
+          fi
+          contrib/release/notes.sh "$section" > section.md
+          test -s section.md || { echo "no \"## $section\" section in docs/release-notes.md" >&2; exit 1; }
+          cat section.md >> notes.md
           # Every download a release promises (docs/user-guide/11-versions-and-upgrades.md).
           for f in "SecretVault-Setup-$version.exe" "secret-vault_${version}_amd64.deb" \
               "secret-vault-$version-linux-x86_64.tar.gz" "SecretVault-$version-macos.pkg" \
@@ -41,4 +59,4 @@ jobs:
           # SHA-256 of every file, so a download can be checked before it is run.
           (cd dist && sha256sum -- * > SHA256SUMS.txt)
           ls -l dist && cat dist/SHA256SUMS.txt
-          gh release create "v$version" dist/* --title "Secret Vault $version" --notes-file notes.md --verify-tag
+          gh release create "v$version" dist/* --title "$title" --notes-file notes.md --verify-tag $prerelease

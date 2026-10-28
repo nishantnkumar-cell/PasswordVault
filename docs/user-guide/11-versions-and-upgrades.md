@@ -23,6 +23,11 @@ release. Development builds are for testing. A development build counts as
 older than the release with the same number, so installing 0.2.0 over
 0.2.0-dev.1a2b3c4 is an upgrade.
 
+A version like **`0.2.0-beta.1`** is a **public beta** of 0.2.0: a
+preview published on the Releases page for anyone to try before 0.2.0 is
+final (see [Betas](#betas-pre-releases) below). Like a development build, it
+counts as older than 0.2.0 itself.
+
 Programs you build yourself from source show the plain version (for example
 `0.2.0`), because only the project's build machines add the `-dev` part.
 
@@ -58,8 +63,36 @@ No GitHub account is needed. Each release has:
 
 The release's description is that version's section of the
 [release notes](../release-notes.md): what's new and what differs between
-systems. The newest release is always at
-<https://github.com/nishantnkumar-cell/PasswordVault/releases/latest>.
+systems. The newest full release is always at
+<https://github.com/nishantnkumar-cell/PasswordVault/releases/latest>; that
+link skips betas, so while only betas exist use the
+[Releases page](https://github.com/nishantnkumar-cell/PasswordVault/releases)
+itself.
+
+### Betas (pre-releases)
+
+Before a version is final, it can be published as a **public beta**, for
+example `0.2.0-beta.1`, then `0.2.0-beta.2` with fixes. On the Releases page
+a beta is labelled **Pre-release**, and its description starts with a
+warning and lists everything new since the last full release.
+
+- **Who it is for:** anyone who wants to try Secret Vault early and report
+  problems. A beta has not had a security audit: try it with test data, do
+  not trust it with real secrets yet, and keep a backup of your vault file
+  (see [Upgrading](#upgrading)).
+- **What you get:** the same files as a full release (the table above),
+  named with the beta version, for example `SecretVault-Setup-0.2.0-beta.1.exe`
+  or `secret-vault_0.2.0-beta.1_amd64.deb`, plus `SHA256SUMS.txt`.
+- **Installing:** exactly as for a full release, on every system:
+  [Linux](01-getting-started.md#linux),
+  [Windows](windows-install.md) and [macOS](13-macos.md). Windows and macOS
+  show the same one-time warning (below).
+- **Moving on to the final version:** install it over the beta like any
+  upgrade. Your vault, unlock methods and settings stay. On Debian and
+  Ubuntu, `apt` knows that `0.2.0-beta.1` comes before `0.2.0`
+  (`apt policy secret-vault` shows the beta as `0.2.0~beta.1`).
+- **Phones and tablets:** betas do not include the iPhone, iPad or Android
+  apps; see [Phone and tablet apps](14-phone-apps.md).
 
 ### Checking a download (optional)
 
@@ -215,6 +248,25 @@ Nothing is published until the tag is pushed.
    it on the [Actions tab](https://github.com/nishantnkumar-cell/PasswordVault/actions/workflows/release.yml).
    Anyone can download a release without a GitHub account, because the
    repository is public.
+
+### Publishing a beta
+
+A beta is published from `main` without changing the version in
+`Cargo.toml` or the release notes. With `main` at 0.2.0:
+
+1. Check that `## Unreleased` in `docs/release-notes.md` describes what is
+   in the beta: it becomes the beta's description.
+2. Tag the commit and push the tag:
+   `git tag -a v0.2.0-beta.1 -m "Secret Vault 0.2.0 beta 1"` then
+   `git push origin v0.2.0-beta.1`.
+3. The **Release** workflow builds and checks everything as for a full
+   release and publishes it marked **Pre-release**, titled
+   *Secret Vault 0.2.0-beta.1 (public beta)*.
+
+The tag must be the version in `Cargo.toml` followed by `-beta.N` (or
+`-alpha.N`, `-rc.N`); any other tag fails the workflow before anything is
+published. The next beta is `-beta.2`. When 0.2.0 is ready, release it with
+`release.sh` as above.
 
 If the workflow fails, nothing is published. A failure that looks like a
 hiccup (a download timeout, a test that passes on `main`) usually goes away
