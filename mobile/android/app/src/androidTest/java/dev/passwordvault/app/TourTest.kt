@@ -24,7 +24,6 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.printToString
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
-import androidx.test.espresso.Espresso
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Rule
@@ -83,6 +82,14 @@ class TourTest {
         fields[1].performTextInput(phrase)
         shot("create")
         tap("Create vault")
+        // A tap sent while the keyboard is still moving the page can be lost
+        // (seen on the phone emulator). While the vault is being made the
+        // button shows a spinner instead of its label, so a label still
+        // there after a while means the tap missed: tap again.
+        repeat(3) {
+            runCatching { rule.waitUntil(15_000) { !exists("Create vault") } }
+            if (exists("Create vault")) tap("Create vault")
+        }
         waitFor("Your recovery code", 180_000)
         shot("recovery-code")
         tap("I wrote it down")
@@ -171,14 +178,8 @@ class TourTest {
         rule.waitForIdle()
     }
 
-    /**
-     * Scrolls [node] into view and clicks it. The keyboard is closed first: a
-     * touch sent while it is still moving the page can miss (seen on Create
-     * vault).
-     */
+    /** Scrolls [node] into view and clicks it. */
     private fun press(node: SemanticsNodeInteraction) {
-        Espresso.closeSoftKeyboard()
-        rule.waitForIdle()
         runCatching { node.performScrollTo() }
         node.performClick()
     }
