@@ -172,20 +172,26 @@ Set your team under Signing for both targets (the app and
 keychain group need a paid developer account; on a free account the app
 runs without AutoFill and keeps its files in its own container.
 
-To try the app in the simulator without a developer account, sign it
-"to run locally". The simulator honours ad hoc entitlements, so AutoFill
-shows up under Settings › General › AutoFill & Passwords. A build with
-`CODE_SIGNING_ALLOWED=NO` (as CI uses) runs, but iOS doesn't list it as
-an AutoFill provider.
+### Trying it on a Mac by hand
+
+`mobile/scripts/run-sim.sh` builds the app and opens it on one simulator
+or emulator, shutting down any others first so it fits a Mac with 8 GB of
+memory:
 
 ```sh
-cd mobile/ios
-xcodebuild -project SecretVault.xcodeproj -scheme SecretVault \
-  -destination 'platform=iOS Simulator,name=iPhone 18 Pro' -derivedDataPath build \
-  CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= VAULT_SKIP_RUST=1 build
-xcrun simctl install booted build/Build/Products/Debug-iphonesimulator/SecretVault.app
-xcrun simctl launch booted dev.passwordvault.app
+mobile/scripts/run-sim.sh ios                    # iPhone 18 Pro; or name another
+mobile/scripts/run-sim.sh ios "iPad Pro 13-inch (M5)"
+mobile/scripts/run-sim.sh android vault_pixel_fold   # an emulator from Android Studio
+mobile/scripts/run-sim.sh stop                   # shut everything down
 ```
+
+The iOS build is signed "to run locally" without a developer account. The
+simulator honours those entitlements, so Secret Vault shows up under
+Settings › General › AutoFill & Passwords; a build with
+`CODE_SIGNING_ALLOWED=NO` (as CI uses) runs, but iOS doesn't list it as
+an AutoFill provider. The Android app blocks screenshots; a debug build
+allows them when started with
+`adb shell am start -n dev.passwordvault.app/.MainActivity --ez dev.passwordvault.app.ALLOW_SCREENSHOTS true`.
 
 Xcode 27 replaces the Simulator app with Device Hub (Xcode › Open
 Developer Tool › Device Hub). Face ID is simulated from its Device menu:
