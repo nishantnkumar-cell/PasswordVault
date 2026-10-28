@@ -571,7 +571,15 @@ pub fn danger(ui: &mut Ui, icon: Icon, text: &str) -> egui::Response {
 /// name. The chosen one is white with an accent edge.
 pub fn choice_row(ui: &mut Ui, on: bool, name: &str, about: &str) -> egui::Response {
     let w = ui.available_width();
-    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, 54.0), Sense::click());
+    // The line under the name wraps, and the row grows to fit it.
+    let about = ui.painter().layout(
+        about.to_owned(),
+        FontId::proportional(12.0),
+        MUTED,
+        (w - 24.0).max(10.0),
+    );
+    let h = (about.size().y + 38.0).max(54.0);
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, h), Sense::click());
     resp.widget_info(|| WidgetInfo::selected(egui::Role::Button, true, on, name));
     if ui.is_rect_visible(rect) {
         let p = ui.painter();
@@ -592,20 +600,15 @@ pub fn choice_row(ui: &mut Ui, on: bool, name: &str, about: &str) -> egui::Respo
             p.rect_filled(rect, CornerRadius::same(9), Color32::from_black_alpha(10));
         }
         let x = rect.left() + 12.0;
+        let top = rect.center().y - (about.size().y + 20.0) / 2.0;
         p.text(
-            Pos2::new(x, rect.center().y - 9.0),
-            egui::Align2::LEFT_CENTER,
+            Pos2::new(x, top),
+            egui::Align2::LEFT_TOP,
             name,
             FontId::new(14.0, semibold()),
             INK,
         );
-        p.text(
-            Pos2::new(x, rect.center().y + 10.0),
-            egui::Align2::LEFT_CENTER,
-            about,
-            FontId::proportional(12.0),
-            MUTED,
-        );
+        p.galley(Pos2::new(x, top + 20.0), about, MUTED);
     }
     resp
 }
@@ -683,7 +686,37 @@ pub fn item_row(
     tags: &[&str],
 ) -> egui::Response {
     let w = ui.available_width();
-    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, 56.0), Sense::click());
+    // Lay the text out first: a long title takes a second line and the row
+    // grows to fit it, rather than cutting the title short.
+    let tag_w: f32 = tags
+        .iter()
+        .map(|t| {
+            ui.painter()
+                .layout_no_wrap((*t).to_owned(), FontId::new(11.0, semibold()), INK)
+                .size()
+                .x
+                + 16.0
+        })
+        .sum();
+    let room = (w - 10.0 - 36.0 - 12.0 - tag_w - 16.0).max(10.0);
+    let layout = |text: &str, font: FontId, color: Color32, rows: usize| {
+        let mut job = egui::text::LayoutJob::single_section(
+            text.to_owned(),
+            egui::TextFormat::simple(font, color),
+        );
+        job.wrap = egui::text::TextWrapping {
+            max_width: room,
+            max_rows: rows,
+            break_anywhere: false,
+            overflow_character: Some('…'),
+        };
+        ui.painter().layout_job(job)
+    };
+    let t = layout(title, FontId::new(14.0, semibold()), INK, 2);
+    let s = (!subtitle.is_empty()).then(|| layout(subtitle, FontId::proportional(12.0), MUTED, 1));
+    let text_h = t.size().y + s.as_ref().map_or(0.0, |s| 2.0 + s.size().y);
+    let (rect, resp) =
+        ui.allocate_exact_size(Vec2::new(w, (text_h + 18.0).max(56.0)), Sense::click());
     let mut label = title.to_owned();
     if !subtitle.is_empty() {
         label = format!("{label}\n{subtitle}");
@@ -710,25 +743,10 @@ pub fn item_row(
             right = paint_tag(ui, right, rect.center().y, t, ACCENT_DARK, bg) - 4.0;
         }
         let x = tile.right() + 12.0;
-        let room = (right - x - 6.0).max(10.0);
-        let line = |text: &str, font: FontId, color: Color32| {
-            let mut job = egui::text::LayoutJob::single_section(
-                text.to_owned(),
-                egui::TextFormat::simple(font, color),
-            );
-            job.wrap = egui::text::TextWrapping::truncate_at_width(room);
-            ui.painter().layout_job(job)
-        };
-        let t = line(title, FontId::new(14.0, semibold()), INK);
-        if subtitle.is_empty() {
-            let y = rect.center().y - t.size().y / 2.0;
-            ui.painter().galley(Pos2::new(x, y), t, INK);
-        } else {
-            let s = line(subtitle, FontId::proportional(12.0), MUTED);
-            let h = t.size().y + 2.0 + s.size().y;
-            let y = rect.center().y - h / 2.0;
-            let below = y + t.size().y + 2.0;
-            ui.painter().galley(Pos2::new(x, y), t, INK);
+        let y = rect.center().y - text_h / 2.0;
+        let below = y + t.size().y + 2.0;
+        ui.painter().galley(Pos2::new(x, y), t, INK);
+        if let Some(s) = s {
             ui.painter().galley(Pos2::new(x, below), s, MUTED);
         }
     }

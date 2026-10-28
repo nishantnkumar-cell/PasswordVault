@@ -1132,7 +1132,8 @@ impl App {
     /// form on the right.
     fn unlock_card(&mut self, ui: &mut Ui) {
         const LEFT: f32 = 248.0;
-        const WIDTH: f32 = 800.0;
+        // 800 wide, less in a narrow window so the card keeps a margin.
+        let width = (ui.available_width() - 48.0).clamp(640.0, 800.0);
         let pair = self.screen == Screen::Pair;
         let shadow = egui::Shadow {
             offset: [0, 12],
@@ -1145,7 +1146,7 @@ impl App {
             .corner_radius(16)
             .shadow(shadow)
             .show(ui, |ui| {
-                ui.set_width(WIDTH);
+                ui.set_width(width);
                 ui.spacing_mut().item_spacing = Vec2::ZERO;
                 ui.horizontal_top(|ui| {
                     let left = egui::Frame::new()
@@ -1171,7 +1172,7 @@ impl App {
                     egui::Frame::new()
                         .inner_margin(Margin::symmetric(44, 40))
                         .show(ui, |ui| {
-                            ui.set_width(WIDTH - LEFT - 88.0);
+                            ui.set_width(width - LEFT - 88.0);
                             ui.spacing_mut().item_spacing = Vec2::new(8.0, 8.0);
                             ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
                                 self.messages(ui);
@@ -1693,10 +1694,13 @@ impl App {
             .inner_margin(Margin::symmetric(32, 26));
         match self.view {
             View::Items => {
+                // The list gives way in a narrow window, so the item beside
+                // it keeps room to show its text.
+                let most = (ui.available_width() - 360.0).clamp(240.0, 480.0);
                 egui::Panel::left("list")
                     .resizable(true)
                     .default_size(340.0)
-                    .size_range(280.0..=480.0)
+                    .size_range(240.0..=most)
                     .frame(
                         egui::Frame::new()
                             .fill(theme::SURFACE)
@@ -1805,7 +1809,16 @@ impl App {
             ui.add_space(SIDEBAR - used + 20.0);
 
             // Search: as wide as the room the buttons on the right leave.
-            let room = (ui.available_width() - 430.0).clamp(240.0, 640.0);
+            // In a narrow window the lock timer goes, then the shortcut
+            // hint, so nothing overlaps.
+            let avail = ui.available_width();
+            let show_timer = avail - 430.0 >= 240.0;
+            let room = if show_timer {
+                (avail - 430.0).min(640.0)
+            } else {
+                (avail - 290.0).max(150.0)
+            };
+            let show_kbd = room >= 260.0;
             let scoped = self.filter != Filter::All;
             egui::Frame::new()
                 .fill(theme::GROUND)
@@ -1840,7 +1853,7 @@ impl App {
                         } else {
                             "Search all items".to_owned()
                         };
-                        let kbd = 54.0;
+                        let kbd = if show_kbd { 54.0 } else { 0.0 };
                         let r = ui.add(
                             TextEdit::singleline(&mut self.search)
                                 .hint_text(hint)
@@ -1852,13 +1865,15 @@ impl App {
                         ui.ctx()
                             .accesskit_node_builder(r.id, |n| n.set_label("Search"));
                         search_changed = r.changed();
-                        ui.label(
-                            RichText::new(PALETTE_KEY)
-                                .monospace()
-                                .size(11.0)
-                                .color(theme::MUTED),
-                        )
-                        .on_hover_text("Find items and actions");
+                        if show_kbd {
+                            ui.label(
+                                RichText::new(PALETTE_KEY)
+                                    .monospace()
+                                    .size(11.0)
+                                    .color(theme::MUTED),
+                            )
+                            .on_hover_text("Find items and actions");
+                        }
                     });
                 });
 
@@ -1867,7 +1882,7 @@ impl App {
                 lock = theme::button(ui, Icon::Lock, "Lock").clicked();
                 ui.add_space(2.0);
                 start = self.new_buttons(ui);
-                if let Some(t) = idle {
+                if let Some(t) = idle.filter(|_| show_timer) {
                     ui.add_space(6.0);
                     ui.label(RichText::new(t).small().color(theme::MUTED));
                     status_dot(ui, theme::OK);
@@ -2030,31 +2045,39 @@ impl App {
             );
         }
         let mut go = None;
-        ui.spacing_mut().item_spacing.y = 2.0;
-        for (f, name) in Filter::NAV {
-            let on = self.view == View::Items && self.filter == f;
-            let count = self.items.iter().filter(|i| f.admits(i)).count();
-            if theme::nav_row(ui, on, f.icon(), name, Some(count)).clicked() {
-                go = Some((View::Items, f));
-            }
-        }
-        ui.add_space(14.0);
-        ui.horizontal(|ui| {
-            ui.add_space(10.0);
-            theme::caption(ui, "Tools");
-        });
-        ui.add_space(2.0);
-        for (v, icon, name) in [
-            (View::Generator, Icon::Dice, "Generator"),
-            (View::Import, Icon::Import, "Import"),
-            (View::Slots, Icon::Shield, "Unlock methods"),
-            (View::Sync, Icon::Sync, "Sync"),
-            (View::Pgp, Icon::Mail, "Encrypt and sign"),
-        ] {
-            if theme::nav_row(ui, self.view == v, icon, name, None).clicked() {
-                go = Some((v, self.filter));
-            }
-        }
+        // The version and hints at the bottom keep their room; on a short
+        // window the categories and tools scroll instead of running under them.
+        let footer = if sync.is_some() { 84.0 } else { 64.0 };
+        egui::ScrollArea::vertical()
+            .id_salt("sidebar")
+            .max_height((ui.available_height() - footer).max(80.0))
+            .show(ui, |ui| {
+                ui.spacing_mut().item_spacing.y = 2.0;
+                for (f, name) in Filter::NAV {
+                    let on = self.view == View::Items && self.filter == f;
+                    let count = self.items.iter().filter(|i| f.admits(i)).count();
+                    if theme::nav_row(ui, on, f.icon(), name, Some(count)).clicked() {
+                        go = Some((View::Items, f));
+                    }
+                }
+                ui.add_space(14.0);
+                ui.horizontal(|ui| {
+                    ui.add_space(10.0);
+                    theme::caption(ui, "Tools");
+                });
+                ui.add_space(2.0);
+                for (v, icon, name) in [
+                    (View::Generator, Icon::Dice, "Generator"),
+                    (View::Import, Icon::Import, "Import"),
+                    (View::Slots, Icon::Shield, "Unlock methods"),
+                    (View::Sync, Icon::Sync, "Sync"),
+                    (View::Pgp, Icon::Mail, "Encrypt and sign"),
+                ] {
+                    if theme::nav_row(ui, self.view == v, icon, name, None).clicked() {
+                        go = Some((v, self.filter));
+                    }
+                }
+            });
         ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
             ui.spacing_mut().item_spacing.y = 4.0;
             ui.horizontal(|ui| {
@@ -2238,13 +2261,45 @@ impl App {
         let mut set_confirm = None;
         let mut export_pgp = None;
 
-        ui.horizontal(|ui| {
-            theme::monogram(ui, &item.title, 56.0);
+        // Edit and Delete sit right of the title when there is room, and
+        // under it in a narrow window, so a long title wraps in readable lines.
+        let mut buttons = |ui: &mut Ui| {
+            if self.confirm_delete {
+                if ui.button("Cancel").clicked() {
+                    self.confirm_delete = false;
+                }
+                if ui
+                    .add(
+                        egui::Button::new(RichText::new("Yes, delete").color(egui::Color32::WHITE))
+                            .fill(theme::ERROR),
+                    )
+                    .clicked()
+                {
+                    delete = true;
+                }
+                ui.label("Delete this item for good?");
+            } else {
+                if theme::danger(ui, Icon::Trash, "Delete").clicked() {
+                    self.confirm_delete = true;
+                }
+                if theme::button(ui, Icon::Pencil, "Edit").clicked() {
+                    edit = true;
+                }
+            }
+        };
+        let w = ui.available_width();
+        let (tile, size) = if w < 400.0 {
+            (40.0, 18.0)
+        } else {
+            (56.0, 22.0)
+        };
+        let title = |ui: &mut Ui| {
+            theme::monogram(ui, &item.title, tile);
             ui.add_space(6.0);
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = 2.0;
                 ui.add_space(6.0);
-                ui.label(theme::title(&item.title, 22.0));
+                ui.add(egui::Label::new(theme::title(&item.title, size)).wrap());
                 let kind = if let Some(k) = &key {
                     if k.starts_with("OpenPGP") {
                         "OpenPGP key"
@@ -2256,33 +2311,29 @@ impl App {
                 };
                 ui.label(RichText::new(kind).size(13.0).color(theme::MUTED));
             });
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if self.confirm_delete {
-                    if ui.button("Cancel").clicked() {
-                        self.confirm_delete = false;
-                    }
-                    if ui
-                        .add(
-                            egui::Button::new(
-                                RichText::new("Yes, delete").color(egui::Color32::WHITE),
-                            )
-                            .fill(theme::ERROR),
-                        )
-                        .clicked()
-                    {
-                        delete = true;
-                    }
-                    ui.label("Delete this item for good?");
-                } else {
-                    if theme::danger(ui, Icon::Trash, "Delete").clicked() {
-                        self.confirm_delete = true;
-                    }
-                    if theme::button(ui, Icon::Pencil, "Edit").clicked() {
-                        edit = true;
-                    }
-                }
-            });
-        });
+        };
+        if w < 560.0 {
+            ui.allocate_ui_with_layout(
+                Vec2::new(w, 0.0),
+                egui::Layout::left_to_right(egui::Align::Min),
+                title,
+            );
+            ui.add_space(10.0);
+            ui.allocate_ui_with_layout(
+                Vec2::new(w, 0.0),
+                egui::Layout::right_to_left(egui::Align::Min),
+                buttons,
+            );
+        } else {
+            ui.allocate_ui_with_layout(
+                Vec2::new(w, 0.0),
+                egui::Layout::right_to_left(egui::Align::Min),
+                |ui| {
+                    buttons(ui);
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), title);
+                },
+            );
+        }
         ui.add_space(18.0);
 
         // A row: the label over the value, and on the right a Copy button.
@@ -2305,16 +2356,25 @@ impl App {
                     ui.label(RichText::new(label).size(12.0).color(theme::MUTED));
                     // Code font only for secrets, where telling 0 from O matters.
                     if secret && !reveal {
-                        ui.label(RichText::new("••••••••••••").monospace().size(15.0));
+                        ui.add(
+                            egui::Label::new(RichText::new("••••••••").monospace().size(15.0))
+                                .wrap_mode(egui::TextWrapMode::Extend),
+                        );
                     } else if secret {
-                        ui.label(
-                            RichText::new(value)
-                                .monospace()
-                                .size(15.0)
-                                .color(theme::INK),
+                        ui.add(
+                            egui::Label::new(
+                                RichText::new(value)
+                                    .monospace()
+                                    .size(15.0)
+                                    .color(theme::INK),
+                            )
+                            .wrap(),
                         );
                     } else {
-                        ui.label(RichText::new(value).size(15.0).color(theme::INK));
+                        ui.add(
+                            egui::Label::new(RichText::new(value).size(15.0).color(theme::INK))
+                                .wrap(),
+                        );
                     }
                 },
                 |ui| {
@@ -2490,10 +2550,13 @@ impl App {
                     if u.allow_http {
                         how += ", http allowed";
                     }
-                    ui.horizontal(|ui| {
-                        ui.label(RichText::new(&u.url).monospace().color(theme::INK));
-                        ui.label(RichText::new(how).small().color(theme::MUTED));
-                    });
+                    // Long addresses wrap inside the card.
+                    ui.add(
+                        egui::Label::new(RichText::new(&u.url).monospace().color(theme::INK))
+                            .wrap(),
+                    );
+                    ui.label(RichText::new(how).small().color(theme::MUTED));
+                    ui.add_space(4.0);
                 }
             });
         }
@@ -3207,6 +3270,34 @@ impl App {
         let mut generate = false;
         theme::card().show(ui, |ui| {
             ui.set_width(ui.available_width());
+            if let Some(p) = &self.generated {
+                detail_row(
+                    ui,
+                    |ui| {
+                        ui.label(RichText::new("Password").size(12.0).color(theme::MUTED));
+                        ui.add(
+                            egui::Label::new(
+                                RichText::new(p.as_str())
+                                    .monospace()
+                                    .size(18.0)
+                                    .color(theme::INK),
+                            )
+                            .wrap_mode(egui::TextWrapMode::Wrap)
+                            .selectable(true),
+                        );
+                    },
+                    |ui| {
+                        if theme::primary_small(ui, Icon::Copy, "Copy password").clicked() {
+                            copy = Some(p.clone());
+                        }
+                        if theme::soft_icon(ui, Icon::Dice, "New").clicked() {
+                            generate = true;
+                        }
+                    },
+                );
+                theme::divider(ui);
+                ui.add_space(12.0);
+            }
             let g = &mut self.generator;
             for (kind, name, about) in [
                 (
@@ -3243,6 +3334,7 @@ impl App {
                 }
                 GenKind::Words => {
                     ui.horizontal_wrapped(|ui| {
+                        ui.spacing_mut().slider_width = 200.0;
                         ui.add(egui::Slider::new(&mut g.words, 3..=10).text("words"));
                     });
                     ui.horizontal_wrapped(|ui| {
@@ -3270,34 +3362,10 @@ impl App {
                 .wrap(),
             );
             ui.add_space(4.0);
-            if theme::primary_icon(ui, true, Icon::Dice, "Generate").clicked() {
+            if self.generated.is_none()
+                && theme::primary_icon(ui, true, Icon::Dice, "Generate").clicked()
+            {
                 generate = true;
-            }
-            if let Some(p) = &self.generated {
-                ui.add_space(8.0);
-                theme::divider(ui);
-                ui.add_space(4.0);
-                detail_row(
-                    ui,
-                    |ui| {
-                        ui.label(RichText::new("Password").size(12.0).color(theme::MUTED));
-                        ui.add(
-                            egui::Label::new(
-                                RichText::new(p.as_str())
-                                    .monospace()
-                                    .size(16.0)
-                                    .color(theme::INK),
-                            )
-                            .wrap_mode(egui::TextWrapMode::Wrap)
-                            .selectable(true),
-                        );
-                    },
-                    |ui| {
-                        if theme::primary_small(ui, Icon::Copy, "Copy password").clicked() {
-                            copy = Some(p.clone());
-                        }
-                    },
-                );
             }
         });
         if generate {
@@ -3835,6 +3903,25 @@ fn login_fields(ui: &mut Ui, e: &mut Edit) -> bool {
 fn detail_row(ui: &mut Ui, left: impl FnOnce(&mut Ui), right: impl FnOnce(&mut Ui)) {
     ui.add_space(12.0);
     let w = ui.available_width();
+    // In a narrow pane the buttons go under the value, which then has the
+    // whole width to wrap in.
+    if w < 480.0 {
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = 3.0;
+            left(ui);
+        });
+        ui.add_space(6.0);
+        ui.allocate_ui_with_layout(
+            Vec2::new(w, 0.0),
+            egui::Layout::right_to_left(egui::Align::Center),
+            |ui| {
+                ui.spacing_mut().item_spacing.x = 8.0;
+                right(ui);
+            },
+        );
+        ui.add_space(12.0);
+        return;
+    }
     ui.allocate_ui_with_layout(
         Vec2::new(w, 0.0),
         egui::Layout::right_to_left(egui::Align::Center),
