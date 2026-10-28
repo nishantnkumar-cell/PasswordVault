@@ -159,6 +159,16 @@ final class VaultModel {
         return newId
     }
 
+    /// Adds a one-time code to the login `to`, or to a new login.
+    @discardableResult
+    func addCode(_ input: String, title: String, account: String, to: String?) throws -> String {
+        guard let s = session else { throw MobileError.Invalid(message: "The vault is locked.") }
+        mergeFolder(s, password: nil)
+        let id = try s.addCode(input: input, title: title, account: account, to: to)
+        try persist(s)
+        return id
+    }
+
     func delete(id: String) throws {
         guard let s = session else { return }
         mergeFolder(s, password: nil)

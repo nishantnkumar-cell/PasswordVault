@@ -62,8 +62,10 @@ class TourTest {
             if (exists("Create a new vault")) createVault() else unlock("unlock")
             addLogin()
             addCard()
-            tab("Codes"); shot("codes")
+            addCode()
             tab("Generator"); shot("generator")
+            tap("3 words"); shot("generator-words")
+            tap("Apple style"); shot("generator-apple")
             tab("Settings"); shot("settings")
             tap("Lock now")
             waitFor("Unlock")
@@ -132,6 +134,21 @@ class TourTest {
         back()
         waitFor("Example Mail")
         shot("items")
+    }
+
+    /** Adds a code straight from the Codes screen, as a new login. */
+    private fun addCode() {
+        tab("Codes")
+        if (!exists("Example Chat")) {
+            tap("Add code")
+            waitFor("Add a one-time code")
+            field("Setup key or otpauth:// link").performTextInput("JBSWY3DPEHPK3PXP")
+            field("Name, e.g. Example Mail").performTextInput("Example Chat")
+            tap("Save")
+            rule.waitUntil(30_000) { !exists("Add a one-time code") }
+        }
+        waitFor("Example Chat")
+        shot("codes")
     }
 
     private fun newItem(kind: String) {

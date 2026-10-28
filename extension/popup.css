@@ -19,3 +19,6 @@ li button.fill { border-color: var(--accent); color: var(--accent); }
 #frames p { margin: 0; color: var(--muted); }
 #frames[hidden] { display: none; }
 #forms h2 { margin: 0; padding: 8px 12px 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+footer { display: flex; gap: 6px; }
+select { flex: 1; min-width: 0; padding: 5px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: inherit; }
+#message { overflow-wrap: anywhere; }

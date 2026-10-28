@@ -1,9 +1,10 @@
 import SwiftUI
 import VisionKit
 
-/// A strong default for the "Generate" button: 20 characters, all classes.
+/// A new password for the editor's dice button, in the style the Generator
+/// tab is set to (20 random characters until it's changed).
 func strongPassword() -> String {
-    (try? generatePassword(options: GeneratorOptions(length: 20, lower: true, upper: true, digits: true, symbols: true, avoidAmbiguous: true))) ?? ""
+    (try? generateStyled(style: GeneratorPrefs.style)) ?? ""
 }
 
 /// "08/29" or "0829" as (8, 2029); (0, 0) when it doesn't parse.

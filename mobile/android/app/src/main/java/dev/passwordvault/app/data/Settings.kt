@@ -49,6 +49,29 @@ class Settings(context: Context) {
         get() = prefs.getLong(KEY_GENERATION, 0L)
         set(v) = prefs.edit().putLong(KEY_GENERATION, v).apply()
 
+    /** The generator's style: "random", "words" or "apple". */
+    var generatorStyle: String
+        get() = prefs.getString(KEY_GEN_STYLE, "random") ?: "random"
+        set(v) = prefs.edit().putString(KEY_GEN_STYLE, v).apply()
+
+    /** Words for the "words" style, 3 to 10. */
+    var generatorWords: Int
+        get() = prefs.getInt(KEY_GEN_WORDS, 3)
+        set(v) = prefs.edit().putInt(KEY_GEN_WORDS, v).apply()
+
+    /** What goes between words; empty runs them together. */
+    var generatorSeparator: String
+        get() = prefs.getString(KEY_GEN_SEPARATOR, "") ?: ""
+        set(v) = prefs.edit().putString(KEY_GEN_SEPARATOR, v).apply()
+
+    var generatorCapitalize: Boolean
+        get() = prefs.getBoolean(KEY_GEN_CAPITALIZE, true)
+        set(v) = prefs.edit().putBoolean(KEY_GEN_CAPITALIZE, v).apply()
+
+    var generatorNumberAndSymbol: Boolean
+        get() = prefs.getBoolean(KEY_GEN_EXTRA, false)
+        set(v) = prefs.edit().putBoolean(KEY_GEN_EXTRA, v).apply()
+
     private companion object {
         const val KEY_DEVICE = "device_id"
         const val KEY_AUTOLOCK = "autolock_seconds"
@@ -57,5 +80,10 @@ class Settings(context: Context) {
         const val KEY_SYNC = "sync_uri"
         const val KEY_FULL_UNLOCK = "full_unlock_at"
         const val KEY_GENERATION = "highest_generation"
+        const val KEY_GEN_STYLE = "generator_style"
+        const val KEY_GEN_WORDS = "generator_words"
+        const val KEY_GEN_SEPARATOR = "generator_separator"
+        const val KEY_GEN_CAPITALIZE = "generator_capitalize"
+        const val KEY_GEN_EXTRA = "generator_number_symbol"
     }
 }

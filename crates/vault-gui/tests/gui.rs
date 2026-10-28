@@ -1271,6 +1271,62 @@ fn key_tools_encrypt_sign_export_and_import() {
     assert_eq!(key("Laptop"), key("Laptop again"), "the same key came back");
 }
 
+#[test]
+fn generator_makes_words_and_apple_style_passwords() {
+    use eframe::egui::{Key, Modifiers};
+    let dir = tempdir();
+    let clip = FakeClip::default();
+    let mut h = created(&dir, Duration::from_secs(300), clip.clone());
+    h.key_press_modifiers(Modifiers::COMMAND, Key::K);
+    h.step();
+    h.step();
+    type_into(
+        &mut h,
+        Role::TextInput,
+        "Find an item or action",
+        "generate",
+    );
+    h.step();
+    click(&mut h, "Generate a password");
+    settle(&mut h);
+    let copied = |h: &mut Harness<'_, App>| {
+        click(h, "Copy password");
+        clip.0.lock().unwrap().take().expect("copied")
+    };
+    assert_eq!(copied(&mut h).len(), 24);
+
+    // Choosing a style makes a password in it straight away.
+    click(&mut h, "Three random words");
+    settle(&mut h);
+    let words = copied(&mut h);
+    assert_eq!(
+        words.chars().filter(char::is_ascii_uppercase).count(),
+        3,
+        "{words}"
+    );
+    assert!(words.chars().all(|c| c.is_ascii_alphabetic()), "{words}");
+
+    click(&mut h, "Apple style");
+    settle(&mut h);
+    let apple = copied(&mut h);
+    let groups: Vec<&str> = apple.split('-').collect();
+    assert!(
+        groups.len() == 3 && groups.iter().all(|g| g.len() == 6),
+        "{apple}"
+    );
+
+    // A new login's Generate button uses the chosen style.
+    click(&mut h, "New item");
+    click(&mut h, "Login");
+    type_into(&mut h, Role::TextInput, "Title", "Example");
+    click(&mut h, "Generate");
+    settle(&mut h);
+    click(&mut h, "Save");
+    settle(&mut h);
+    let saved = copied(&mut h);
+    assert_eq!(saved.split('-').count(), 3, "{saved}");
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn app_passwords_lists_and_takes_back_approvals() {

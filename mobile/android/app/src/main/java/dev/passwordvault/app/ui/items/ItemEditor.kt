@@ -43,20 +43,21 @@ import androidx.compose.ui.unit.dp
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
+import dev.passwordvault.app.data.Settings
 import dev.passwordvault.app.data.VaultRepository
 import dev.passwordvault.app.ui.components.SectionLabel
+import dev.passwordvault.app.ui.generator.savedStyle
 import dev.passwordvault.app.ui.unlock.SecretField
 import kotlinx.coroutines.launch
 import uniffi.vault_mobile.CardRecord
 import uniffi.vault_mobile.FieldRecord
-import uniffi.vault_mobile.GeneratorOptions
 import uniffi.vault_mobile.IdentityRecord
 import uniffi.vault_mobile.ItemDetail
 import uniffi.vault_mobile.ItemEdit
 import uniffi.vault_mobile.Kind
 import uniffi.vault_mobile.TotpEdit
 import uniffi.vault_mobile.UrlRecord
-import uniffi.vault_mobile.generatePassword
+import uniffi.vault_mobile.generateStyled
 
 private class UrlDraft(url: String, sub: Boolean) {
     var url by mutableStateOf(url)
@@ -69,10 +70,11 @@ private class FieldDraft(name: String, value: String, hidden: Boolean) {
     var hidden by mutableStateOf(hidden)
 }
 
-/** A strong default for the "Generate" button: 20 characters, all classes. */
-fun strongPassword(): String = generatePassword(
-    GeneratorOptions(length = 20u, lower = true, upper = true, digits = true, symbols = true, avoidAmbiguous = true),
-)
+/**
+ * A new password for the "Generate" button, in the style the Generator
+ * screen is set to (20 random characters of every kind until it's changed).
+ */
+fun strongPassword(settings: Settings): String = generateStyled(savedStyle(settings))
 
 /** Create or edit an item. [onDone] gets the saved ID, or null on cancel. */
 @Composable
@@ -89,7 +91,7 @@ fun ItemEditor(
     val kind = existing?.kind ?: newKind
     var title by remember { mutableStateOf(existing?.title ?: "") }
     var username by remember { mutableStateOf(existing?.username ?: "") }
-    var password by remember { mutableStateOf(existing?.password ?: if (kind == Kind.LOGIN) strongPassword() else "") }
+    var password by remember { mutableStateOf(existing?.password ?: if (kind == Kind.LOGIN) strongPassword(vault.settings) else "") }
     val urls = remember {
         mutableStateListOf<UrlDraft>().apply {
             existing?.urls?.forEach { add(UrlDraft(it.url, it.matchSubdomains)) }
@@ -163,7 +165,7 @@ fun ItemEditor(
                 Field("Username or email", username, { username = it }, KeyboardType.Email)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     SecretField(password, { password = it }, "Password", Modifier.weight(1f))
-                    IconButton(onClick = { password = strongPassword() }) {
+                    IconButton(onClick = { password = strongPassword(vault.settings) }) {
                         Icon(Icons.Outlined.Refresh, contentDescription = "Generate a new password")
                     }
                 }

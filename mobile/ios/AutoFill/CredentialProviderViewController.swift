@@ -254,7 +254,7 @@ private struct ItemLine: View {
         HStack(spacing: 12) {
             LetterTile(title: item.title)
             VStack(alignment: .leading, spacing: 2) {
-                Text(item.title).font(.body.weight(.medium)).foregroundStyle(.primary).lineLimit(1)
+                Text(item.title).font(.body.weight(.medium)).foregroundStyle(.primary).lineLimit(2)
                 Text(item.subtitle.isEmpty ? (item.host ?? "") : item.subtitle)
                     .font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
             }

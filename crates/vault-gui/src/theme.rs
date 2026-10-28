@@ -340,39 +340,81 @@ pub fn monogram(ui: &mut Ui, title: &str, size: f32) {
     paint_monogram(ui, rect, title);
 }
 
-/// The app's mark: a padlock on a dark tile.
-pub fn lock_tile(ui: &mut Ui, size: f32) {
-    let (rect, _) = ui.allocate_exact_size(Vec2::splat(size), Sense::hover());
-    let p = ui.painter();
-    p.rect_filled(rect, CornerRadius::same((size / 4.0) as u8), INK);
-    let u = size / 28.0;
-    let c = rect.center();
-    let line = Stroke::new(1.8 * u, Color32::WHITE);
-    let body = Rect::from_center_size(c + Vec2::new(0.0, 3.0 * u), Vec2::new(12.0 * u, 8.5 * u));
-    p.rect_stroke(
-        body,
-        CornerRadius::same((1.6 * u) as u8),
-        line,
-        egui::StrokeKind::Middle,
+/// The app's mark, drawn like the app icon (contrib/icons): a white keyhole
+/// on a red tile, or on a green one while the vault is unlocked.
+pub fn lock_tile(ui: &mut Ui, size: f32, unlocked: bool) {
+    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(size), Sense::hover());
+    resp.widget_info(|| {
+        WidgetInfo::labeled(
+            egui::Role::Image,
+            true,
+            if unlocked {
+                "Secret Vault, unlocked"
+            } else {
+                "Secret Vault"
+            },
+        )
+    });
+    if ui.is_rect_visible(rect) {
+        paint_mark(ui.painter(), rect, unlocked);
+    }
+}
+
+/// The icon's tile gradient, top left to bottom right.
+pub const MARK_RED: [Color32; 2] = [
+    Color32::from_rgb(0xEE, 0x3B, 0x36),
+    Color32::from_rgb(0xB5, 0x16, 0x1B),
+];
+/// The same tile while the vault is unlocked.
+pub const MARK_GREEN: [Color32; 2] = [
+    Color32::from_rgb(0x2E, 0xB8, 0x6B),
+    Color32::from_rgb(0x15, 0x75, 0x42),
+];
+
+fn paint_mark(p: &egui::Painter, rect: Rect, unlocked: bool) {
+    let [from, to] = if unlocked { MARK_GREEN } else { MARK_RED };
+    // Fill a rounded rectangle, then shade its vertices along the diagonal.
+    let mut mesh = egui::Mesh::default();
+    let mut tess = egui::epaint::Tessellator::new(
+        p.pixels_per_point(),
+        egui::epaint::TessellationOptions::default(),
+        [0, 0],
+        Vec::new(),
     );
-    // The shackle: two posts joined by a half circle.
-    let r = 3.6 * u;
-    let top = body.top() - 2.6 * u;
-    let pts: Vec<Pos2> = (0..=16)
-        .map(|i| {
-            let a = std::f32::consts::PI * (1.0 + i as f32 / 16.0);
-            Pos2::new(c.x + r * a.cos(), top + r * a.sin())
-        })
-        .collect();
-    p.line_segment(
-        [Pos2::new(c.x - r, body.top()), Pos2::new(c.x - r, top)],
-        line,
+    tess.tessellate_rect(
+        &egui::epaint::RectShape::filled(
+            rect,
+            CornerRadius::same((rect.width() * 96.0 / 512.0).round() as u8),
+            Color32::WHITE,
+        ),
+        &mut mesh,
     );
-    p.line_segment(
-        [Pos2::new(c.x + r, body.top()), Pos2::new(c.x + r, top)],
-        line,
-    );
-    p.add(Shape::line(pts, line));
+    let span = rect.width() + rect.height();
+    for v in &mut mesh.vertices {
+        let t = ((v.pos.x - rect.left()) + (v.pos.y - rect.top())) / span;
+        let shade = from.lerp_to_gamma(to, t.clamp(0.0, 1.0));
+        v.color = Color32::from_rgba_premultiplied(
+            (shade.r() as f32 * v.color.a() as f32 / 255.0) as u8,
+            (shade.g() as f32 * v.color.a() as f32 / 255.0) as u8,
+            (shade.b() as f32 * v.color.a() as f32 / 255.0) as u8,
+            v.color.a(),
+        );
+    }
+    p.add(Shape::mesh(mesh));
+    // The keyhole of secret-vault-small.svg, in 512ths of the tile.
+    let at = |x: f32, y: f32| rect.min + Vec2::new(x, y) * (rect.width() / 512.0);
+    let k = rect.width() / 512.0;
+    p.circle_filled(at(256.0, 195.6), 86.8 * k, Color32::WHITE);
+    p.add(Shape::convex_polygon(
+        vec![
+            at(216.8, 237.6),
+            at(295.2, 237.6),
+            at(326.0, 411.2),
+            at(186.0, 411.2),
+        ],
+        Color32::WHITE,
+        Stroke::NONE,
+    ));
 }
 
 /// A ring that empties as a one-time code nears its end.
@@ -529,7 +571,15 @@ pub fn danger(ui: &mut Ui, icon: Icon, text: &str) -> egui::Response {
 /// name. The chosen one is white with an accent edge.
 pub fn choice_row(ui: &mut Ui, on: bool, name: &str, about: &str) -> egui::Response {
     let w = ui.available_width();
-    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, 54.0), Sense::click());
+    // The line under the name wraps, and the row grows to fit it.
+    let about = ui.painter().layout(
+        about.to_owned(),
+        FontId::proportional(12.0),
+        MUTED,
+        (w - 24.0).max(10.0),
+    );
+    let h = (about.size().y + 38.0).max(54.0);
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, h), Sense::click());
     resp.widget_info(|| WidgetInfo::selected(egui::Role::Button, true, on, name));
     if ui.is_rect_visible(rect) {
         let p = ui.painter();
@@ -550,20 +600,15 @@ pub fn choice_row(ui: &mut Ui, on: bool, name: &str, about: &str) -> egui::Respo
             p.rect_filled(rect, CornerRadius::same(9), Color32::from_black_alpha(10));
         }
         let x = rect.left() + 12.0;
+        let top = rect.center().y - (about.size().y + 20.0) / 2.0;
         p.text(
-            Pos2::new(x, rect.center().y - 9.0),
-            egui::Align2::LEFT_CENTER,
+            Pos2::new(x, top),
+            egui::Align2::LEFT_TOP,
             name,
             FontId::new(14.0, semibold()),
             INK,
         );
-        p.text(
-            Pos2::new(x, rect.center().y + 10.0),
-            egui::Align2::LEFT_CENTER,
-            about,
-            FontId::proportional(12.0),
-            MUTED,
-        );
+        p.galley(Pos2::new(x, top + 20.0), about, MUTED);
     }
     resp
 }
@@ -641,7 +686,37 @@ pub fn item_row(
     tags: &[&str],
 ) -> egui::Response {
     let w = ui.available_width();
-    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, 56.0), Sense::click());
+    // Lay the text out first: a long title takes a second line and the row
+    // grows to fit it, rather than cutting the title short.
+    let tag_w: f32 = tags
+        .iter()
+        .map(|t| {
+            ui.painter()
+                .layout_no_wrap((*t).to_owned(), FontId::new(11.0, semibold()), INK)
+                .size()
+                .x
+                + 16.0
+        })
+        .sum();
+    let room = (w - 10.0 - 36.0 - 12.0 - tag_w - 16.0).max(10.0);
+    let layout = |text: &str, font: FontId, color: Color32, rows: usize| {
+        let mut job = egui::text::LayoutJob::single_section(
+            text.to_owned(),
+            egui::TextFormat::simple(font, color),
+        );
+        job.wrap = egui::text::TextWrapping {
+            max_width: room,
+            max_rows: rows,
+            break_anywhere: false,
+            overflow_character: Some('…'),
+        };
+        ui.painter().layout_job(job)
+    };
+    let t = layout(title, FontId::new(14.0, semibold()), INK, 2);
+    let s = (!subtitle.is_empty()).then(|| layout(subtitle, FontId::proportional(12.0), MUTED, 1));
+    let text_h = t.size().y + s.as_ref().map_or(0.0, |s| 2.0 + s.size().y);
+    let (rect, resp) =
+        ui.allocate_exact_size(Vec2::new(w, (text_h + 18.0).max(56.0)), Sense::click());
     let mut label = title.to_owned();
     if !subtitle.is_empty() {
         label = format!("{label}\n{subtitle}");
@@ -668,25 +743,10 @@ pub fn item_row(
             right = paint_tag(ui, right, rect.center().y, t, ACCENT_DARK, bg) - 4.0;
         }
         let x = tile.right() + 12.0;
-        let room = (right - x - 6.0).max(10.0);
-        let line = |text: &str, font: FontId, color: Color32| {
-            let mut job = egui::text::LayoutJob::single_section(
-                text.to_owned(),
-                egui::TextFormat::simple(font, color),
-            );
-            job.wrap = egui::text::TextWrapping::truncate_at_width(room);
-            ui.painter().layout_job(job)
-        };
-        let t = line(title, FontId::new(14.0, semibold()), INK);
-        if subtitle.is_empty() {
-            let y = rect.center().y - t.size().y / 2.0;
-            ui.painter().galley(Pos2::new(x, y), t, INK);
-        } else {
-            let s = line(subtitle, FontId::proportional(12.0), MUTED);
-            let h = t.size().y + 2.0 + s.size().y;
-            let y = rect.center().y - h / 2.0;
-            let below = y + t.size().y + 2.0;
-            ui.painter().galley(Pos2::new(x, y), t, INK);
+        let y = rect.center().y - text_h / 2.0;
+        let below = y + t.size().y + 2.0;
+        ui.painter().galley(Pos2::new(x, y), t, INK);
+        if let Some(s) = s {
             ui.painter().galley(Pos2::new(x, below), s, MUTED);
         }
     }

@@ -22,6 +22,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -128,4 +132,27 @@ fun SectionLabel(text: String, modifier: Modifier = Modifier) {
         color = MaterialTheme.colorScheme.primary,
         modifier = modifier.padding(start = 16.dp, top = 16.dp, bottom = 8.dp),
     )
+}
+
+/**
+ * The app icon, drawn like contrib/icons/secret-vault-small.svg: a white
+ * keyhole on the signal-red tile, or on a green one while the vault is unlocked.
+ */
+@Composable
+fun AppIcon(size: Dp = 88.dp, unlocked: Boolean = false, modifier: Modifier = Modifier) {
+    val colors = if (unlocked) listOf(Color(0xFF2EB86B), Color(0xFF157542)) else listOf(Color(0xFFEE3B36), Color(0xFFB5161B))
+    Canvas(
+        modifier
+            .size(size)
+            .clip(RoundedCornerShape(size * (96f / 512f)))
+            .background(Brush.linearGradient(colors)),
+    ) {
+        val s = this.size.width / 512f
+        drawCircle(Color.White, radius = 86.8f * s, center = Offset(256f * s, 195.6f * s))
+        val p = Path().apply {
+            moveTo(216.8f * s, 237.6f * s); lineTo(186f * s, 411.2f * s)
+            lineTo(326f * s, 411.2f * s); lineTo(295.2f * s, 237.6f * s); close()
+        }
+        drawPath(p, Color.White)
+    }
 }

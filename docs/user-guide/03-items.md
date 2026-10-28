@@ -187,18 +187,56 @@ code in a different authenticator.
 
 ## Password generator
 
+The generator makes three styles of password. Pick the one that suits where
+the password goes:
+
+| Style | Looks like | Strength | Best for |
+| --- | --- | --- | --- |
+| Random characters | `q8!Zr-Vw2#nT7@LpX4$eK9` | About 156 bits at 24 characters | Anything the vault fills in for you; you never type it |
+| Three random words | `CupFishBiscuit` | About 39 bits for 3 words, 13 more per word | Passwords you must remember or type, such as a Wi-Fi password; use 4 or more words for anything important |
+| Apple style | `fokjyb-Xewpud-hamu4s` | About 74 bits | Passwords you type on a phone keyboard, and sites that demand a capital and a digit |
+
+**Three random words** is the advice of the UK National Cyber Security
+Centre (NCSC): three words picked at random are easy to remember and hard
+to guess, much harder than a single word with a few letters swapped for
+symbols. The words are picked by the computer from the EFF's list of 7,772
+common English words, so they really are random. That matters: words you
+choose yourself are far easier to guess. Three words is fine for a website,
+because websites slow guessing down; for a password that protects a lot,
+such as an email account or a vault's master password, use four or more.
+
+**Apple style** makes the kind of password iPhones and Macs suggest: three
+groups of six lower-case letters joined by hyphens, with one capital letter
+and one digit somewhere in them. The letters alternate between consonants
+and vowels so they are easy to read out and type.
+
+From the command line:
+
 ```sh
-vault gen                       # 24 characters with symbols
+vault gen                       # 24 random characters with symbols
 vault gen --length 32
 vault gen --no-symbols          # letters and digits only, for picky sites
 vault gen --no-ambiguous        # leaves out look-alikes such as 0/O and 1/l/I
+
+vault gen --words               # three random words, e.g. CupFishBiscuit
+vault gen --words 4             # four words
+vault gen --words --separator -           # Cup-Fish-Biscuit
+vault gen --words --no-capitals --separator " "   # cup fish biscuit
+vault gen --words --number-and-symbol     # CupFishBiscuit7!, for sites that demand them
+
+vault gen --apple               # e.g. fokjyb-Xewpud-hamu4s
 ```
 
-Length can be 8 to 256. Every password has at least one character of each
-kind selected (lower case, upper case, digits and, unless turned off,
-symbols). The desktop app has the same options with a length slider from
-8 to 64. The browser popup's **Generate password** button makes a password
-with the default settings and copies it.
+For random characters the length can be 8 to 256, and every password has at
+least one character of each kind selected (lower case, upper case, digits
+and, unless turned off, symbols). Words can be 3 to 10, with up to three
+characters between them.
+
+The desktop app ([Generator](05-desktop-app.md#generator)) and the phone
+apps ([Generator tab](14-phone-apps.md#password-generator)) have the same
+three styles and show how strong each is. The browser popup has a style menu
+next to **Generate password**: random characters (24), three random words,
+or Apple style.
 
 ## Import from another password manager
 

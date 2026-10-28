@@ -71,33 +71,41 @@ struct TotpRing: View {
     }
 }
 
-/// The app icon: white keyhole on the signal-red tile.
+/// The app icon: white keyhole on the signal-red tile, or on a green one
+/// while the vault is unlocked.
 struct AppIconView: View {
     var size: CGFloat = 84
+    var unlocked = false
+
+    private var colors: [Color] {
+        unlocked
+            ? [Color(red: 0.18, green: 0.72, blue: 0.42), Color(red: 0.08, green: 0.46, blue: 0.26)]
+            : [Color(red: 0.93, green: 0.23, blue: 0.21), Color(red: 0.71, green: 0.09, blue: 0.11)]
+    }
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: size * 0.26, style: .continuous)
-                .fill(LinearGradient(colors: [Color(red: 0.93, green: 0.23, blue: 0.21), Color(red: 0.71, green: 0.09, blue: 0.11)],
-                                     startPoint: .topLeading, endPoint: .bottomTrailing))
-            Keyhole().fill(.white).frame(width: size * 0.48, height: size * 0.48)
+            RoundedRectangle(cornerRadius: size * 96 / 512, style: .continuous)
+                .fill(LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing))
+            Keyhole().fill(.white)
         }
         .frame(width: size, height: size)
-        .shadow(color: Color(red: 0.71, green: 0.09, blue: 0.11).opacity(0.25), radius: 14, y: 8)
+        .shadow(color: colors[1].opacity(size > 40 ? 0.25 : 0), radius: 14, y: 8)
         .accessibilityHidden(true)
     }
 }
 
-/// The keyhole from contrib/icons/generate.py on a 40-unit grid.
+/// The keyhole of contrib/icons/secret-vault-small.svg, on its 512 grid.
 struct Keyhole: Shape {
     func path(in r: CGRect) -> Path {
-        let s = r.width / 40
+        let s = r.width / 512
+        let at = { (x: CGFloat, y: CGFloat) in CGPoint(x: r.minX + x * s, y: r.minY + y * s) }
         var p = Path()
-        p.addEllipse(in: CGRect(x: 13 * s, y: 8 * s, width: 14 * s, height: 14 * s))
-        p.move(to: CGPoint(x: 16 * s, y: 19 * s))
-        p.addLine(to: CGPoint(x: 14 * s, y: 32 * s))
-        p.addLine(to: CGPoint(x: 26 * s, y: 32 * s))
-        p.addLine(to: CGPoint(x: 24 * s, y: 19 * s))
+        p.addEllipse(in: CGRect(origin: at(256 - 86.8, 195.6 - 86.8), size: CGSize(width: 173.6 * s, height: 173.6 * s)))
+        p.move(to: at(216.8, 237.6))
+        p.addLine(to: at(186, 411.2))
+        p.addLine(to: at(326, 411.2))
+        p.addLine(to: at(295.2, 237.6))
         p.closeSubpath()
         return p
     }

@@ -14,6 +14,61 @@ to work yet.
 
 ## Unreleased
 
+### Easier passwords, codes added from the Codes screen, and the real app icon
+
+- **Three random words.** The generator can now make passwords the way the
+  UK National Cyber Security Centre recommends: three random words run
+  together, such as `CupFishBiscuit`. They are easy to remember and to type
+  on a phone. You can pick 3 to 10 words, what goes between them, whether
+  each starts with a capital, and an optional digit and symbol at the end
+  for sites that insist on them. Words come from the EFF's list of 7,772
+  common words.
+- **Apple-style passwords.** A second new style makes passwords like the
+  ones iPhones and Macs suggest: three groups of six letters joined by
+  hyphens, with one capital and one digit, such as `fokjyb-Xewpud-hamu4s`.
+  About 74 bits, roughly as hard to guess as an 11-character random password,
+  but much easier to type.
+- **Every app has the styles.** Desktop app (Generator page), command line
+  (`vault gen --words`, `vault gen --apple`), browser extension (a style
+  menu next to **Generate password**), iPhone, iPad and Android (Generator
+  tab). Each shows roughly how strong its passwords are. The style you pick
+  is also what **Generate** (or the dice) uses in the item editor.
+- **Add a one-time code from the Codes screen (iPhone, iPad and Android).**
+  The Codes tab has an **Add Code** button: scan the site's QR code or
+  paste its setup key, then keep the code on a new login or on a login you
+  already have. Before, you had to edit a login to add a code.
+- **The real app icon inside the app, green when unlocked.** The plain dark
+  padlock at the top left of the desktop app is replaced by the app's own
+  keyhole icon. It is red while the vault is locked and green while it is
+  unlocked. The iPhone Items screen, the iPad status pill and the Android
+  items screen show the same green icon; tap it to lock.
+- **Long text wraps instead of overlapping (desktop).** Long item names,
+  usernames, web addresses and descriptions now wrap. Edit and Delete no
+  longer cover a long item name, and move under it in a narrow window; copy
+  buttons move under their value too. The item list shows names on two
+  lines, the sidebar scrolls instead of running into the version line, and
+  the top bar hides the lock timer before anything overlaps. In a narrow
+  window the sidebar, item list and margins slim down so an item's details
+  stay inside the window instead of running off its left edge. On phones,
+  item names take up to two lines and long email addresses are shortened in
+  the middle so both ends stay visible.
+- How to start: [the generator](user-guide/03-items.md#password-generator),
+  [the desktop Generator page](user-guide/05-desktop-app.md#generator) and
+  [one-time codes on phones](user-guide/14-phone-apps.md#one-time-codes).
+
+| | Linux, Windows, macOS desktop app | Command line | Browser extension | iPhone and iPad | Android |
+| --- | --- | --- | --- | --- | --- |
+| Three random words | Yes, with all options | `vault gen --words` with all options | Yes, 3 words with capitals | Yes, with all options | Yes, with all options |
+| Apple style | Yes | `vault gen --apple` | Yes | Yes | Yes |
+| Add a code from the Codes screen | Not yet (edit the login) | Not yet (`vault edit`) | No | Yes, with the camera | Yes, with the camera (Google Play services scanner) |
+| Green icon when unlocked | Top left of the window | No | No | Items screen (phone), status pill (iPad) | Items screen |
+
+Known limits: the browser extension always makes three capitalised words
+(change the details in the desktop app or with `vault gen`). The desktop app
+has no Add Code button on its own yet. The extension needs the matching new
+`vault-native-host` and `vaultd`; an older `vaultd` answers "unknown
+request" for the new styles. No vault file change.
+
 ### Apps for iPhone, iPad and Android
 
 - **Your vault on your phone and tablet.** New apps for iPhone and iPad

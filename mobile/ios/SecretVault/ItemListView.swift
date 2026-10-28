@@ -43,7 +43,12 @@ struct ItemListView: View {
         .toolbar {
             if width != .regular {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button { vault.lock() } label: { Label("Lock", systemImage: "lock") }
+                    // The app icon, green while unlocked; tapping it locks.
+                    Button { vault.lock() } label: {
+                        Label { Text("Lock") } icon: { AppIconView(size: 28, unlocked: true) }
+                    }
+                    .accessibilityLabel("Lock")
+                    .accessibilityHint("The vault is unlocked")
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
@@ -112,9 +117,10 @@ struct ItemRow: View {
         HStack(spacing: 12) {
             LetterTile(title: item.title)
             VStack(alignment: .leading, spacing: 2) {
-                Text(item.title).font(.body.weight(.medium)).lineLimit(1)
+                Text(item.title).font(.body.weight(.medium)).lineLimit(2)
+                // Middle truncation keeps both ends of a long email address.
                 Text(item.subtitle.isEmpty ? item.kind.label : item.subtitle)
-                    .font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                    .font(.subheadline).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
             }
             Spacer(minLength: 4)
             if item.hasKey {

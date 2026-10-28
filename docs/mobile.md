@@ -28,7 +28,9 @@ on a phone opens on a computer and the other way round.
 | `LockedVault(bytes)` | Parses a vault file; lists unlock methods; `unlock_password`, `unlock_recovery`, `resume` (quick unlock) |
 | `VaultSession` | An unlocked vault: `items`, `item`, `save_item`, `delete_item`, `totp`, `logins_for` (origin-matched, for AutoFill), `to_bytes`, `park`, `merge` |
 | `create_vault` | A new vault with a password slot and a recovery code, at the desktop's default Argon2id cost |
-| `generate_password`, `preview_totp`, `host_of` | Helpers for the editor and the generator |
+| `generate_password`, `generate_styled`, `password_strength` | The generator: random characters, three random words or Apple style (vault-core `generator::Style`), and its strength in bits |
+| `preview_totp`, `code_label`, `VaultSession::add_code` | One-time codes: check a setup key, read the issuer and account from an `otpauth://` link, and add a code to a login or a new login from the Codes screen |
+| `host_of` | Helper for the editor |
 
 Errors arrive as one `MobileError` type whose message is a finished sentence
 for the user.

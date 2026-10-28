@@ -121,7 +121,11 @@ async function handle(msg) {
     case "fillIdentity":
       return fillForm("identity", msg.id);
     case "generate":
-      return host({ type: "generate", length: 24 });
+      return host({
+        type: "generate",
+        length: 24,
+        style: ["random", "words", "apple"].includes(msg.style) ? msg.style : "random",
+      });
     default:
       return { ok: false, error: "unknown request" };
   }

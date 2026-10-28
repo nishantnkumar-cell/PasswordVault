@@ -102,7 +102,7 @@ pub enum ClientScope {
 }
 
 /// Character classes for `Generate`.
-#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct GenerateOptions {
     /// Length in characters.
     pub length: u16,
@@ -110,6 +110,81 @@ pub struct GenerateOptions {
     pub symbols: bool,
     /// Drop look-alike characters.
     pub avoid_ambiguous: bool,
+}
+
+impl Default for GenerateOptions {
+    fn default() -> Self {
+        GenerateOptions {
+            length: 24,
+            symbols: true,
+            avoid_ambiguous: false,
+        }
+    }
+}
+
+/// What `GenerateStyled` makes.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub enum PasswordStyle {
+    /// Random characters.
+    Random(GenerateOptions),
+    /// Random words, as the UK NCSC's "three random words".
+    Words {
+        /// 3 to 10.
+        words: u8,
+        /// Up to 3 characters between words; may be empty.
+        separator: String,
+        /// Start each word with a capital letter.
+        capitalize: bool,
+        /// End with a digit and a symbol.
+        number_and_symbol: bool,
+    },
+    /// Apple style: `fokjyb-Xewpud-hamu4s`.
+    Apple,
+}
+
+impl Default for PasswordStyle {
+    fn default() -> Self {
+        PasswordStyle::Random(GenerateOptions::default())
+    }
+}
+
+impl PasswordStyle {
+    /// NCSC's three random words, written together with capitals.
+    pub fn three_random_words() -> Self {
+        PasswordStyle::Words {
+            words: 3,
+            separator: String::new(),
+            capitalize: true,
+            number_and_symbol: false,
+        }
+    }
+
+    /// The generator style this asks for, with the length kept to 8 to 256.
+    pub fn to_core(&self) -> vault_core::generator::Style {
+        use vault_core::generator::{Charset, Style};
+        match self {
+            PasswordStyle::Random(o) => Style::Random {
+                length: usize::from(o.length.clamp(8, 256)),
+                charset: Charset {
+                    symbols: o.symbols,
+                    avoid_ambiguous: o.avoid_ambiguous,
+                    ..Charset::default()
+                },
+            },
+            PasswordStyle::Words {
+                words,
+                separator,
+                capitalize,
+                number_and_symbol,
+            } => Style::Words {
+                words: usize::from(*words),
+                separator: separator.clone(),
+                capitalize: *capitalize,
+                number_and_symbol: *number_and_symbol,
+            },
+            PasswordStyle::Apple => Style::Apple,
+        }
+    }
 }
 
 /// Formats accepted by `Import`.
@@ -311,6 +386,9 @@ pub enum Request {
     /// Keyring or KWallet) into the vault as app passwords (Linux). Run it
     /// before vaultd takes over the Secret Service.
     ImportAppPasswords,
+    /// Generate a password in any style. Added after `Generate`, which stays
+    /// for older clients.
+    GenerateStyled { style: PasswordStyle },
 }
 
 /// A program allowed to use the Secret Service.
