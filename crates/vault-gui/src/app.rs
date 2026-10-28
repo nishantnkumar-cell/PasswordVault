@@ -136,6 +136,10 @@ enum Op {
     SetupSlot(setup::Extra),
     /// Windows Hello or Touch ID quick unlock turned on from the wizard.
     SetupHello,
+    /// Programs allowed to use app passwords (Linux).
+    AppApprovals,
+    RevokeApp,
+    ImportApps,
 }
 
 /// Which screen is showing.
@@ -162,6 +166,8 @@ pub enum View {
     Sync,
     /// Encrypt, decrypt, sign and verify with OpenPGP keys.
     Pgp,
+    /// Passwords apps keep through the Secret Service (Linux).
+    Apps,
 }
 
 /// Which items the list shows.
@@ -674,6 +680,8 @@ pub struct App {
     confirm_remove: Option<SlotId>,
 
     sync_path: String,
+    /// Programs allowed to use app passwords, from the last listing.
+    app_approvals: Vec<vault_ipc::AppApproval>,
     /// Hours picked on the quick unlock form; `None` until first shown.
     quick_hours: Option<u32>,
 
@@ -744,6 +752,7 @@ impl App {
             new_recovery: None,
             confirm_remove: None,
             sync_path: String::new(),
+            app_approvals: Vec::new(),
             quick_hours: None,
             copied: None,
             styled: false,
@@ -1044,6 +1053,32 @@ impl App {
                     None => "Sync is off.".into(),
                 });
                 self.on_status(s);
+            }
+            (Op::AppApprovals, Response::AppApprovals(list)) => self.app_approvals = list,
+            (Op::RevokeApp, Response::Ok) => {
+                self.notice =
+                    Some("Approval taken back. That program is asked again next time.".into());
+                self.send(Op::AppApprovals, Request::AppApprovals);
+            }
+            (
+                Op::ImportApps,
+                Response::AppPasswordsImported {
+                    imported,
+                    already,
+                    skipped,
+                },
+            ) => {
+                let mut n = format!(
+                    "Imported {imported} app passwords; {already} were already in the vault."
+                );
+                if !skipped.is_empty() {
+                    n.push_str(&format!(
+                        " Still locked, not imported: {}.",
+                        skipped.join(", ")
+                    ));
+                }
+                self.notice = Some(n);
+                self.send(Op::ListItems, Request::ListItems);
             }
             _ => self.error = Some("Unexpected answer from vaultd.".into()),
         }
@@ -1371,6 +1406,102 @@ impl App {
         ui.label(RichText::new(sync_example()).weak());
         let ok = self.busy.is_none() && !self.sync_path.trim().is_empty();
         ui.add_enabled(ok, egui::Button::new(button)).clicked() && ok
+    }
+
+    /// Programs allowed to use the Secret Service, and importing from GNOME
+    /// Keyring or KWallet (Linux).
+    fn apps_page(&mut self, ui: &mut Ui) {
+        page_header(
+            ui,
+            "App passwords",
+            "Passwords that apps such as mail and chat clients keep through the Secret \
+             Service, when vaultd runs with --secret-service. Each program is allowed once \
+             in an approval window, and only sees these passwords, never your own items.",
+        );
+        let ok = self.busy.is_none();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs());
+        let mut revoke = None;
+        theme::card().show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.label(
+                RichText::new("Programs allowed")
+                    .family(theme::semibold())
+                    .color(theme::INK),
+            );
+            ui.add_space(6.0);
+            if self.app_approvals.is_empty() {
+                ui.label(RichText::new("None since vaultd started.").color(theme::MUTED));
+                return;
+            }
+            egui::Grid::new("app-approvals")
+                .num_columns(3)
+                .spacing([16.0, 8.0])
+                .show(ui, |ui| {
+                    for a in &self.app_approvals {
+                        ui.add(
+                            egui::Label::new(
+                                RichText::new(&a.program).monospace().color(theme::INK),
+                            )
+                            .wrap(),
+                        );
+                        ui.label(
+                            RichText::new(format!("allowed {}", ago(now.saturating_sub(a.since))))
+                                .color(theme::MUTED),
+                        );
+                        if ui.add_enabled(ok, egui::Button::new("Take back")).clicked() {
+                            revoke = Some(Some(a.program.clone()));
+                        }
+                        ui.end_row();
+                    }
+                });
+            ui.add_space(8.0);
+            if ui
+                .add_enabled(ok, egui::Button::new("Take back all"))
+                .clicked()
+            {
+                revoke = Some(None);
+            }
+            ui.add_space(4.0);
+            ui.label(
+                RichText::new("Approvals end when vaultd restarts.")
+                    .small()
+                    .color(theme::MUTED),
+            );
+        });
+        if let Some(program) = revoke {
+            self.act(
+                "Taking back…",
+                Op::RevokeApp,
+                Request::RevokeAppApproval { program },
+            );
+        }
+        ui.add_space(12.0);
+        theme::card().show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.label(
+                RichText::new("Import from GNOME Keyring or KWallet")
+                    .family(theme::semibold())
+                    .color(theme::INK),
+            );
+            ui.add_space(6.0);
+            ui.add(
+                egui::Label::new(
+                    RichText::new(
+                        "Copies every password they hold into this vault, so apps find them \
+                         after vaultd takes over. Do this while GNOME Keyring or KWallet is \
+                         still running; it may ask for its password.",
+                    )
+                    .color(theme::MUTED),
+                )
+                .wrap(),
+            );
+            ui.add_space(8.0);
+            if theme::primary_icon(ui, ok, Icon::Import, "Import").clicked() && ok {
+                self.act("Importing…", Op::ImportApps, Request::ImportAppPasswords);
+            }
+        });
     }
 
     fn sync_page(&mut self, ui: &mut Ui) {
@@ -1758,6 +1889,14 @@ impl App {
                     });
                 });
             }
+            View::Apps => {
+                egui::CentralPanel::default().frame(page).show(ui, |ui| {
+                    self.messages(ui);
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        self.apps_page(ui);
+                    });
+                });
+            }
         }
         if self.palette.is_some() {
             self.palette(ui);
@@ -1774,6 +1913,9 @@ impl App {
         self.notice = None;
         if v == View::Slots {
             self.send(Op::ListSlots, Request::ListSlots);
+        }
+        if v == View::Apps {
+            self.send(Op::AppApprovals, Request::AppApprovals);
         }
     }
 
@@ -2054,7 +2196,11 @@ impl App {
             (View::Slots, Icon::Shield, "Unlock methods"),
             (View::Sync, Icon::Sync, "Sync"),
             (View::Pgp, Icon::Mail, "Encrypt and sign"),
+            (View::Apps, Icon::Key, "App passwords"),
         ] {
+            if v == View::Apps && !cfg!(target_os = "linux") {
+                continue;
+            }
             if theme::nav_row(ui, self.view == v, icon, name, None).clicked() {
                 go = Some((v, self.filter));
             }
@@ -2697,8 +2843,12 @@ impl App {
             ("Import items", Action::Go(View::Import)),
             ("Unlock methods", Action::Go(View::Slots)),
             ("Sync devices", Action::Go(View::Sync)),
+            ("App passwords", Action::Go(View::Apps)),
             ("Lock now", Action::Lock),
         ] {
+            if matches!(action, Action::Go(View::Apps)) && !cfg!(target_os = "linux") {
+                continue;
+            }
             if q.is_empty() || label.to_lowercase().contains(&q) {
                 rows.push(("Vault", label.to_owned(), action));
             }

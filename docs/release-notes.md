@@ -14,6 +14,28 @@ to work yet.
 
 ## Unreleased
 
+### See and take back app approvals, and import from GNOME Keyring or KWallet
+
+- **See and take back approvals.** The programs you allowed to use app
+  passwords are listed on the desktop app's new **App passwords** page and
+  by `vault apps`. **Take back** (or `vault apps revoke PROGRAM`, or
+  `--all`) makes that program ask again next time.
+- **Bring your keyring's passwords along.** Before switching vaultd on as
+  the Secret Service, **App passwords → Import** (or `vault apps import`)
+  copies every password GNOME Keyring or KWallet holds into the vault, so
+  apps find them after the switch. A locked keyring asks for its own
+  password first; one that stays locked is skipped and named. Running it
+  again copies only what is new, and nothing is removed from the keyring.
+- **How to use it:**
+  [Bring your passwords over first](user-guide/12-secret-service.md#turn-it-on)
+  and [See and take back approvals](user-guide/12-secret-service.md#see-and-take-back-approvals).
+- **Platforms.** Linux only, like the Secret Service itself. The **App
+  passwords** page is not shown on Windows or macOS.
+- **Not yet.** Approvals still end when vaultd restarts (they are not saved).
+  Import reads the keyring while it is the running Secret Service, so it
+  must happen before vaultd takes over; it does not read keyring files
+  directly.
+
 ### Public downloads with checksums
 
 Every release is published on the
@@ -262,12 +284,10 @@ Platform differences:
 - **How to use it:** [Keep apps' passwords in the vault](user-guide/12-secret-service.md).
 - **Platforms.** Linux only. Windows (Credential Manager) and macOS
   (Keychain) have their own stores that are not replaced.
-- **Not yet.** Approvals last until vaultd restarts and can't be listed or
-  revoked yet. While the vault is locked, apps find no saved passwords (they
+- **Not yet.** Approvals last until vaultd restarts. While the vault is locked, apps find no saved passwords (they
   can't see that there are any), so some apps ask you to type the password
   again; unlock the vault first. There is one collection: apps that create
-  their own collections are refused. Passwords already in GNOME Keyring or
-  KWallet are not moved over.
+  their own collections are refused.
 
 ### One search bar and a New button that follows you
 
