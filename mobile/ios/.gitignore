@@ -2,3 +2,6 @@ Generated/
 *.xcodeproj/
 build/
 DerivedData/
+# Written by xcodegen from project.yml.
+*/Info.plist
+*/*.entitlements

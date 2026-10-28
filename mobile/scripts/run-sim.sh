@@ -26,6 +26,9 @@ emulator=$ANDROID_HOME/emulator/emulator
 
 stop_all() {
     xcrun simctl shutdown all 2>/dev/null || true
+    for app in "Device Hub" Simulator; do
+        osascript -e "if application \"$app\" is running then tell application \"$app\" to quit" 2>/dev/null || true
+    done
     if [[ -x $adb ]]; then
         for s in $("$adb" devices | awk '/^emulator-/{print $1}'); do "$adb" -s "$s" emu kill || true; done
     fi
