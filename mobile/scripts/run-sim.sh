@@ -49,10 +49,14 @@ ios)
         -quiet build
     xcrun simctl boot "$device" 2>/dev/null || true
     xcrun simctl bootstatus "$device" -b
-    # A reboot forgets Face ID enrolment; enrol so the app offers it.
+    xcrun simctl install "$device" build/Build/Products/Debug-iphonesimulator/SecretVault.app
+    # A reboot forgets Face ID enrolment, and enrolling straight after boot
+    # doesn't stick: wait for the home screen to settle, enrol, then start
+    # the app so it sees Face ID.
+    sleep 5
     xcrun simctl spawn "$device" notifyutil -s com.apple.BiometricKit.enrollmentChanged 1
     xcrun simctl spawn "$device" notifyutil -p com.apple.BiometricKit.enrollmentChanged
-    xcrun simctl install "$device" build/Build/Products/Debug-iphonesimulator/SecretVault.app
+    xcrun simctl terminate "$device" $pkg 2>/dev/null || true
     xcrun simctl launch "$device" $pkg
     # Xcode 27 shows simulators in Device Hub; older ones in Simulator.
     dev=${DEVELOPER_DIR:-$(xcode-select -p)}
