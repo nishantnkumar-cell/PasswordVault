@@ -14,6 +14,35 @@ to work yet.
 
 ## Unreleased
 
+### Public beta downloads
+
+- **Try Secret Vault before 0.2.0 is final.** Public betas are published on
+  the [Releases page](https://github.com/nishantnkumar-cell/PasswordVault/releases)
+  for anyone to download, no GitHub account needed. A beta has a version
+  such as `0.2.0-beta.1`, is labelled **Pre-release** on GitHub, and starts
+  its description with a warning. It has the same six downloads and
+  `SHA256SUMS.txt` as a full release: the Windows installer, the Linux
+  `.deb` and `.tar.gz`, the macOS `.pkg` and `.tar.gz`, and the browser
+  extension.
+- **Upgrading from a beta is the usual upgrade.** Installing 0.2.0 (or a
+  later beta) over `0.2.0-beta.1` keeps your vault, unlock methods and
+  settings, on every system. On Debian and Ubuntu, apt sorts the beta
+  before 0.2.0, so `apt install` of 0.2.0 upgrades it in place.
+- How to start: [Where to download](user-guide/11-versions-and-upgrades.md#where-to-download)
+  and [Betas](user-guide/11-versions-and-upgrades.md#betas-pre-releases).
+
+| | Windows | Linux | macOS |
+| --- | --- | --- | --- |
+| Beta downloads | Installer (`.exe`) | `.deb`, `.tar.gz` | `.pkg`, `.tar.gz` |
+| One-time warning (unsigned) | SmartScreen: **More info** > **Run anyway** | None | **Open Anyway** in Privacy & Security |
+
+Known limits: betas are not security audited, so do not trust one with real
+secrets yet and keep a backup of your vault file. The iPhone, iPad and
+Android apps are not on the Releases page (they need app store accounts);
+see [Phone and tablet apps](user-guide/14-phone-apps.md). GitHub's
+"latest release" link skips betas, so link to the Releases page itself
+while only betas exist. No vault file change.
+
 ### Easier passwords, codes added from the Codes screen, and the real app icon
 
 - **Three random words.** The generator can now make passwords the way the
@@ -139,7 +168,7 @@ change: computers and phones read the same files.
 ### Public downloads with checksums
 
 Every release is published on the
-[Releases page](https://github.com/nishantnkumar-cell/PasswordVault/releases/latest)
+[Releases page](https://github.com/nishantnkumar-cell/PasswordVault/releases)
 for anyone to download, no GitHub account needed: the Windows installer, the
 Linux `.deb` and `.tar.gz`, the macOS `.pkg` and `.tar.gz`, and the browser
 extension. New with this release:

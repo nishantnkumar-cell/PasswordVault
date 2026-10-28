@@ -62,7 +62,9 @@ if [ "$1" = configure ] && [ -n "$2" ]; then
 fi
 POSTINST
 chmod 755 "$root/DEBIAN/postinst"
-dpkg-deb --root-owner-group --build "$root" "$out/secret-vault_${debver}_amd64.deb" >/dev/null
+# The file name keeps the hyphen (secret-vault_0.2.0-beta.1_amd64.deb) to match
+# the other downloads; inside, Version uses "~" so apt sorts it before 0.2.0.
+dpkg-deb --root-owner-group --build "$root" "$out/secret-vault_${ver}_amd64.deb" >/dev/null
 
 name=secret-vault-$ver-linux-x86_64
 tar_root=$work/$name
