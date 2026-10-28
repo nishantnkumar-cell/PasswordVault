@@ -31,6 +31,21 @@ const CLIENT_NAME: &str = "desktop app";
 const TOP_BAR: f32 = 60.0;
 /// Width of the sidebar, and of the app's name above it.
 const SIDEBAR: f32 = 236.0;
+/// The sidebar in a window narrower than [`NARROW`].
+const SIDEBAR_NARROW: f32 = 216.0;
+/// Below this window width the sidebar, list and page margins tighten so
+/// the open item keeps room to wrap its text.
+const NARROW: f32 = 900.0;
+
+/// Whether the window is narrow enough to tighten the layout.
+fn narrow(ctx: &egui::Context) -> bool {
+    ctx.content_rect().width() < NARROW
+}
+
+/// The sidebar's width for the window's size.
+fn sidebar_width(ctx: &egui::Context) -> f32 {
+    if narrow(ctx) { SIDEBAR_NARROW } else { SIDEBAR }
+}
 
 /// The system clipboard, or a stand-in for tests.
 pub trait Clip {
@@ -1682,25 +1697,31 @@ impl App {
             .show(ui, |ui| self.top_bar(ui));
         egui::Panel::left("nav")
             .resizable(false)
-            .exact_size(SIDEBAR)
+            .exact_size(sidebar_width(ui.ctx()))
             .frame(
                 egui::Frame::new()
                     .fill(theme::SIDEBAR)
                     .inner_margin(Margin::symmetric(12, 16)),
             )
             .show(ui, |ui| self.sidebar(ui));
+        let tight = narrow(ui.ctx());
         let page = egui::Frame::new()
             .fill(theme::GROUND)
-            .inner_margin(Margin::symmetric(32, 26));
+            .inner_margin(if tight {
+                Margin::symmetric(16, 20)
+            } else {
+                Margin::symmetric(32, 26)
+            });
         match self.view {
             View::Items => {
                 // The list gives way in a narrow window, so the item beside
                 // it keeps room to show its text.
-                let most = (ui.available_width() - 360.0).clamp(240.0, 480.0);
+                let least = if tight { 200.0 } else { 240.0 };
+                let most = (ui.available_width() - 360.0).clamp(least, 480.0);
                 egui::Panel::left("list")
                     .resizable(true)
                     .default_size(340.0)
-                    .size_range(240.0..=most)
+                    .size_range(least..=most)
                     .frame(
                         egui::Frame::new()
                             .fill(theme::SURFACE)
@@ -1782,7 +1803,8 @@ impl App {
     /// button for the open category, and Lock.
     fn top_bar(&mut self, ui: &mut Ui) {
         let full = ui.max_rect();
-        let brand = Rect::from_min_size(full.min, Vec2::new(SIDEBAR, full.height()));
+        let side = sidebar_width(ui.ctx());
+        let brand = Rect::from_min_size(full.min, Vec2::new(side, full.height()));
         ui.painter().rect_filled(brand, 0.0, theme::SIDEBAR);
         ui.painter().vline(
             brand.right(),
@@ -1806,7 +1828,7 @@ impl App {
             ui.add_space(2.0);
             ui.label(theme::title("Secret Vault", 15.0));
             let used = ui.cursor().left() - full.left();
-            ui.add_space(SIDEBAR - used + 20.0);
+            ui.add_space(side - used + 20.0);
 
             // Search: as wide as the room the buttons on the right leave.
             // In a narrow window the lock timer goes, then the shortcut
@@ -2047,7 +2069,7 @@ impl App {
         let mut go = None;
         // The version and hints at the bottom keep their room; on a short
         // window the categories and tools scroll instead of running under them.
-        let footer = if sync.is_some() { 84.0 } else { 64.0 };
+        let footer = if sync.is_some() { 96.0 } else { 76.0 };
         egui::ScrollArea::vertical()
             .id_salt("sidebar")
             .max_height((ui.available_height() - footer).max(80.0))
@@ -3911,11 +3933,12 @@ fn detail_row(ui: &mut Ui, left: impl FnOnce(&mut Ui), right: impl FnOnce(&mut U
             left(ui);
         });
         ui.add_space(6.0);
+        // The buttons wrap onto another line rather than run past the card.
         ui.allocate_ui_with_layout(
             Vec2::new(w, 0.0),
-            egui::Layout::right_to_left(egui::Align::Center),
+            egui::Layout::right_to_left(egui::Align::Center).with_main_wrap(true),
             |ui| {
-                ui.spacing_mut().item_spacing.x = 8.0;
+                ui.spacing_mut().item_spacing = Vec2::new(8.0, 8.0);
                 right(ui);
             },
         );

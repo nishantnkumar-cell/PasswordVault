@@ -654,7 +654,10 @@ program changes its line endings.
   their value, so nothing overlaps. In the item list a long name takes two
   lines; make the window wider or open the item to see all of it. On a
   small window the sidebar scrolls, and the top bar hides the lock timer
-  (and then the Ctrl K hint) to keep the search box usable.
+  (and then the Ctrl K hint) to keep the search box usable. In a window
+  narrower than about 900 pixels the sidebar, the item list and the page
+  margins get slimmer, so the open item keeps room to wrap. The window
+  can't be made narrower than 760 pixels.
 
 - The app checks the vault's state every 2 seconds without counting as
   activity, so the idle lock still happens while the window is open.

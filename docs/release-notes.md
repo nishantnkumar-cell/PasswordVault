@@ -47,7 +47,9 @@ to work yet.
   longer cover a long item name, and move under it in a narrow window; copy
   buttons move under their value too. The item list shows names on two
   lines, the sidebar scrolls instead of running into the version line, and
-  the top bar hides the lock timer before anything overlaps. On phones,
+  the top bar hides the lock timer before anything overlaps. In a narrow
+  window the sidebar, item list and margins slim down so an item's details
+  stay inside the window instead of running off its left edge. On phones,
   item names take up to two lines and long email addresses are shortened in
   the middle so both ends stay visible.
 - How to start: [the generator](user-guide/03-items.md#password-generator),
