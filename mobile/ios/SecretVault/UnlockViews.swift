@@ -96,6 +96,7 @@ struct RecoveryCodeView: View {
     let code: String
     let onDone: () -> Void
     @State private var saved = false
+    @State private var error: String?
 
     var body: some View {
         CenteredColumn {
@@ -113,14 +114,23 @@ struct RecoveryCodeView: View {
             Button("Copy (cleared in \(Prefs.clipboardSeconds) s)") { SecureClipboard.copy(code, sensitive: true) }
                 .padding(.top, 8)
             Toggle("I wrote it down", isOn: $saved).padding(.top, 16)
+            if let error {
+                Text(error).foregroundStyle(.red).multilineTextAlignment(.center).padding(.top, 16)
+            }
             Button {
-                if QuickUnlock.hardwareReady { try? vault.enableQuickUnlock() }
-                onDone()
+                guard QuickUnlock.hardwareReady, error == nil else { return onDone() }
+                do {
+                    try vault.enableQuickUnlock()
+                    onDone()
+                } catch {
+                    // Stay here so the reason is seen; the next tap continues without it.
+                    self.error = describe(error) + " You can turn it on later in Settings."
+                }
             } label: {
-                Text(QuickUnlock.hardwareReady ? "Continue and Use \(QuickUnlock.biometryName)" : "Continue").frame(maxWidth: .infinity)
+                Text(QuickUnlock.hardwareReady && error == nil ? "Continue and Use \(QuickUnlock.biometryName)" : "Continue").frame(maxWidth: .infinity)
             }
             .buttonStyle(.glassProminent).controlSize(.large).disabled(!saved).padding(.top, 20)
-            if QuickUnlock.hardwareReady {
+            if QuickUnlock.hardwareReady && error == nil {
                 Button("Continue Without \(QuickUnlock.biometryName)", action: onDone).disabled(!saved).padding(.top, 8)
             }
         }

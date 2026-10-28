@@ -238,6 +238,7 @@ fun RecoveryCodeScreen(vault: VaultRepository, code: String, onDone: () -> Unit)
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var saved by rememberSaveable { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
     CenteredPage {
         Spacer(Modifier.height(24.dp))
         Text("Your recovery code", style = MaterialTheme.typography.headlineMedium)
@@ -271,20 +272,28 @@ fun RecoveryCodeScreen(vault: VaultRepository, code: String, onDone: () -> Unit)
             Checkbox(checked = saved, onCheckedChange = null, modifier = Modifier.padding(12.dp))
             Text("I wrote it down", style = MaterialTheme.typography.bodyLarge)
         }
+        error?.let {
+            Text(it, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
+        }
         Spacer(Modifier.height(16.dp))
+        val offer = vault.quickUnlock.hardwareReady() && error == null
         Button(
             enabled = saved,
             onClick = {
                 scope.launch {
-                    if (vault.quickUnlock.hardwareReady()) {
-                        runCatching { vault.enableQuickUnlock(context.findActivity()) }
-                    }
-                    onDone()
+                    if (!offer) return@launch onDone()
+                    runCatching { vault.enableQuickUnlock(context.findActivity()) }
+                        // Stay here so the reason is seen; the next tap continues without it.
+                        .onSuccess { onDone() }
+                        .onFailure {
+                            if (it is QuickUnlock.Cancelled) onDone()
+                            else error = (it.message ?: "Fingerprint unlock could not be turned on.") + " You can turn it on later in Settings."
+                        }
                 }
             },
             modifier = Modifier.fillMaxWidth().height(56.dp),
-        ) { Text(if (vault.quickUnlock.hardwareReady()) "Continue and set up fingerprint unlock" else "Continue") }
-        if (vault.quickUnlock.hardwareReady()) {
+        ) { Text(if (offer) "Continue and set up fingerprint unlock" else "Continue") }
+        if (offer) {
             TextButton(enabled = saved, onClick = onDone) { Text("Continue without fingerprint unlock") }
         }
     }
