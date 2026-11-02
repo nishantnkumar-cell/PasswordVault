@@ -297,3 +297,178 @@ fn imported_certificates() {
     assert_eq!(out.status.code(), Some(2));
     assert!(text(&out.stderr).contains("No secret key"));
 }
+
+/// The options GPGME puts before every command (gpgme 1.18), reading the
+/// data from descriptor 0 through a special file name.
+const GPGME: &[&str] = &[
+    "--enable-special-filenames",
+    "--batch",
+    "--no-sk-comments",
+    "--status-fd",
+    "2",
+    "--no-tty",
+    "--charset",
+    "utf8",
+    "--enable-progress-filter",
+    "--exit-on-status-write-error",
+    "--logger-fd",
+    "2",
+];
+
+fn gpgme<'a>(args: &[&'a str]) -> Vec<&'a str> {
+    let mut v: Vec<&str> = GPGME.to_vec();
+    v.extend(args);
+    v
+}
+
+/// A signed message's literal data, and whether its signature verifies
+/// with `cert`.
+fn read_signed(bytes: &[u8], cert: &pgp::composed::SignedPublicKey) -> (Vec<u8>, bool) {
+    use pgp::composed::Message;
+    let m = Message::from_reader(bytes)
+        .map(|(m, _)| m)
+        .or_else(|_| Message::from_bytes(bytes))
+        .unwrap();
+    let mut m = m.decompress().unwrap();
+    let data = m.as_data_vec().unwrap();
+    let ok = m.is_signed()
+        && (m.verify(&cert.primary_key).is_ok()
+            || cert.public_subkeys.iter().any(|s| m.verify(&s.key).is_ok()));
+    (data, ok)
+}
+
+fn vault_cert(e: &Env) -> pgp::composed::SignedPublicKey {
+    let out = e.gpg(&["--export", "-a", "alex@example.com"], b"");
+    vaultd::pgp::certificate(&out.stdout).unwrap()
+}
+
+#[test]
+fn thunderbird_signs_through_gpgme() {
+    let e = setup();
+    let cert = vault_cert(&e);
+    // gpgme_get_key(ctx, "<key ID>", &key, 1)
+    let list = e.gpg(
+        &gpgme(&["--with-colons", "--list-secret-keys", "--", "alex"]),
+        b"",
+    );
+    assert!(list.status.success(), "{}", text(&list.stderr));
+    let sec = text(&list.stdout);
+    let id = sec
+        .lines()
+        .next()
+        .unwrap()
+        .split(':')
+        .nth(4)
+        .unwrap()
+        .to_owned();
+    assert!(sec.starts_with("sec:u:"));
+
+    // PGP/MIME signature: armored, text mode, detached.
+    let mail = b"Content-Type: text/plain\r\n\r\nHi Bo,\r\n";
+    let out = e.gpg(
+        &gpgme(&[
+            "--sign",
+            "--detach",
+            "--armor",
+            "--textmode",
+            "-u",
+            &id,
+            "--",
+            "-&0",
+        ]),
+        mail,
+    );
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(text(&out.stderr).contains("[GNUPG:] SIG_CREATED D 22 10 01 "));
+    let sig = vaultd::pgp::verify(std::slice::from_ref(&cert), mail, &out.stdout);
+    assert!(sig.unwrap().ends_with("Alex Example <alex@example.com>"));
+
+    // Signed before Thunderbird encrypts it: binary, the data inside.
+    let out = e.gpg(&gpgme(&["--sign", "-u", &id, "--", "-&0"]), mail);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(text(&out.stderr).contains("[GNUPG:] SIG_CREATED S 22 10 00 "));
+    assert_eq!(read_signed(&out.stdout, &cert), (mail.to_vec(), true));
+    assert_eq!(e.allow.0.lock().unwrap().len(), 2);
+}
+
+#[test]
+fn thunderbird_decrypts_through_gpgme() {
+    let e = setup();
+    let alex = vault_cert(&e);
+    let KeyData::OpenPgp { tsk: bo, .. } =
+        vaultd::pgp::generate("Bo Example <bo@example.org>", false, false).unwrap()
+    else {
+        panic!()
+    };
+    let bo_cert = vaultd::pgp::certificate(&bo).unwrap();
+    let mail = vaultd::pgp::encrypt(
+        std::slice::from_ref(&alex),
+        b"Hi Alex,\r\n",
+        true,
+        Some(&bo),
+    )
+    .unwrap();
+
+    // gpgme_op_decrypt_ext(ctx, GPGME_DECRYPT_UNWRAP, ...): the message
+    // inside, with Bo's signature for Thunderbird to check.
+    let out = e.gpg(
+        &gpgme(&["--decrypt", "--unwrap", "--output", "-", "--", "-&0"]),
+        &mail,
+    );
+    let err = text(&out.stderr);
+    assert!(out.status.success(), "{err}");
+    assert!(err.contains("[GNUPG:] DECRYPTION_OKAY"), "{err}");
+    assert_eq!(
+        read_signed(&out.stdout, &bo_cert),
+        (b"Hi Alex,\r\n".to_vec(), true)
+    );
+    assert!(!read_signed(&out.stdout, &alex).1);
+
+    // Plain decryption checks the signature itself: unknown signer first.
+    let out = e.gpg(&["--status-fd=2", "-d"], &mail);
+    let err = text(&out.stderr);
+    assert!(out.status.success(), "{err}");
+    assert!(err.contains("[GNUPG:] NO_PUBKEY "), "{err}");
+    assert_eq!(out.stdout, b"Hi Alex,\r\n");
+    let cert = vaultd::pgp::public_armored(&bo).unwrap();
+    assert!(e.gpg(&["--import"], cert.as_bytes()).status.success());
+    let out = e.gpg(&["--status-fd=2", "-d"], &mail);
+    let err = text(&out.stderr);
+    assert!(err.contains("[GNUPG:] GOODSIG "), "{err}");
+    assert!(err.contains("Bo Example <bo@example.org>"));
+    assert!(err.contains("[GNUPG:] TRUST_UNDEFINED 0 pgp"));
+    assert_eq!(out.stdout, b"Hi Alex,\r\n");
+}
+
+#[test]
+fn clear_signed_and_signed_messages_verify() {
+    let e = setup();
+    let out = e.gpg(
+        &["--clearsign", "-u", "alex"],
+        b"Release 1.0\n- fixed\n-- \nAlex\n",
+    );
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let signed = text(&out.stdout);
+    assert!(signed.starts_with("-----BEGIN PGP SIGNED MESSAGE-----"));
+    assert!(signed.contains("\n- - fixed"));
+    std::fs::write(e.path("release.asc"), &out.stdout).unwrap();
+
+    let out = e.gpg(&["--status-fd=1", "--verify", "release.asc"], b"");
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(text(&out.stdout).contains("[GNUPG:] GOODSIG "));
+    let tampered = signed.replace("1.0", "2.0");
+    let out = e.gpg(&["--status-fd=1", "--verify"], tampered.as_bytes());
+    assert_eq!(out.status.code(), Some(1));
+    assert!(text(&out.stdout).contains("[GNUPG:] BADSIG "));
+
+    // A signed message: verified, and its data printed with -o.
+    let out = e.gpg(&["-s", "-a"], b"inside");
+    assert!(out.status.success());
+    std::fs::write(e.path("msg.asc"), &out.stdout).unwrap();
+    let out = e.gpg(&["--status-fd=2", "-o", "-", "--verify", "msg.asc"], b"");
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert_eq!(out.stdout, b"inside");
+    // With no command, gpg's guess: a signed message is verified.
+    let out = e.gpg(&["--status-fd=2", "msg.asc"], b"");
+    assert!(text(&out.stderr).contains("[GNUPG:] GOODSIG "));
+}

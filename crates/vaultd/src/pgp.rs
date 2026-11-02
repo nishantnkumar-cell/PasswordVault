@@ -15,15 +15,18 @@
 //! and verifying RSA signatures (public operations) are allowed.
 
 use pgp::composed::{
-    ArmorOptions, Deserializable, DetachedSignature, EncryptionCaps, KeyType, Message,
-    MessageBuilder, SecretKeyParamsBuilder, SignedPublicKey, SignedSecretKey, SubkeyParamsBuilder,
+    ArmorOptions, CleartextSignedMessage, Deserializable, DetachedSignature, EncryptionCaps,
+    FullSignaturePacket, KeyType, Message, MessageBuilder, SecretKeyParamsBuilder, SignedPublicKey,
+    SignedSecretKey, SubkeyParamsBuilder,
 };
 use pgp::crypto::aead::{AeadAlgorithm, ChunkSize};
 use pgp::crypto::ecc_curve::ECCCurve;
 use pgp::crypto::hash::HashAlgorithm;
 use pgp::crypto::public_key::PublicKeyAlgorithm;
 use pgp::crypto::sym::SymmetricKeyAlgorithm;
+use pgp::packet::PacketTrait;
 use pgp::ser::Serialize;
+use pgp::types::CompressionAlgorithm;
 use pgp::types::{KeyDetails, KeyVersion, Password, SigningKey};
 use rand::rngs::OsRng;
 use vault_core::item::KeyData;
@@ -112,7 +115,34 @@ pub fn generate(user_id: &str, post_quantum: bool, confirm: bool) -> R<KeyData> 
         .can_sign(true)
         .can_encrypt(EncryptionCaps::None)
         .primary_user_id(user_id.trim().into())
+        // Without preferences, GnuPG falls back to SHA-1 when it signs mail
+        // that it also encrypts to this key, and Thunderbird rejects SHA-1
+        // signatures.
+        .preferred_hash_algorithms(
+            vec![
+                HashAlgorithm::Sha512,
+                HashAlgorithm::Sha384,
+                HashAlgorithm::Sha256,
+            ]
+            .into(),
+        )
+        .preferred_symmetric_algorithms(
+            vec![
+                SymmetricKeyAlgorithm::AES256,
+                SymmetricKeyAlgorithm::AES192,
+                SymmetricKeyAlgorithm::AES128,
+            ]
+            .into(),
+        )
+        .preferred_compression_algorithms(
+            vec![CompressionAlgorithm::ZLIB, CompressionAlgorithm::ZIP].into(),
+        )
         .subkeys(vec![sub.build().map_err(err)?]);
+    if post_quantum {
+        params.feature_seipd_v2(true).preferred_aead_algorithms(
+            vec![(SymmetricKeyAlgorithm::AES256, AeadAlgorithm::Ocb)].into(),
+        );
+    }
     let k = params.build().map_err(err)?.generate(OsRng).map_err(err)?;
     store(&k, confirm)
 }
@@ -202,6 +232,53 @@ pub fn sign(tsk: &[u8], data: &[u8], armor: bool, text: bool) -> R<Vec<u8>> {
     } else {
         sig.to_bytes().map_err(err)
     }
+}
+
+/// A signed message that carries `data` (gpg's `--sign`), or with
+/// `cleartext` a clear-signed text (`--clearsign`), which is always armored.
+/// `text`: a text signature, as for [`sign`].
+pub fn sign_message(
+    tsk: &[u8],
+    data: &[u8],
+    cleartext: bool,
+    armor: bool,
+    text: bool,
+) -> R<Vec<u8>> {
+    let k = secret(tsk)?;
+    if cleartext {
+        let text = std::str::from_utf8(data).map_err(|_| "clear-signed text must be UTF-8")?;
+        let text = trim_line_ends(text);
+        let msg =
+            CleartextSignedMessage::sign(OsRng, &text, &Box::new(signer(&k)), &Password::empty())
+                .map_err(err)?;
+        return msg.to_armored_bytes(ArmorOptions::default()).map_err(err);
+    }
+    let mut b = MessageBuilder::from_bytes("", data.to_vec());
+    if text {
+        b.sign_text();
+    }
+    b.sign(signer(&k), Password::empty(), HashAlgorithm::Sha512);
+    if armor {
+        b.to_armored_string(OsRng, ArmorOptions::default())
+            .map(String::into_bytes)
+            .map_err(err)
+    } else {
+        b.to_vec(OsRng).map_err(err)
+    }
+}
+
+/// `text` without spaces and tabs at the ends of its lines. A clear
+/// signature covers the text without them (RFC 9580, 7.2) and gpg removes
+/// them from what it prints too; rPGP's signer leaves them in, so a mail
+/// signature line "-- " would not verify anywhere else.
+fn trim_line_ends(text: &str) -> String {
+    text.split_inclusive('\n')
+        .map(|line| {
+            let body = line.trim_end_matches(['\r', '\n']);
+            let end = &line[body.len()..];
+            format!("{}{end}", body.trim_end_matches([' ', '\t']))
+        })
+        .collect()
 }
 
 /// Which of `certs` made `signature` over `data`: its fingerprint and
@@ -309,6 +386,84 @@ pub fn decrypt(tsk: &[u8], message: &[u8]) -> R<Zeroizing<Vec<u8>>> {
     Ok(Zeroizing::new(m.as_data_vec().map_err(err)?))
 }
 
+/// Decrypt `message` with `tsk` but keep what was inside the encryption:
+/// the OpenPGP message (uncompressed) with its signatures, as gpg's
+/// `--decrypt --unwrap` prints it. Thunderbird decrypts mail for external
+/// keys this way and checks the signatures itself.
+pub fn unwrap(tsk: &[u8], message: &[u8]) -> R<Zeroizing<Vec<u8>>> {
+    let k = secret(tsk)?;
+    let msg = Message::from_reader(message)
+        .map(|(m, _)| m)
+        .or_else(|_| Message::from_bytes(message))
+        .map_err(|e| format!("not an OpenPGP message: {e}"))?;
+    let mut m = msg
+        .decrypt(&Password::empty(), &k)
+        .map_err(err)?
+        .decompress()
+        .map_err(err)?;
+    let header = m
+        .literal_data_header()
+        .cloned()
+        .ok_or("the message holds no literal data")?;
+    // Reading to the end also checks the integrity tag and completes the
+    // signatures of a one-pass signed message.
+    let data = Zeroizing::new(m.as_data_vec().map_err(err)?);
+
+    // Signature layers, outermost first.
+    let mut layers: Vec<&[FullSignaturePacket]> = Vec::new();
+    let mut cur = &m;
+    while let Message::Signed { reader, .. } = cur {
+        layers.push(reader.signatures().unwrap_or_default());
+        cur = reader.get_ref();
+    }
+    let mut out = Zeroizing::new(Vec::with_capacity(data.len() + 1024));
+    let w = &mut *out;
+    for layer in &layers {
+        for p in layer.iter() {
+            if let FullSignaturePacket::Signature { signature } = p {
+                signature.to_writer_with_header(w).map_err(err)?;
+            }
+        }
+        for p in layer.iter() {
+            if let FullSignaturePacket::Ops { ops, .. } = p {
+                ops.to_writer_with_header(w).map_err(err)?;
+            }
+        }
+    }
+    write_literal(w, &header, &data);
+    for layer in layers.iter().rev() {
+        for p in layer.iter().rev() {
+            if let FullSignaturePacket::Ops { signature, .. } = p {
+                signature.to_writer_with_header(w).map_err(err)?;
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// A literal data packet (new format) with `header`'s mode, name and date.
+fn write_literal(out: &mut Vec<u8>, header: &pgp::packet::LiteralDataHeader, data: &[u8]) {
+    let name = header.file_name();
+    let name = &name[..name.len().min(255)];
+    let len = 1 + 1 + name.len() + 4 + data.len();
+    out.push(0xC0 | 11);
+    if len < 192 {
+        out.push(len as u8);
+    } else if len < 8384 {
+        let l = len - 192;
+        out.push((l >> 8) as u8 + 192);
+        out.push(l as u8);
+    } else {
+        out.push(0xFF);
+        out.extend_from_slice(&(len as u32).to_be_bytes());
+    }
+    out.push(u8::from(header.mode()));
+    out.push(name.len() as u8);
+    out.extend_from_slice(name);
+    out.extend_from_slice(&header.created().as_secs().to_be_bytes());
+    out.extend_from_slice(data);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -367,6 +522,70 @@ mod tests {
     #[test]
     fn post_quantum_keys_round_trip() {
         round_trip(true);
+    }
+
+    /// The literal data of a (decrypted) message, and whether its
+    /// signature verifies with `cert`.
+    fn read_signed(bytes: &[u8], cert: &SignedPublicKey) -> (Vec<u8>, bool) {
+        let m = Message::from_reader(bytes)
+            .map(|(m, _)| m)
+            .or_else(|_| Message::from_bytes(bytes))
+            .unwrap();
+        let mut m = m.decompress().unwrap();
+        let data = m.as_data_vec().unwrap();
+        let ok = m.is_signed()
+            && cert
+                .public_subkeys
+                .iter()
+                .map(|s| &s.key as &dyn pgp::types::VerifyingKey)
+                .chain([&cert.primary_key as &dyn pgp::types::VerifyingKey])
+                .any(|k| m.verify(k).is_ok());
+        (data, ok)
+    }
+
+    #[test]
+    fn unwrap_keeps_the_signature() {
+        for post_quantum in [false, true] {
+            let alice = tsk(generate("Alice <alice@example.com>", post_quantum, false).unwrap());
+            let bob = tsk(generate("Bob <bob@example.com>", post_quantum, false).unwrap());
+            let cert_a = certificate(&alice).unwrap();
+            let cert_b = certificate(&bob).unwrap();
+            let body = b"line one\r\nline two\r\n".repeat(500);
+
+            let ct = encrypt(std::slice::from_ref(&cert_b), &body, true, Some(&alice)).unwrap();
+            let inner = unwrap(&bob, &ct).unwrap();
+            assert_eq!(read_signed(&inner, &cert_a), (body.clone(), true));
+            // Signed by Alice, so Bob's key does not verify it.
+            assert!(!read_signed(&inner, &cert_b).1);
+            assert!(unwrap(&alice, &ct).is_err());
+
+            let ct = encrypt(std::slice::from_ref(&cert_b), b"plain", false, None).unwrap();
+            let inner = unwrap(&bob, &ct).unwrap();
+            assert_eq!(read_signed(&inner, &cert_a), (b"plain".to_vec(), false));
+        }
+    }
+
+    #[test]
+    fn signed_and_clear_signed_messages() {
+        let alice = tsk(generate("Alice <alice@example.com>", false, false).unwrap());
+        let cert = certificate(&alice).unwrap();
+        for (armor, text) in [(false, false), (true, false), (false, true)] {
+            let m = sign_message(&alice, b"to sign\n", false, armor, text).unwrap();
+            assert_eq!(armor, m.starts_with(b"-----BEGIN PGP MESSAGE-----"));
+            assert_eq!(read_signed(&m, &cert), (b"to sign\n".to_vec(), true));
+        }
+        let m = sign_message(
+            &alice,
+            b"Hello,\n- dash\n-- \nAlex \t\r\n",
+            true,
+            false,
+            false,
+        )
+        .unwrap();
+        let (msg, _) = CleartextSignedMessage::from_armor(&m[..]).unwrap();
+        assert!(msg.verify(&cert.primary_key).is_ok());
+        assert_eq!(msg.signed_text(), "Hello,\r\n- dash\r\n--\r\nAlex\r\n");
+        assert!(sign_message(&alice, &[0xff, 0xfe], true, true, false).is_err());
     }
 
     #[test]

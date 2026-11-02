@@ -116,6 +116,9 @@ const PROMPT_COOLDOWN: Duration = Duration::from_secs(10);
 
 type R<T> = Result<T, String>;
 
+/// `pgp::decrypt` or `pgp::unwrap`.
+type PgpOpen = fn(&[u8], &[u8]) -> R<Zeroizing<Vec<u8>>>;
+
 /// An OpenPGP key item: title, secret key, confirm flag.
 type PgpKey = (String, Zeroizing<Vec<u8>>, bool);
 
@@ -473,6 +476,21 @@ impl Daemon {
             }
             _ => Err(format!("\u{201c}{}\u{201d} has no OpenPGP key", it.title)),
         }
+    }
+
+    /// Decrypt (`pgp::decrypt`) or unwrap (`pgp::unwrap`) a message with
+    /// whichever vault key it is for.
+    fn pgp_open(&mut self, message: &[u8], open: PgpOpen) -> Result<Response, String> {
+        for (title, tsk, confirm) in self.pgp_keys()? {
+            if let Ok(plaintext) = open(&tsk, message) {
+                self.needs_approval(confirm, &title, "decrypt an OpenPGP message");
+                return Ok(Response::Decrypted {
+                    plaintext,
+                    key: title,
+                });
+            }
+        }
+        Err("no OpenPGP key in the vault can decrypt this message".into())
     }
 
     /// All OpenPGP keys in the vault, as `pgp_key` returns them, those that
@@ -1608,18 +1626,20 @@ impl Daemon {
                 self.needs_approval(confirm, &title, "sign data with OpenPGP");
                 Ok(Response::Bytes(sig))
             }
-            Request::PgpDecrypt { message } => {
-                for (title, tsk, confirm) in self.pgp_keys()? {
-                    if let Ok(plaintext) = pgp::decrypt(&tsk, &message) {
-                        self.needs_approval(confirm, &title, "decrypt an OpenPGP message");
-                        return Ok(Response::Decrypted {
-                            plaintext,
-                            key: title,
-                        });
-                    }
-                }
-                Err("no OpenPGP key in the vault can decrypt this message".into())
+            Request::PgpSignMessage {
+                id,
+                data,
+                cleartext,
+                armor,
+                text,
+            } => {
+                let (title, tsk, confirm) = self.pgp_key(&id)?;
+                let msg = pgp::sign_message(&tsk, &data, cleartext, armor, text)?;
+                self.needs_approval(confirm, &title, "sign data with OpenPGP");
+                Ok(Response::Bytes(msg))
             }
+            Request::PgpDecrypt { message } => self.pgp_open(&message, pgp::decrypt),
+            Request::PgpUnwrap { message } => self.pgp_open(&message, pgp::unwrap),
             Request::PgpEncrypt {
                 to_items,
                 to_certs,

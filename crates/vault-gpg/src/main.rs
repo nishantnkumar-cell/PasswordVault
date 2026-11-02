@@ -6,20 +6,28 @@
 //! keys never reach this process. Verification, key listings, import and
 //! export happen here, on certificates only.
 //!
-//! Only the subset of gpg those programs use is provided: detached
-//! signatures, verification of detached signatures, encryption (optionally
-//! signed), decryption, key listings (also `--with-colons`), import and
-//! export of certificates, and gpg's `--status-fd` lines.
+//! Only the subset of gpg those programs use is provided: detached,
+//! inline and clear signatures and their verification, encryption
+//! (optionally signed), decryption (with a check of the signature inside),
+//! key listings (also `--with-colons`), import and export of certificates,
+//! and gpg's `--status-fd` lines. It also speaks gpg as GPGME drives it
+//! (`-&N` file names, `--decrypt --unwrap`), so Thunderbird can use vault
+//! keys as "external GnuPG keys".
 
-#![forbid(unsafe_code)]
+// Only `fds::open` on Windows, which takes over a handle by number, needs it.
+#![deny(unsafe_code)]
 
 mod args;
+mod fds;
 mod keys;
 
 use std::io::{self, IsTerminal, Read, Write};
 use std::process::exit;
 
-use pgp::composed::{ArmorOptions, Deserializable, DetachedSignature, Esk, Message};
+use pgp::composed::{
+    ArmorOptions, CleartextSignedMessage, Deserializable, DetachedSignature, Esk,
+    FullSignaturePacket, Message,
+};
 use pgp::packet::Signature;
 use pgp::ser::Serialize;
 use pgp::types::KeyDetails;
@@ -36,14 +44,20 @@ Use it wherever a program runs gpg, for example:
 
 COMMANDS (gpg's spelling)
   -b, --detach-sign [FILE]        detached signature (-a: armored, -u KEY: which key)
+  -s, --sign [FILE]               signed message with the data inside
+  --clearsign [FILE]              clear-signed text
   -e, --encrypt -r KEY.. [FILE]   encrypt (add -s to sign as well)
-  -d, --decrypt [FILE]            decrypt with whichever vault key can
+  -d, --decrypt [FILE]            decrypt with whichever vault key can, and check
+                                  the signature inside (--unwrap: print the
+                                  message inside the encryption instead)
   --verify SIG DATA               verify a detached signature (DATA may be -)
+  --verify [FILE]                 verify a signed or clear-signed message
   -k, --list-keys [KEY..]         certificates: vault keys and imported ones
   -K, --list-secret-keys [KEY..]  vault keys
   --import [FILE..]               store certificates in the keyring directory
   --export [KEY..]                print certificates (-a: armored)
-  OPTIONS: -o FILE, --status-fd N, --with-colons, -t/--textmode, -q
+  OPTIONS: -o FILE, --status-fd N, --with-colons, -t/--textmode, -q,
+           --enable-special-filenames (-&N names descriptor or handle N)
 
 KEY may be a fingerprint, a key ID, an address, or part of a user ID.
 
@@ -66,16 +80,10 @@ impl Status {
             None => None,
             Some(1) => Some(Box::new(io::stdout())),
             Some(2) => Some(Box::new(io::stderr())),
-            #[cfg(unix)]
-            Some(n) => match std::fs::OpenOptions::new()
-                .append(true)
-                .open(format!("/dev/fd/{n}"))
-            {
+            Some(n) => match fds::open(n.into(), true) {
                 Ok(f) => Some(Box::new(f)),
                 Err(e) => die(format!("--status-fd {n}: {e}")),
             },
-            #[cfg(not(unix))]
-            Some(n) => die(format!("--status-fd {n}: only 1 and 2 are supported here")),
         };
         Status(w)
     }
@@ -193,6 +201,13 @@ impl Gpg {
     }
 
     fn input(&self, path: Option<&String>) -> Vec<u8> {
+        if let Some(n) = path.and_then(|p| fds::special(p, self.a.special_filenames)) {
+            let mut v = Vec::new();
+            fds::open(n, false)
+                .and_then(|mut f| f.read_to_end(&mut v))
+                .unwrap_or_else(|e| die(format!("-&{n}: {e}")));
+            return v;
+        }
         match path.map(String::as_str) {
             None | Some("-") => {
                 let mut v = Vec::new();
@@ -206,6 +221,16 @@ impl Gpg {
     }
 
     fn output(&self, bytes: &[u8]) {
+        if let Some(n) = self
+            .a
+            .output
+            .as_deref()
+            .and_then(|p| fds::special(p, self.a.special_filenames))
+        {
+            return fds::open(n, true)
+                .and_then(|mut f| f.write_all(bytes).and_then(|()| f.flush()))
+                .unwrap_or_else(|e| die(format!("-&{n}: {e}")));
+        }
         match self.a.output.as_deref() {
             None | Some("-") => {
                 let mut out = io::stdout();
@@ -276,7 +301,50 @@ impl Gpg {
         self.output(&sig);
     }
 
+    /// `--sign` (the data inside the signature) and `--clearsign`.
+    fn sign_message(&mut self) {
+        let keys = self.keys(true);
+        let k = self.signer(&keys);
+        let (id, primary) = (k.item.expect("vault key"), fpr(&k.cert.primary_key));
+        let cleartext = self.a.clearsign;
+        let data = self.input(self.a.files.first());
+        let Response::Bytes(msg) = self.call(Request::PgpSignMessage {
+            id,
+            data,
+            cleartext,
+            armor: self.a.armor || cleartext,
+            text: self.a.textmode,
+        }) else {
+            die("unexpected response")
+        };
+        let sig = if cleartext {
+            CleartextSignedMessage::from_armor(&msg[..])
+                .ok()
+                .and_then(|(m, _)| m.signatures().first().cloned())
+        } else {
+            open_message(&msg)
+                .ok()
+                .and_then(|o| o.signatures.into_iter().next())
+        }
+        .unwrap_or_else(|| die("the daemon returned a bad signature"));
+        let (signing_fpr, algo) = signing_key(k, &sig)
+            .unwrap_or_else(|| (primary.clone(), u8::from(k.cert.primary_key.algorithm())));
+        let hash = sig.hash_alg().map(u8::from).unwrap_or(0);
+        self.status.line(format!("KEY_CONSIDERED {primary} 0"));
+        self.status.line(format!("BEGIN_SIGNING H{hash}"));
+        self.status.line(format!(
+            "SIG_CREATED {} {algo} {hash} {:02X} {} {signing_fpr}",
+            if cleartext { 'C' } else { 'S' },
+            sig.typ().map(u8::from).unwrap_or(0),
+            sig.created().map(|t| t.as_secs()).unwrap_or(0),
+        ));
+        self.output(&msg);
+    }
+
     fn verify(&mut self) {
+        if self.a.files.len() < 2 {
+            return self.verify_message();
+        }
         let [sig_file, data_file] = self.a.files.as_slice() else {
             die(
                 "give the signature file and the signed data (- for stdin); \
@@ -289,8 +357,77 @@ impl Gpg {
             self.status.line("NODATA 1");
             die("no signature found");
         };
-        let s = &ds.signature;
         let keys = self.keys(false);
+        match self.check(&ds.signature, &data, &keys) {
+            Verdict::Good => exit(0),
+            Verdict::Bad => exit(1),
+            Verdict::NoKey => die(
+                "Can't check signature: No public key. Import the signer's certificate with \
+                 `vault-gpg --import FILE`",
+            ),
+        }
+    }
+
+    /// `--verify` of a signed or clear-signed message: check it, and print
+    /// the data with `-o`.
+    fn verify_message(&mut self) {
+        let bytes = self.input(self.a.files.first());
+        self.verify_bytes(bytes)
+    }
+
+    fn verify_bytes(&mut self, bytes: Vec<u8>) {
+        let (data, sigs) = match CleartextSignedMessage::from_armor(&bytes[..]) {
+            Ok((m, _)) => (m.signed_text().into_bytes(), m.signatures().to_vec()),
+            Err(_) => match open_message(&bytes) {
+                Ok(o) if !o.signatures.is_empty() => (o.data.to_vec(), o.signatures),
+                _ => {
+                    self.status.line("NODATA 1");
+                    die("no signed data found")
+                }
+            },
+        };
+        let keys = self.keys(false);
+        let verdict = self.check_all(&sigs, &data, &keys);
+        if self.a.output.is_some() {
+            // The text without its dash escapes, with this system's line
+            // endings.
+            let text = CleartextSignedMessage::from_armor(&bytes[..])
+                .map(|(m, _)| {
+                    let t = m.signed_text();
+                    if cfg!(windows) {
+                        t
+                    } else {
+                        t.replace("\r\n", "\n")
+                    }
+                    .into_bytes()
+                })
+                .unwrap_or(data);
+            self.output(&text);
+        }
+        match verdict {
+            Verdict::Good => exit(0),
+            Verdict::Bad => exit(1),
+            Verdict::NoKey => die("Can't check signature: No public key"),
+        }
+    }
+
+    /// Check each signature; the worst result wins.
+    fn check_all(&mut self, sigs: &[Signature], data: &[u8], keys: &[Key]) -> Verdict {
+        let mut worst = Verdict::Good;
+        for s in sigs {
+            match self.check(s, data, keys) {
+                Verdict::Bad => worst = Verdict::Bad,
+                Verdict::NoKey if worst == Verdict::Good => worst = Verdict::NoKey,
+                _ => {}
+            }
+        }
+        worst
+    }
+
+    /// Check one signature over `data` against `keys`, with gpg's status
+    /// lines and messages.
+    fn check(&mut self, s: &Signature, data: &[u8], keys: &[Key]) -> Verdict {
+        let ds = DetachedSignature::new(s.clone());
         let hash = s.hash_alg().map(u8::from).unwrap_or(0);
         let class = s.typ().map(u8::from).unwrap_or(0);
         let created = s.created().map(|t| t.as_secs()).unwrap_or(0);
@@ -325,19 +462,17 @@ impl Gpg {
                 issuer_fpr.as_deref().unwrap_or("-")
             ));
             self.status.line(format!("NO_PUBKEY {id}"));
-            die(
-                "Can't check signature: No public key. Import the signer's certificate with \
-                 `vault-gpg --import FILE`",
-            );
+            eprintln!("vault-gpg: Can't check signature: No public key");
+            return Verdict::NoKey;
         }
         for k in &candidates {
             let c = &k.cert;
-            let good = if ds.verify(c, &data).is_ok() {
+            let good = if ds.verify(c, data).is_ok() {
                 Some((fpr(&c.primary_key), keyid(&c.primary_key)))
             } else {
                 c.public_subkeys
                     .iter()
-                    .find(|sub| ds.verify(*sub, &data).is_ok())
+                    .find(|sub| ds.verify(*sub, data).is_ok())
                     .map(|sub| (fpr(&sub.key), keyid(&sub.key)))
             };
             let Some((signing_fpr, signing_id)) = good else {
@@ -369,14 +504,14 @@ impl Gpg {
                     fpr(&c.primary_key)
                 );
             }
-            exit(0);
+            return Verdict::Good;
         }
         let k = candidates[0];
         let uid = keys::first_uid(&k.cert);
         let id = issuer_id.unwrap_or_else(|| keyid(&k.cert.primary_key));
         self.status.line(format!("BADSIG {id} {uid}"));
         eprintln!("vault-gpg: BAD signature from \"{uid}\"");
-        exit(1);
+        Verdict::Bad
     }
 
     fn encrypt(&mut self) {
@@ -421,6 +556,10 @@ impl Gpg {
 
     fn decrypt(&mut self) {
         let message = self.input(self.a.files.first());
+        self.decrypt_bytes(message)
+    }
+
+    fn decrypt_bytes(&mut self, message: Vec<u8>) {
         for (id, algo) in recipients(&message) {
             self.status.line(format!("ENC_TO {id} {algo} 0"));
             if self.a.list_only || self.a.verbose {
@@ -431,25 +570,48 @@ impl Gpg {
             return;
         }
         self.status.line("BEGIN_DECRYPTION");
+        // The daemon removes the encryption only; the signature inside is
+        // checked here, against certificates.
         let r = self
             .client()
-            .and_then(|c| c.call(Request::PgpDecrypt { message }));
-        match r {
-            Ok(Response::Decrypted { plaintext, key }) => {
-                self.status.line("DECRYPTION_OKAY");
-                self.status.line("GOODMDC");
-                self.status.line("END_DECRYPTION");
-                if !self.a.quiet {
-                    eprintln!("vault-gpg: decrypted with \u{201c}{key}\u{201d}");
-                }
-                self.output(&plaintext);
-            }
+            .and_then(|c| c.call(Request::PgpUnwrap { message }));
+        let (inner, key) = match r {
+            Ok(Response::Decrypted { plaintext, key }) => (plaintext, key),
             Ok(_) => die("unexpected response"),
             Err(e) => {
                 self.status.line("DECRYPTION_FAILED");
                 self.status.line("END_DECRYPTION");
                 die(format!("decryption failed: {e}"));
             }
+        };
+        self.status.line("DECRYPTION_OKAY");
+        self.status.line("GOODMDC");
+        if !self.a.quiet {
+            eprintln!("vault-gpg: decrypted with \u{201c}{key}\u{201d}");
+        }
+        if self.a.unwrap {
+            self.status.line("END_DECRYPTION");
+            return self.output(&inner);
+        }
+        let opened = open_message(&inner)
+            .unwrap_or_else(|e| die(format!("the decrypted message cannot be read: {e}")));
+        self.status.line(format!(
+            "PLAINTEXT {:02x} {} {}",
+            opened.mode,
+            opened.created,
+            String::from_utf8_lossy(&opened.file_name).replace(' ', "%20")
+        ));
+        let verdict = if opened.signatures.is_empty() {
+            Verdict::Good
+        } else {
+            let keys = self.keys(false);
+            self.check_all(&opened.signatures, &opened.data, &keys)
+        };
+        self.status.line("END_DECRYPTION");
+        self.output(&opened.data);
+        // As gpg: a bad signature inside fails the command, after the data.
+        if verdict == Verdict::Bad {
+            exit(1);
         }
     }
 
@@ -552,6 +714,53 @@ impl Gpg {
     }
 }
 
+#[derive(Clone, Copy, PartialEq)]
+enum Verdict {
+    Good,
+    Bad,
+    NoKey,
+}
+
+/// A message's literal data and the signatures over it.
+struct Opened {
+    data: Zeroizing<Vec<u8>>,
+    signatures: Vec<Signature>,
+    mode: u8,
+    created: u32,
+    file_name: Vec<u8>,
+}
+
+/// Read a (decrypted) message: decompress it and collect the signatures of
+/// every signed layer. They are checked against the literal data like
+/// detached signatures, which is what they are over.
+fn open_message(bytes: &[u8]) -> Result<Opened, String> {
+    let m = Message::from_reader(bytes)
+        .map(|(m, _)| m)
+        .or_else(|_| Message::from_bytes(bytes))
+        .map_err(|e| e.to_string())?;
+    let mut m = m.decompress().map_err(|e| e.to_string())?;
+    let header = m.literal_data_header().cloned().ok_or("no literal data")?;
+    let data = Zeroizing::new(m.as_data_vec().map_err(|e| e.to_string())?);
+    let mut signatures = Vec::new();
+    let mut cur = &m;
+    while let Message::Signed { reader, .. } = cur {
+        for p in reader.signatures().unwrap_or_default() {
+            signatures.push(match p {
+                FullSignaturePacket::Ops { signature, .. }
+                | FullSignaturePacket::Signature { signature } => signature.clone(),
+            });
+        }
+        cur = reader.get_ref();
+    }
+    Ok(Opened {
+        data,
+        signatures,
+        mode: u8::from(header.mode()),
+        created: header.created().as_secs(),
+        file_name: header.file_name().to_vec(),
+    })
+}
+
 /// The key of `k` that `sig` names as its issuer: its fingerprint and
 /// algorithm ID.
 fn signing_key(k: &Key, sig: &Signature) -> Option<(String, u8)> {
@@ -581,6 +790,16 @@ fn fpr_to_keyid(f: &str) -> String {
     } else {
         f[f.len().saturating_sub(16)..].to_owned()
     }
+}
+
+/// A signed or clear-signed message, not an encrypted one.
+fn is_signed(bytes: &[u8]) -> bool {
+    CleartextSignedMessage::from_armor(bytes).is_ok()
+        || Message::from_reader(bytes)
+            .map(|(m, _)| m)
+            .or_else(|_| Message::from_bytes(bytes))
+            .and_then(Message::decompress)
+            .is_ok_and(|m| m.is_signed())
 }
 
 /// The key IDs (and algorithm IDs) a message is encrypted to.
@@ -640,12 +859,18 @@ fn main() {
         g.encrypt();
     } else if a.detach {
         g.detach_sign();
-    } else if a.sign {
-        die("only detached signatures are supported; use --detach-sign (-b)");
+    } else if a.sign || a.clearsign {
+        g.sign_message();
     } else if !g.a.files.is_empty() || !io::stdin().is_terminal() {
         // gpg guesses what to do with a message; mail clients rely on it
-        // to open encrypted mail. Encrypted is the only kind we read.
-        g.decrypt();
+        // to open encrypted mail.
+        let first = g.a.files.first().cloned();
+        let bytes = g.input(first.as_ref());
+        if recipients(&bytes).is_empty() && is_signed(&bytes) {
+            g.verify_bytes(bytes);
+        } else {
+            g.decrypt_bytes(bytes);
+        }
     } else {
         die("no command given; see vault-gpg --help");
     }

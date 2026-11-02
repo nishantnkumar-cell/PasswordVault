@@ -55,6 +55,40 @@ already has, edit the login (desktop) or use `vault code add --to ID
 --replace`. Delete the screenshot afterwards: anyone with it can make your
 codes. No vault file change.
 
+### Thunderbird signs and decrypts with your vault key
+
+- **Use a vault OpenPGP key in Thunderbird without giving Thunderbird the
+  key.** Thunderbird can treat a key as an "external GnuPG key"; point its
+  GnuPG path at `vault-gpg` and it signs mail and opens encrypted mail with
+  the key in your vault. The secret key stays in `vaultd`, and each
+  signature or decryption opens the approval window. Encrypting to others
+  and checking their signatures stays in Thunderbird, as before.
+- **Signed-and-encrypted mail now has its signature checked** by
+  `vault-gpg -d`, so NeoMutt and other programs that run gpg see whether it
+  is good (import the sender's public key first).
+- **Clear-signed and inline-signed messages.** `vault-gpg --clearsign` and
+  `vault-gpg --sign` make them, and `vault-gpg --verify FILE` checks them.
+- **New keys interoperate better.** Keys made from now on list preferred
+  algorithms (SHA-512, AES-256 and others). Without them, GnuPG users
+  sending you signed and encrypted mail signed it with SHA-1, which
+  Thunderbird rejects as invalid.
+- How to start: [Thunderbird](user-guide/09-gpg-programs.md#6-thunderbird)
+  in the user guide. `contrib/thunderbird/gpgme-check.py` checks the set-up
+  without Thunderbird.
+
+| | Linux | Windows | macOS |
+| --- | --- | --- | --- |
+| What to install (free) | GPGME from the distribution (`libgpgme11`), usually there already | Gpg4win, plus its `bin_64` folder on the system `Path` | `brew install gpgme` |
+| Tested | Thunderbird's GPGME calls with GPGME 1.18, results checked with RNP 0.17 and GnuPG 2.4 | Not yet | Not yet |
+
+Known limits: not yet clicked through in Thunderbird itself on any system.
+Thunderbird from a Snap or Flatpak cannot run `vault-gpg`. Post-quantum (v6)
+keys do not work in Thunderbird yet; use a classic key. Keys made before
+this release still list no preferred algorithms (make a new key if GnuPG
+users' signatures show as invalid in Thunderbird). Evolution and KMail are
+not connected yet. No vault file change; `vaultd`, `vault-gpg` and the other
+programs must be updated together (two new requests).
+
 ### Public beta downloads
 
 - **Try Secret Vault before 0.2.0 is final.** Public betas are published on

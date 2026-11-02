@@ -175,12 +175,13 @@ people whose software supports it.
 - **Other mail programs you can script** (aerc, your own scripts): call
   `vault-gpg` like `gpg`, or `vault pgp encrypt`, `decrypt`, `sign` and
   `verify` directly.
-- **Evolution and KMail**: not connected yet. They use GnuPG's own services
-  (GPGME and `gpg-agent`) rather than the `gpg` command.
-- **Thunderbird** uses its own OpenPGP engine. You can give it a copy of the
-  key with `vault pgp export me > me-secret.asc` and import that in
-  Thunderbird's key manager, but that copy is then protected by
-  Thunderbird, not by the vault.
+- **Thunderbird**: set your vault key up as an "external GnuPG key" with
+  `vault-gpg` in place of GnuPG, and Thunderbird signs and decrypts with it
+  without ever holding the secret key. See
+  [chapter 9](09-gpg-programs.md#6-thunderbird). (You could instead import a
+  copy made with `vault pgp export`, but that copy is then protected by
+  Thunderbird, not by the vault.)
+- **Evolution and KMail**: not connected yet.
 
 ## Export a secret key
 
