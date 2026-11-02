@@ -42,6 +42,47 @@ verified developers, rolling out country by country from late 2026; this
 may later need an extra step or block sideloading in some countries. No
 vault file change.
 
+### Add a one-time code on the desktop and from the command line
+
+- **Add Code on the desktop.** Open **One-time codes** in the sidebar and
+  click **Add code** at the top right (in **All items**, it's under
+  **New item ▾ > One-time code**; the Ctrl K palette has **Add a one-time
+  code**). Paste the setup key or `otpauth://` link the site shows, or
+  read the site's QR code from a screenshot: type the image's path and
+  click **Read QR code**, or drag the image onto the window. The form
+  shows the current code so you can finish the site's setup, then keeps
+  the code on a new login or on a login you already have. When the QR
+  code names the site, the title and username are filled in, and if
+  exactly one of your logins fits, it is picked.
+- **Add a code from the command line.** `vault code add` asks for the
+  setup key or link without showing it (so it never lands in your shell
+  history), prints the current code, and saves it on a new login.
+  `--qr IMAGE` reads the QR code from a screenshot instead, `--to ID` puts
+  the code on an existing login, and `--title` / `--account` name a new
+  one. `vault code ls` lists every code with its current value.
+- **Fix: a code added to a secure note on a phone was lost.** The phone
+  apps offered secure notes as a place for a new code, but a note can't
+  keep one, so the code was silently dropped when saved. Now only logins
+  are offered, as on the desktop and command line.
+- How to start: [Add a one-time code (desktop)](user-guide/05-desktop-app.md#add-a-one-time-code)
+  and [One-time codes](user-guide/03-items.md#one-time-codes-totp).
+
+| | Linux | Windows | macOS |
+| --- | --- | --- | --- |
+| Paste a setup key or link | Yes | Yes | Yes |
+| Read a QR code from an image file (PNG, JPEG, GIF, BMP) | Yes | Yes | Yes |
+| Drag the image onto the window | X11 desktops; on Wayland, type the path instead | Yes | Yes |
+| Quick way to take the screenshot | Print Screen (GNOME saves it in Pictures/Screenshots) | Win + Shift + S, then save it from the notification | Cmd + Shift + 4 (saves it on the Desktop) |
+| `vault code add` / `vault code ls` | Yes | Yes | Yes |
+
+Known limits: the desktop can't use a camera, and reads a QR code only from
+a saved image, not straight from the screen or clipboard. Google
+Authenticator's "Transfer accounts" QR code (`otpauth-migration://`) isn't
+supported yet: add each code from its site. To swap the code a login
+already has, edit the login (desktop) or use `vault code add --to ID
+--replace`. Delete the screenshot afterwards: anyone with it can make your
+codes. No vault file change.
+
 ### Public beta downloads
 
 - **Try Secret Vault before 0.2.0 is final.** Public betas are published on
@@ -119,12 +160,11 @@ while only betas exist. No vault file change.
 | --- | --- | --- | --- | --- | --- |
 | Three random words | Yes, with all options | `vault gen --words` with all options | Yes, 3 words with capitals | Yes, with all options | Yes, with all options |
 | Apple style | Yes | `vault gen --apple` | Yes | Yes | Yes |
-| Add a code from the Codes screen | Not yet (edit the login) | Not yet (`vault edit`) | No | Yes, with the camera | Yes, with the camera (Google Play services scanner) |
+| Add a code from the Codes screen | Yes, see *Add a one-time code on the desktop* above | `vault code add`, see above | No | Yes, with the camera | Yes, with the camera (Google Play services scanner) |
 | Green icon when unlocked | Top left of the window | No | No | Items screen (phone), status pill (iPad) | Items screen |
 
 Known limits: the browser extension always makes three capitalised words
-(change the details in the desktop app or with `vault gen`). The desktop app
-has no Add Code button on its own yet. The extension needs the matching new
+(change the details in the desktop app or with `vault gen`). The extension needs the matching new
 `vault-native-host` and `vaultd`; an older `vaultd` answers "unknown
 request" for the new styles. No vault file change.
 
