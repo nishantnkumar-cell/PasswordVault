@@ -270,6 +270,21 @@ fn add_code_to_a_new_or_existing_login() {
         s.add_code("not a key!".into(), "X".into(), String::new(), None)
             .is_err()
     );
+
+    // A secure note can't keep a code, so it is refused, not dropped.
+    let mut note = login("Router", "");
+    note.kind = Kind::Note;
+    note.totp = TotpEdit::Keep;
+    let note = s.save_item(None, note).unwrap();
+    assert!(
+        s.add_code(
+            "JBSWY3DPEHPK3PXP".into(),
+            String::new(),
+            String::new(),
+            Some(note)
+        )
+        .is_err()
+    );
 }
 
 #[test]

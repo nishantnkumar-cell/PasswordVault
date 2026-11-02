@@ -15,6 +15,7 @@ data-encoding = "2"
 qrcode = { version = "0.14.1", default-features = false }
 rpassword = "7"
 vault-core = { path = "../vault-core" }
+vault-import = { path = "../vault-import", features = ["qr"] }
 vault-hw = { path = "../vault-hw", default-features = false, features = ["phone"] }
 vault-ipc = { path = "../vault-ipc" }
 zeroize = "1.9.1"

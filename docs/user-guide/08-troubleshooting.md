@@ -59,6 +59,18 @@ Start the daemon: `vaultd`, `systemctl --user start vaultd`, or
 On Windows, `%LOCALAPPDATA%\vault\state\vaultd.log` says why it stopped. If it runs as the Linux system user, set
 `VAULT_SOCKET=/run/vault/$USER/vaultd.sock`.
 
+**Add code says "no QR code found" or "not for an authenticator app"**
+
+"No QR code found": the image is too small, blurry or cut off. Take the
+screenshot again closer to the code (crop away the rest of the page), or
+paste the setup key from the site's "Can't scan it?" link instead. "Not for
+an authenticator app": the image holds a different QR code, such as a link
+to download an app; look for the one shown after you choose "authenticator
+app". "Google Authenticator export": the vault can't read Google
+Authenticator's "Transfer accounts" code yet; add each code from its site.
+On Linux under Wayland, dragging an image onto the window does nothing;
+type the image's path into **Or a QR image** instead.
+
 **Clicking a sidebar category seems to do nothing**
 
 Look at the top of the middle column: it names the category you chose,

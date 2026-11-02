@@ -20,6 +20,7 @@ use zeroize::Zeroizing;
 use crate::client::{Backend, Failure, Paths, Phone, SystemPhone, Work};
 use crate::theme::{self, Icon};
 
+mod codes;
 mod keys;
 mod setup;
 
@@ -143,6 +144,10 @@ enum Op {
     NewKey,
     ImportKey,
     ExportKey(ItemId),
+    /// Add code: read the login the code goes on.
+    CodeTarget(ItemId),
+    /// Add code: save the login with the code.
+    SaveCode,
     /// Encrypt, decrypt, sign or verify on the OpenPGP page.
     Pgp,
     Sync,
@@ -222,7 +227,8 @@ impl Filter {
             Filter::Kind(ItemKind::Card) => "No cards yet.",
             Filter::Kind(ItemKind::Identity) => "No identities yet.",
             Filter::Codes => {
-                "No one-time codes yet. Edit a login and paste its 2FA setup key to add one."
+                "No one-time codes yet. Choose Add code and paste the setup key a site \
+                 shows when you turn on two-step sign-in."
             }
             Filter::Keys => "No SSH or PGP keys yet.",
         }
@@ -255,9 +261,8 @@ impl Filter {
     fn new_button(self) -> Option<(&'static str, Quick)> {
         Some(match self {
             Filter::All => return None,
-            Filter::Kind(ItemKind::Login) | Filter::Codes => {
-                ("New login", Quick::Item(ItemKind::Login))
-            }
+            Filter::Kind(ItemKind::Login) => ("New login", Quick::Item(ItemKind::Login)),
+            Filter::Codes => ("Add code", Quick::Code),
             Filter::Kind(ItemKind::Note) => ("New secure note", Quick::Item(ItemKind::Note)),
             Filter::Kind(ItemKind::Card) => ("New card", Quick::Item(ItemKind::Card)),
             Filter::Kind(ItemKind::Identity) => ("New identity", Quick::Item(ItemKind::Identity)),
@@ -293,6 +298,8 @@ enum Quick {
     Key(bool),
     /// Import an SSH key (`false`) or an OpenPGP key (`true`).
     Import(bool),
+    /// Add a one-time code.
+    Code,
 }
 
 /// A secret to copy once the daemon sends it.
@@ -321,6 +328,7 @@ enum Action {
     NewKey(bool),
     /// Import an SSH key (`false`) or an OpenPGP key (`true`).
     ImportKey(bool),
+    AddCode,
     Pgp(keys::Task),
     Generate,
     Go(View),
@@ -677,6 +685,7 @@ pub struct App {
     edit: Option<Edit>,
     new_key: Option<KeyForm>,
     import_key: Option<keys::KeyImport>,
+    add_code: Option<codes::CodeForm>,
     export: Option<keys::Export>,
     pgp: keys::PgpTools,
     confirm_delete: bool,
@@ -750,6 +759,7 @@ impl App {
             edit: None,
             new_key: None,
             import_key: None,
+            add_code: None,
             export: None,
             pgp: keys::PgpTools::default(),
             confirm_delete: false,
@@ -829,6 +839,7 @@ impl App {
         self.confirm_delete = false;
         self.public_key = None;
         self.import_key = None;
+        self.add_code = None;
         self.export = None;
         self.pgp = keys::PgpTools::default();
         self.generated = None;
@@ -984,6 +995,8 @@ impl App {
                 }
                 self.totp = Some((id, code, Instant::now() + Duration::from_secs(remaining)));
             }
+            (Op::CodeTarget(id), Response::Item { item, .. }) => self.on_code_target(id, item),
+            (Op::SaveCode, Response::ItemSaved { id }) => self.on_code_saved(id),
             (Op::Save, Response::ItemSaved { id }) => {
                 self.edit = None;
                 self.notice = Some("Saved.".into());
@@ -1102,6 +1115,7 @@ impl App {
         self.edit = None;
         self.new_key = None;
         self.import_key = None;
+        self.add_code = None;
         self.export = None;
         self.send(Op::OpenItem(id), Request::GetItem { id });
     }
@@ -1862,7 +1876,9 @@ impl App {
                 egui::CentralPanel::default().frame(page).show(ui, |ui| {
                     self.messages(ui);
                     egui::ScrollArea::vertical().show(ui, |ui| {
-                        if self.import_key.is_some() {
+                        if self.add_code.is_some() {
+                            theme::card().show(ui, |ui| self.code_form(ui));
+                        } else if self.import_key.is_some() {
                             theme::card().show(ui, |ui| self.import_key_form(ui));
                         } else if self.new_key.is_some() {
                             theme::card().show(ui, |ui| self.key_form(ui));
@@ -2067,6 +2083,7 @@ impl App {
                 self.open = None;
                 self.new_key = None;
                 self.import_key = None;
+                self.add_code = None;
                 self.edit = Some(Edit::new(k));
             }
             Some(Quick::Key(pgp)) => {
@@ -2076,6 +2093,10 @@ impl App {
             Some(Quick::Import(pgp)) => {
                 self.go(View::Items);
                 self.start_import(pgp);
+            }
+            Some(Quick::Code) => {
+                self.go(View::Items);
+                self.start_code();
             }
             None => {}
         }
@@ -2117,6 +2138,9 @@ impl App {
                         if entry(ui, kind_icon(k), k.label()) {
                             start = Some(Quick::Item(k));
                         }
+                    }
+                    if entry(ui, Icon::Clock, "One-time code") {
+                        start = Some(Quick::Code);
                     }
                     ui.separator();
                     if entry(ui, Icon::Terminal, "SSH key") {
@@ -2283,7 +2307,11 @@ impl App {
     /// filled in stays, so no typing is lost.
     fn show_category(&mut self, f: Filter) {
         self.filter = f;
-        if self.edit.is_some() || self.new_key.is_some() || self.import_key.is_some() {
+        if self.edit.is_some()
+            || self.new_key.is_some()
+            || self.import_key.is_some()
+            || self.add_code.is_some()
+        {
             return;
         }
         let inside = self
@@ -2909,6 +2937,7 @@ impl App {
         }
         for (label, action) in [
             ("New item", Action::NewItem),
+            ("Add a one-time code", Action::AddCode),
             ("New SSH key", Action::NewKey(false)),
             ("New OpenPGP key", Action::NewKey(true)),
             ("Import SSH key", Action::ImportKey(false)),
@@ -3110,6 +3139,7 @@ impl App {
                 self.open = None;
                 self.new_key = None;
                 self.import_key = None;
+                self.add_code = None;
                 self.edit = Some(Edit::new(ItemKind::Login));
             }
             Action::NewKey(pgp) => {
@@ -3119,6 +3149,10 @@ impl App {
             Action::ImportKey(pgp) => {
                 self.go(View::Items);
                 self.start_import(pgp);
+            }
+            Action::AddCode => {
+                self.go(View::Items);
+                self.start_code();
             }
             Action::Pgp(task) => self.open_pgp(task),
             Action::Generate => {
@@ -3295,6 +3329,7 @@ impl App {
         self.open = None;
         self.edit = None;
         self.import_key = None;
+        self.add_code = None;
         self.export = None;
         self.error = None;
         self.notice = None;

@@ -48,7 +48,6 @@ ITEMS                          ID may be any unique prefix of an item ID
                                note, card or identity
   edit ID                      edit an item interactively (Enter keeps a field)
   rm ID                        delete an item
-  totp ID                      current TOTP code
   find ORIGIN                  items that may be filled on ORIGIN, e.g. https://example.com
   gen [--length N] [--no-symbols] [--no-ambiguous]
                                a random password (24 characters unless --length)
@@ -56,6 +55,15 @@ ITEMS                          ID may be any unique prefix of an item ID
                                N random words, 3 by default (UK NCSC style)
   gen --apple                  Apple style: three groups of six, like abcdef-gh1jkl-Mnopqr
   import bitwarden|csv FILE    import an unencrypted export (delete the file afterwards)
+
+ONE-TIME CODES                 two-step sign-in codes, like an authenticator app
+  code add [--qr IMAGE] [--to ID] [--title T] [--account A] [--replace]
+                               add a code: paste the setup key or otpauth:// link the site
+                               shows when asked, or read its QR code from a screenshot with
+                               --qr. It goes on login ID, or on a new login titled T (or
+                               after the site the link names)
+  code ls                      every code and its current value
+  totp ID                      the current code of one item
 
 SSH KEYS                       keys stay in vaultd; ssh and git use them through its agent
   ssh new TITLE [--ecdsa] [--no-confirm]  generate a key (Ed25519 unless --ecdsa)
@@ -1132,10 +1140,158 @@ fn main() {
             println!("Copies of the old file can still be opened with the old factors.");
         }
         "apps" => apps(rest),
+        "code" | "codes" => code(rest),
         "ssh" => ssh(rest),
         "pgp" => pgp(rest),
         _ => die(format!("unknown command {cmd}; see `vault help`")),
     }
+}
+
+fn unix_now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
+}
+
+/// `vault code ...`.
+fn code(args: &[String]) {
+    match args.first().map(String::as_str) {
+        Some("add") => code_add(&args[1..]),
+        None | Some("ls") => {
+            let mut c = Client::connect();
+            let list: Vec<ItemSummary> = items(&mut c).into_iter().filter(|i| i.has_totp).collect();
+            if list.is_empty() {
+                println!("No one-time codes yet. Add one with `vault code add`.");
+            }
+            for i in list {
+                let Response::Totp { code, remaining } = c.call(Request::Totp { id: i.id }) else {
+                    die("unexpected response")
+                };
+                println!(
+                    "{}  {:<10} {:>3} s  {:<28} {}",
+                    short(&i.id),
+                    code.as_str(),
+                    remaining,
+                    i.title,
+                    i.subtitle
+                );
+            }
+        }
+        Some(other) => die(format!(
+            "unknown code command {other}; use `vault code add` or `vault code ls`"
+        )),
+    }
+}
+
+/// `vault code add`: the setup key is never taken from the command line,
+/// where it would stay in the shell's history.
+fn code_add(args: &[String]) {
+    let input: Secret = match flag_value(args, "--qr") {
+        Some(path) => {
+            let bytes = std::fs::read(&path).unwrap_or_else(|e| die(format!("{path}: {e}")));
+            vault_import::qr::otpauth_from_image(&bytes)
+                .unwrap_or_else(|e| die(format!("{path}: {e}")))
+        }
+        None => secret("Setup key or otpauth:// link: "),
+    };
+    let totp = TotpConfig::parse(&input).unwrap_or_else(|_| {
+        die("that is not a setup key or otpauth:// link; copy it again from the site")
+    });
+    let now = unix_now();
+    let first = totp.code_at(now).unwrap_or_else(|e| die(e));
+    eprintln!(
+        "Current code: {first} ({} s left). Type it on the site to finish turning on two-step sign-in.",
+        totp.remaining(now)
+    );
+    let title = flag_value(args, "--title").unwrap_or_default();
+    let account = flag_value(args, "--account").unwrap_or_default();
+    let mut c = Client::connect();
+    let list = items(&mut c);
+    let logins = || {
+        list.iter()
+            .filter(|i| i.kind == ItemKind::Login && i.key.is_none())
+    };
+    let tty = io::stdin().is_terminal();
+    let target = match flag_value(args, "--to") {
+        Some(s) => {
+            let (id, ()) = resolve(logins().map(|i| (i.id, ())), &s);
+            Some(id)
+        }
+        // The link names the site: offer the one login it fits, if any.
+        None if tty && title.is_empty() => {
+            let (issuer, _) = TotpConfig::label(&input).unwrap_or_default();
+            let issuer = issuer.to_lowercase();
+            let fits: Vec<&ItemSummary> = logins()
+                .filter(|i| {
+                    !issuer.is_empty()
+                        && !i.has_totp
+                        && (i.title.to_lowercase().contains(&issuer)
+                            || i.urls.iter().any(|u| u.to_lowercase().contains(&issuer)))
+                })
+                .collect();
+            match fits.as_slice() {
+                [one]
+                    if !ask(&format!(
+                        "Put it on your login {} ({})? [Y/n]: ",
+                        one.title,
+                        short(&one.id)
+                    ))
+                    .eq_ignore_ascii_case("n") =>
+                {
+                    Some(one.id)
+                }
+                _ => None,
+            }
+        }
+        None => None,
+    };
+    let (id, item) = match target {
+        Some(id) => {
+            let mut item = get(&mut c, id);
+            if item.totp.is_some() && !args.iter().any(|a| a == "--replace") {
+                let replace = tty
+                    && ask(&format!(
+                        "{} already has a code. Replace it? [y/N]: ",
+                        item.title
+                    ))
+                    .eq_ignore_ascii_case("y");
+                if !replace {
+                    die("kept the code it has (use --replace to swap it)");
+                }
+            }
+            item.totp = Some(totp);
+            (Some(id), item)
+        }
+        None => {
+            let (mut title, mut username) =
+                TotpConfig::login_names(&input, &title, &account).unwrap_or_default();
+            if title.is_empty() {
+                if !tty {
+                    die("give the code a name with --title, such as the site it's for");
+                }
+                title = ask("Title (the site it's for): ");
+                if title.trim().is_empty() {
+                    die("a title is required");
+                }
+                if username.is_empty() {
+                    username = ask("Username or email on that site (Enter for none): ");
+                }
+            }
+            let mut item = ItemData::new(ItemKind::Login, title.trim());
+            item.username = username;
+            item.totp = Some(totp);
+            (None, item)
+        }
+    };
+    let name = item.title.clone();
+    let Response::ItemSaved { id: saved } = c.call(Request::PutItem { id, item }) else {
+        die("unexpected response")
+    };
+    println!(
+        "Added the code to {name} ({}). See it with `vault totp {}`.",
+        short(&saved),
+        short(&saved)
+    );
 }
 
 /// `vault apps ...`.

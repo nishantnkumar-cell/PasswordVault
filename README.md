@@ -13,7 +13,7 @@ Status: v1 feature-complete on Linux and Windows, not yet audited. Do not trust 
 | `vault-hw` | Hardware unlock factors: FIDO2 security keys and phone passkeys, the TPM, Windows Hello. |
 | `vault-cli` | The `vault` command. |
 | `vault-gui` | The desktop app: setup wizard, items, key tools, unlock methods, sync, and the pairing approval window. |
-| `vault-gpg` | A gpg-compatible front end, so git, pass and mail programs (NeoMutt, and Thunderbird through GPGME) can use OpenPGP keys held in the vault. |
+| `vault-gpg` | A gpg-compatible front end, so git, pass and mail programs can use OpenPGP keys held in the vault. |
 | `vault-native-host` | Native messaging host for the browser extension. |
 | `extension/` | Browser autofill extension (Manifest V3): logins, cards and addresses. |
 | `vault-mobile`, `mobile/` | iPhone, iPad and Android apps (SwiftUI, Jetpack Compose) over `vault-core` through UniFFI. |

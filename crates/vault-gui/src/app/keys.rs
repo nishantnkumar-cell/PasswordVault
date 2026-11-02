@@ -403,7 +403,7 @@ fn key_example(pgp: bool) -> &'static str {
 }
 
 /// `~/x` as a real path, since the field isn't run through a shell.
-fn expand(path: &str) -> String {
+pub(super) fn expand(path: &str) -> String {
     let path = path.trim();
     match path.strip_prefix("~/").or_else(|| path.strip_prefix("~\\")) {
         Some(rest) => std::env::home_dir()

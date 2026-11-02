@@ -59,9 +59,9 @@ fun AddCodeDialog(vault: VaultRepository, items: List<ItemSummary>, onDone: () -
     var target by remember { mutableStateOf<ItemSummary?>(null) }
     var picking by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    // Logins and notes that don't have a code yet.
+    // Logins that don't have a code yet (a secure note can't keep one).
     val candidates = remember(items) {
-        items.filter { (it.kind == Kind.LOGIN || it.kind == Kind.NOTE) && !it.hasTotp && !it.hasKey }
+        items.filter { it.kind == Kind.LOGIN && !it.hasTotp && !it.hasKey }
             .sortedBy { it.title.lowercase() }
     }
     val preview = remember(input) {

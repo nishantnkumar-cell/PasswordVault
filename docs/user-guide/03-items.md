@@ -162,13 +162,47 @@ Many sites offer two-step login with a 6-digit code from an authenticator
 app. The vault can be that app.
 
 1. On the site, turn on two-step login with an "authenticator app".
-2. The site shows a QR code. Look for "can't scan it?" or "enter key
-   manually" to get the text secret (a string like `JBSWY3DPEHPK3PXP`). If
-   you can read the QR code with another tool, its `otpauth://totp/...` link
-   works too and carries the digits, period and algorithm.
-3. Run `vault edit ID` and paste the secret or the link at the TOTP
-   question (or use the desktop app's edit form).
-4. Get a code to finish setting it up on the site:
+2. The site shows a QR code. Under it, look for "can't scan it?" or
+   "enter key manually" to see the setup key (a string like
+   `JBSW Y3DP EHPK 3PXP`). Copy it. Or take a screenshot of the QR code
+   and save it as an image: the QR code holds an `otpauth://totp/...` link
+   that also carries the site's name, your account, and the code's digits,
+   period and algorithm.
+3. Add the code to the vault, in whichever app is to hand:
+   - **Desktop app:** **One-time codes** > **Add code**. See
+     [Add a one-time code](05-desktop-app.md#add-a-one-time-code).
+   - **Phone or tablet:** **Codes** > **+** or **Add code**, then scan the
+     QR code with the camera. See
+     [One-time codes on phones](14-phone-apps.md#one-time-codes).
+   - **Command line:** `vault code add`, then paste the setup key or link
+     when asked (it isn't shown as you type):
+
+     ```sh
+     vault code add
+     ```
+
+     ```
+     Setup key or otpauth:// link:
+     Current code: 492039 (17 s left). Type it on the site to finish turning on two-step sign-in.
+     Put it on your login Example Mail (1c9e04aa)? [Y/n]:
+     Added the code to Example Mail (1c9e04aa). See it with `vault totp 1c9e04aa`.
+     ```
+
+     It asks about an existing login only when the link names a site and
+     exactly one of your logins without a code matches it; otherwise it
+     makes a new login named after the site. Options:
+
+     | Option | Does |
+     | --- | --- |
+     | `--qr IMAGE` | Read the QR code from a screenshot (PNG, JPEG, GIF or BMP) instead of asking for the key |
+     | `--to ID` | Put the code on this login (any unique start of its ID) |
+     | `--title T`, `--account A` | Name a new login and its username, for a bare setup key that names nothing |
+     | `--replace` | Swap the code a login already has (without it, `vault` asks, or refuses in a script) |
+
+     In a script, pipe the key in: `printf '%s\n' "$KEY" | vault code add
+     --title "Example Bank"`.
+4. Type the current code the vault shows into the site to finish turning
+   on two-step login. Later, get a code with:
 
    ```sh
    vault totp 1c9
@@ -178,8 +212,24 @@ app. The vault can be that app.
    492039 (17 s left)
    ```
 
+   or see every code at once with `vault code ls`:
+
+   ```
+   1c9e04aa  492039      17 s  Example Mail                 alex@example.com
+   7b2d0f13  118220      17 s  Example Bank                 alex
+   ```
+
+You can also add or change a code by editing a login: `vault edit ID`
+asks for it after the password, and the desktop edit form has a **One-time
+codes** box. A code goes on a login; secure notes, cards and identities
+can't keep one.
+
 Codes of 6 to 8 digits with SHA-1, SHA-256 or SHA-512 are supported. In the
 browser, the popup's **Code** button copies the code for the current site.
+
+Delete the QR screenshot once the code is added: anyone who has it can make
+your codes. Google Authenticator's "Transfer accounts" QR code isn't
+supported yet; add each code from its site instead.
 
 Keeping the password and the one-time code in the same vault is convenient,
 but it means one vault protects both. If you want them separate, keep the

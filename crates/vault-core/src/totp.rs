@@ -114,6 +114,26 @@ impl TotpConfig {
         Some((issuer, account))
     }
 
+    /// The title and username for a new login that holds the code from
+    /// `input`: the title is `title`, else the link's issuer, else
+    /// `account`, else the link's account; the username is `account`, else
+    /// the link's account. `None` when nothing names the code (a bare key
+    /// with no title or account typed).
+    pub fn login_names(input: &str, title: &str, account: &str) -> Option<(String, String)> {
+        let (issuer, linked) = TotpConfig::label(input).unwrap_or_default();
+        let (title, account) = (title.trim(), account.trim());
+        let name = [title, issuer.as_str(), account, linked.as_str()]
+            .into_iter()
+            .find(|t| !t.is_empty())?
+            .to_owned();
+        let user = if account.is_empty() {
+            linked
+        } else {
+            account.to_owned()
+        };
+        Some((name, user))
+    }
+
     /// The code for Unix time `now` (seconds).
     pub fn code_at(&self, now: u64) -> Result<String, Error> {
         if !(6..=8).contains(&self.digits) || self.period == 0 {

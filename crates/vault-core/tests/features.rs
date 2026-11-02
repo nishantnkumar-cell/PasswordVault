@@ -322,3 +322,25 @@ fn otpauth_labels() {
     );
     assert_eq!(l("JBSWY3DPEHPK3PXP"), None);
 }
+
+#[test]
+fn names_for_a_new_code_login() {
+    let link = "otpauth://totp/Example:alex%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=Example";
+    let n =
+        |input: &str, title: &str, account: &str| TotpConfig::login_names(input, title, account);
+    // The link names it unless the user typed something.
+    assert_eq!(
+        n(link, "", ""),
+        Some(("Example".into(), "alex@example.com".into()))
+    );
+    assert_eq!(
+        n(link, " Work mail ", "alex"),
+        Some(("Work mail".into(), "alex".into()))
+    );
+    // A bare key takes the account as its title when there is no title.
+    assert_eq!(
+        n("JBSWY3DPEHPK3PXP", "", "alex@example.com"),
+        Some(("alex@example.com".into(), "alex@example.com".into()))
+    );
+    assert_eq!(n("JBSWY3DPEHPK3PXP", " ", ""), None);
+}
