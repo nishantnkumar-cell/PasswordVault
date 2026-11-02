@@ -76,7 +76,7 @@ Options that only tune GnuPG itself (`--batch`, `--yes`, `--quiet`, `--use-agent
 
 **Version.** `--version` prints `gpg (GnuPG) 2.4.4` on its first line, for programs that check it, and says on the next line that this is vault-gpg, not GnuPG.
 
-**Status fd and special file names.** `--status-fd N` and, with `--enable-special-filenames`, file names `-&N` (input files and `--output`) name a descriptor the caller passed: on Unix it is opened again through `/dev/fd/N` (Linux and macOS); on Windows N is an inherited handle, as gpg and GPGME treat it there, and `fds::open` takes it over (the crate's only `unsafe`).
+**Status fd and special file names.** `--status-fd N` and, with `--enable-special-filenames`, file names `-&N` (input files and `--output`) name a descriptor the caller passed: on Unix it is opened again through `/dev/fd/N` (Linux and macOS); on Windows N is an inherited handle, as gpg and GPGME treat it there (0, 1 and 2 are the standard streams), and `fds::open` takes it over (the crate's only `unsafe`).
 
 **Pairing.** `vault-gpg` uses the `vault` command's token (`VAULT_TOKEN_FILE`), so it needs no pairing of its own; the approval window names the program that ran it.
 

@@ -31,8 +31,18 @@ pub fn open(n: i64, write: bool) -> io::Result<File> {
 #[cfg(windows)]
 #[allow(unsafe_code)]
 pub fn open(n: i64, _write: bool) -> io::Result<File> {
-    use std::os::windows::io::{FromRawHandle, RawHandle};
-    if n <= 0 {
+    use std::os::windows::io::{AsHandle, FromRawHandle, RawHandle};
+    // As in gpg, 0, 1 and 2 are the standard streams, not handle values.
+    let std = match n {
+        0 => Some(io::stdin().as_handle().try_clone_to_owned()),
+        1 => Some(io::stdout().as_handle().try_clone_to_owned()),
+        2 => Some(io::stderr().as_handle().try_clone_to_owned()),
+        _ => None,
+    };
+    if let Some(h) = std {
+        return h.map(File::from);
+    }
+    if n < 0 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             format!("{n} is not a handle"),
