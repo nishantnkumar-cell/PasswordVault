@@ -1355,3 +1355,121 @@ fn app_passwords_lists_and_takes_back_approvals() {
     assert!(h.query_by_label("None since vaultd started.").is_some());
     assert!(!d.lock().unwrap().app_allowed("/usr/bin/example-mail"));
 }
+
+/// A PNG screenshot of `text` as a QR code.
+fn qr_png(text: &str) -> Vec<u8> {
+    let code = qrcode::QrCode::new(text.as_bytes()).unwrap();
+    let (n, scale) = (code.width() as u32, 6);
+    let side = (n + 8) * scale;
+    let img = image::GrayImage::from_fn(side, side, |x, y| {
+        let (mx, my) = (x / scale, y / scale);
+        let dark = (4..n + 4).contains(&mx)
+            && (4..n + 4).contains(&my)
+            && code[((mx - 4) as usize, (my - 4) as usize)] == qrcode::Color::Dark;
+        image::Luma([if dark { 0 } else { 255 }])
+    });
+    let mut out = Vec::new();
+    img.write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png)
+        .unwrap();
+    out
+}
+
+#[test]
+fn adds_codes_from_a_key_a_link_and_a_qr_screenshot() {
+    let dir = tempdir();
+    let mut h = created(&dir, Duration::from_secs(300), FakeClip::default());
+    let button = |h: &Harness<'_, App>, label: &str| {
+        h.query_by_role_and_label(Role::Button, label).is_some()
+    };
+    click(&mut h, "New item");
+    click(&mut h, "Login");
+    type_into(&mut h, Role::TextInput, "Title", "Example Mail");
+    click(&mut h, "Save");
+    settle(&mut h);
+
+    // The Codes category's New button is Add code.
+    click(&mut h, "One-time codes");
+    assert!(h.query_by_label_contains("No one-time codes yet").is_some());
+    assert!(!button(&h, "New login"));
+    click(&mut h, "Add code");
+    assert!(
+        h.query_by_label("Add a one-time code").is_some(),
+        "the form opened"
+    );
+
+    // A bare key needs a title, and nothing is sent until it has one.
+    type_into(
+        &mut h,
+        Role::PasswordInput,
+        "Setup key",
+        "JBSW Y3DP EHPK 3PXP",
+    );
+    assert!(h.query_by_label("Current code").is_some(), "shows the code");
+    click(&mut h, "Add code");
+    assert!(h.state().error().unwrap().contains("title"));
+    assert_eq!(h.state().items().len(), 1);
+    click(&mut h, "Cancel");
+
+    // A link that names the login's site goes on that login.
+    click(&mut h, "Add code");
+    type_into(
+        &mut h,
+        Role::PasswordInput,
+        "Setup key",
+        "otpauth://totp/Example%20Mail:alex%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=Example%20Mail",
+    );
+    click(&mut h, "Add code");
+    settle(&mut h);
+    assert_eq!(h.state().error(), None);
+    let items = h.state().items();
+    assert_eq!(items.len(), 1, "no new login");
+    assert!(items[0].has_totp);
+    assert!(h.query_by_label_contains("Code added").is_some());
+
+    // A screenshot of a QR code makes a new login named by the link.
+    let shot = dir.join("qr.png");
+    std::fs::write(
+        &shot,
+        qr_png("otpauth://totp/Example%20Bank:alex%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=Example%20Bank"),
+    )
+    .unwrap();
+    click(&mut h, "Add code");
+    type_into(
+        &mut h,
+        Role::TextInput,
+        "Or a QR image",
+        shot.to_str().unwrap(),
+    );
+    click(&mut h, "Read QR code");
+    assert_eq!(h.state().error(), None);
+    assert!(h.query_by_label("Current code").is_some());
+    click(&mut h, "Add code");
+    settle(&mut h);
+    assert_eq!(h.state().error(), None);
+    let bank = h
+        .state()
+        .items()
+        .iter()
+        .find(|i| i.title == "Example Bank")
+        .expect("a new login")
+        .clone();
+    assert!(bank.has_totp);
+    assert_eq!(bank.subtitle, "alex@example.com");
+
+    // An image without a code says so.
+    std::fs::write(&shot, qr_png("https://example.com/")).unwrap();
+    click(&mut h, "Add code");
+    type_into(
+        &mut h,
+        Role::TextInput,
+        "Or a QR image",
+        shot.to_str().unwrap(),
+    );
+    click(&mut h, "Read QR code");
+    assert!(
+        h.state()
+            .error()
+            .unwrap()
+            .contains("not for an authenticator")
+    );
+}

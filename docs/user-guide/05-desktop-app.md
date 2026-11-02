@@ -257,8 +257,9 @@ category:
 
 | Open category | Button |
 | --- | --- |
-| **All items** | **New item ▾**, a menu of every kind: Login, Secure note, Card, Identity, SSH key, OpenPGP key |
-| **Logins**, **One-time codes** | **New login** |
+| **All items** | **New item ▾**, a menu of every kind: Login, Secure note, Card, Identity, One-time code, SSH key, OpenPGP key |
+| **Logins** | **New login** |
+| **One-time codes** | **Add code** (see [Add a one-time code](#add-a-one-time-code)) |
 | **Secure notes** | **New secure note** |
 | **Cards** | **New card** |
 | **Identities** | **New identity** |
@@ -266,8 +267,56 @@ category:
 
 ![The New item menu in All items](images/new-item-menu.png)
 
-A one-time code isn't an item of its own: add one by editing a login and
-pasting its 2FA setup key.
+A one-time code isn't an item of its own: it's kept on a login. **Add code**
+puts it on a new login or one you have; you can also edit a login and paste
+the setup key into its **One-time codes** box.
+
+### Add a one-time code
+
+Use this when a site asks you to set up an authenticator app for two-step
+sign-in (also called 2-step verification or 2FA).
+
+![The Add a one-time code form](images/desktop-add-code.png)
+
+1. On the website, turn on two-step sign-in with an authenticator app. It
+   shows a QR code, usually with a link such as "Can't scan it?" that shows
+   a setup key instead.
+2. In Secret Vault, click **One-time codes** in the sidebar, then **Add
+   code** at the top right. (From **All items**: **New item ▾ > One-time
+   code**. From anywhere: Ctrl K, then **Add a one-time code**.)
+3. Give it the code in one of three ways:
+   - **Paste the setup key** (or an `otpauth://` link) into **Setup key**.
+     The key is hidden as you type; the eye button shows it so you can
+     check it.
+   - **Read the QR code from a screenshot.** Take a screenshot of the QR
+     code (see the table below), type the image's path into **Or a QR
+     image**, and click **Read QR code** (or press Enter).
+   - **Drag the screenshot onto the window** while the form is open. The
+     form says "Drop the image to read its QR code" while you hold it
+     over the window.
+4. Under the form, **Current code** shows the code now and how many
+   seconds it has left. Type it into the website to finish turning on
+   two-step sign-in. If the box says it isn't a setup key, copy it again.
+5. **Put it on**: keep **A new login** and fill in **Title** (the site's
+   name) and **Username**, or pick the login you already have for that
+   site. Only logins without a code are listed. When the QR code names the
+   site, the title and username are filled in for you, and if exactly one
+   of your logins matches that name or web address, it is picked.
+6. Click **Add code**. The vault opens the login with its code, and the
+   code shows in **One-time codes**. Delete the screenshot now: anyone who
+   has it can make your codes.
+
+| | Linux | Windows | macOS |
+| --- | --- | --- | --- |
+| Take a screenshot of the QR code | Print Screen, or the Screenshot app (GNOME saves to `~/Pictures/Screenshots`) | Win + Shift + S, then click the notification and save it, or Print Screen in Windows 11 (saves to `Pictures\Screenshots`) | Cmd + Shift + 4 and drag over the code (saves to the Desktop) |
+| Drag the image onto the window | X11 desktops; on Wayland desktops, type the path instead | Yes | Yes |
+| Example path | `~/Pictures/Screenshots/qr.png` | `C:\Users\you\Pictures\Screenshots\qr.png` | `~/Desktop/qr.png` |
+
+The app reads PNG, JPEG, GIF and BMP images. If it says "no QR code found",
+crop the screenshot closer to the code or paste the setup key instead. A
+Google Authenticator "Transfer accounts" code isn't supported yet. To
+replace a login's code, edit the login and paste the new key into **One-time
+codes**.
 
 - Each value has its own copy button, such as **Copy username**, **Copy
   password**, **Copy number** or **Copy code** (when the item has a

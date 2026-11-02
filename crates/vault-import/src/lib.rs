@@ -5,6 +5,9 @@
 
 #![forbid(unsafe_code)]
 
+#[cfg(feature = "qr")]
+pub mod qr;
+
 use serde::Deserialize;
 use vault_core::item::{Card, CustomField, FieldKind, Identity, ItemData, ItemKind, UrlEntry};
 use vault_core::origin::MatchMode;
