@@ -34,6 +34,12 @@ Like vaultd, it runs on Linux, Windows and macOS. On macOS, `contrib/macos/packa
 - Items: search, view, copy username, password or one-time code, show the
   password, add, edit (websites with match mode and http opt-in, TOTP secret
   or `otpauth://` link, notes), delete after a confirmation.
+- Add code (One-time codes > **Add code**, New item > One-time code, or the
+  palette): paste a setup key or `otpauth://` link, or read the QR code from
+  an image (path field or a file dropped on the window; `vault_import::qr`,
+  pure Rust `rqrr` + `image`). Shows the current code, then saves a new
+  login (`PutItem`) or reads the chosen login and saves it back with the
+  code (`GetItem`, then `PutItem`), so nothing else on it changes.
 - Keys: **New item → SSH key / OpenPGP key** (or the palette's "New SSH
   key" / "New OpenPGP key") opens a form that sends `GenerateKey` or
   `GeneratePgpKey`, so the key is made inside `vaultd` and only its public
@@ -71,6 +77,7 @@ They drive the real window headless through its accessibility tree
 second window, unlock with a wrong then right password, add with a generated
 password, copy, show, search, sidebar filters, the command palette (copy by
 Enter, arrow keys, Escape, lock), lock (clipboard cleared, items dropped),
-import, add a TOTP seed, reject a bad seed, delete, add a recovery slot, a
+import, add a TOTP seed, reject a bad seed, add codes from a key, a link and a
+QR screenshot, delete, add a recovery slot, a
 stale token, idle lock, a missing daemon, and making an SSH and an OpenPGP
 key from the New item menu.

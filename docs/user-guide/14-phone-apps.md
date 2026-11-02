@@ -243,7 +243,7 @@ unlocked.
 | Unlock with security key, TPM, phone passkey | No | No | Yes |
 | AutoFill in browsers | Yes, Face ID or Touch ID to unlock inside AutoFill | Yes, full unlock inside AutoFill | Browser extension |
 | One-time codes in AutoFill | Yes | Not yet | No |
-| Set up a code from the camera or a link | Yes ("Set Up Codes In") | No, scan in the app | No, paste in the app |
+| Set up a code from the camera or a link | Yes ("Set Up Codes In") | No, scan in the app | No camera: paste the key or read a QR screenshot (**Add code**, `vault code add`) |
 | Save a new login when you sign up in another app | Not yet | Not yet | Browser extension |
 | Sync | iCloud Drive, OneDrive, Dropbox through Files | Google Drive, OneDrive, Dropbox through the file picker | Any synced folder |
 | SSH and OpenPGP keys | Shown, not used | Shown, not used | Yes |

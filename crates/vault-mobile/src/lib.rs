@@ -934,7 +934,7 @@ impl VaultSession {
         Ok(hex(&id))
     }
 
-    /// Add a one-time code from the Codes screen: to the login or note `to`,
+    /// Add a one-time code from the Codes screen: to the login `to`,
     /// or else to a new login named `title` (or the link's issuer or account)
     /// with `account` as its username. Returns the item's ID.
     pub fn add_code(
@@ -951,31 +951,17 @@ impl VaultSession {
             Some(s) => {
                 let id = item_id(&s)?;
                 let item = Self::read(&v, &id)?;
-                if !matches!(item.kind, ItemKind::Login | ItemKind::Note) {
-                    return Err(invalid("Codes go on a login or a secure note."));
+                // Only logins keep a code (ItemData::normalize).
+                if item.kind != ItemKind::Login {
+                    return Err(invalid("Codes go on a login."));
                 }
                 (id, item)
             }
             None => {
-                let label = TotpConfig::label(&input).unwrap_or_default();
-                let title = [
-                    title.trim(),
-                    label.0.as_str(),
-                    account.trim(),
-                    label.1.as_str(),
-                ]
-                .into_iter()
-                .find(|t| !t.is_empty())
-                .ok_or_else(|| invalid("Give the code a name, such as the site it's for."))?
-                .to_owned();
-                let mut item = ItemData::default();
-                item.kind = ItemKind::Login;
-                item.title = title;
-                item.username = if account.trim().is_empty() {
-                    label.1
-                } else {
-                    account.trim().to_owned()
-                };
+                let (title, username) = TotpConfig::login_names(&input, &title, &account)
+                    .ok_or_else(|| invalid("Give the code a name, such as the site it's for."))?;
+                let mut item = ItemData::new(ItemKind::Login, title);
+                item.username = username;
                 item.created = now();
                 (v.new_item_id(&mut OsRandom)?, item)
             }

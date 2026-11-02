@@ -115,9 +115,9 @@ struct AddCodeView: View {
     @State private var scanning = false
     @State private var error: String?
 
-    /// Logins and notes that don't have a code yet.
+    /// Logins that don't have a code yet (a secure note can't keep one).
     private var candidates: [ItemSummary] {
-        vault.items.filter { ($0.kind == .login || $0.kind == .note) && !$0.hasTotp && !$0.hasKey }
+        vault.items.filter { $0.kind == .login && !$0.hasTotp && !$0.hasKey }
             .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
     }
 
