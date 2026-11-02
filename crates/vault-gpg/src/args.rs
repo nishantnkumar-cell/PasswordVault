@@ -18,15 +18,20 @@ const IGNORED_WITH_VALUE: &[&str] = &[
     "debug-level",
     "default-recipient",
     "digest-algo",
+    "dirmngr-program",
+    "display",
     "display-charset",
     "export-options",
     "faked-system-time",
     "homedir",
     "import-options",
+    "input-size-hint",
     "keyid-format",
     "keyring",
     "keyserver",
     "keyserver-options",
+    "lc-ctype",
+    "lc-messages",
     "list-options",
     "log-file",
     "logger-fd",
@@ -39,15 +44,19 @@ const IGNORED_WITH_VALUE: &[&str] = &[
     "personal-digest-preferences",
     "pinentry-mode",
     "primary-keyring",
+    "request-origin",
     "s2k-cipher-algo",
     "s2k-count",
     "s2k-digest-algo",
     "s2k-mode",
     "secret-keyring",
+    "sender",
     "set-filename",
     "trust-model",
     "trustdb-name",
     "trusted-key",
+    "ttyname",
+    "ttytype",
     "verify-options",
     "weak-digest",
 ];
@@ -55,22 +64,28 @@ const IGNORED_WITH_VALUE: &[&str] = &[
 /// Long switches we accept and ignore.
 const IGNORED: &[&str] = &[
     "always-trust",
+    "auto-key-retrieve",
     "batch",
+    "disable-dirmngr",
     "emit-version",
     "enable-progress-filter",
     "exit-on-status-write-error",
     "fixed-list-mode",
     "force-mdc",
+    "include-key-block",
     "lock-never",
     "no-auto-check-trustdb",
     "no-auto-key-locate",
+    "no-auto-key-retrieve",
     "no-default-keyring",
     "no-emit-version",
     "no-encrypt-to",
     "no-greeting",
+    "no-include-key-block",
     "no-permission-warning",
     "no-secmem-warning",
     "no-sig-cache",
+    "no-sk-comments",
     "no-throw-keyids",
     "no-tty",
     "no-use-agent",
@@ -82,21 +97,16 @@ const IGNORED: &[&str] = &[
     "with-key-origin",
     "with-keygrip",
     "with-secret",
+    "with-sig-check",
+    "with-sig-list",
     "with-subkey-fingerprint",
     "with-subkey-fingerprints",
+    "with-tofu-info",
     "yes",
 ];
 
 /// gpg commands this front end does not provide, with what to use instead.
 const UNSUPPORTED: &[(&str, &str)] = &[
-    (
-        "clear-sign",
-        "clear-signed messages are not supported; use --detach-sign",
-    ),
-    (
-        "clearsign",
-        "clear-signed messages are not supported; use --detach-sign",
-    ),
     ("symmetric", "password-only encryption is not supported"),
     ("gen-key", "generate keys with `vault pgp new`"),
     ("generate-key", "generate keys with `vault pgp new`"),
@@ -127,6 +137,8 @@ const UNSUPPORTED: &[(&str, &str)] = &[
 pub struct Args {
     pub sign: bool,
     pub detach: bool,
+    /// `--clearsign`: a clear-signed text.
+    pub clearsign: bool,
     pub encrypt: bool,
     pub decrypt: bool,
     pub verify: bool,
@@ -140,6 +152,11 @@ pub struct Args {
     pub list_config: bool,
     /// `--decrypt --list-only`: name the recipients, decrypt nothing.
     pub list_only: bool,
+    /// `--decrypt --unwrap`: remove the encryption layer only and print the
+    /// OpenPGP message inside it, signatures and all (GPGME, for Thunderbird).
+    pub unwrap: bool,
+    /// `--enable-special-filenames`: `-&N` names file descriptor N.
+    pub special_filenames: bool,
     pub armor: bool,
     pub textmode: bool,
     pub colons: bool,
@@ -177,7 +194,9 @@ pub fn parse(argv: &[String]) -> Result<Args, String> {
             };
             match name {
                 "sign" => a.sign = true,
-                "detach-sign" => a.detach = true,
+                // GPGME spells it `--sign --detach`.
+                "detach-sign" | "detach" => a.detach = true,
+                "clearsign" | "clear-sign" => a.clearsign = true,
                 "encrypt" => a.encrypt = true,
                 "decrypt" => a.decrypt = true,
                 "verify" => a.verify = true,
@@ -191,6 +210,8 @@ pub fn parse(argv: &[String]) -> Result<Args, String> {
                 "help" => a.help = true,
                 "list-config" => a.list_config = true,
                 "list-only" => a.list_only = true,
+                "unwrap" => a.unwrap = true,
+                "enable-special-filenames" => a.special_filenames = true,
                 "armor" | "armour" => a.armor = true,
                 "no-armor" | "no-armour" => a.armor = false,
                 "textmode" => a.textmode = true,
@@ -326,6 +347,28 @@ mod tests {
     }
 
     #[test]
+    fn gpgme_style() {
+        let common = "--enable-special-filenames --batch --no-sk-comments --status-fd 4 --no-tty \
+                      --charset utf8 --enable-progress-filter --exit-on-status-write-error \
+                      --logger-fd 6";
+        let a = p(&format!(
+            "{common} --sign --detach --armor --textmode -u ABCD -- -&7"
+        ));
+        assert!(a.sign && a.detach && a.armor && a.textmode && a.special_filenames);
+        assert_eq!(a.status_fd, Some(4));
+        assert_eq!(a.files, ["-&7"]);
+
+        let a = p(&format!("{common} --decrypt --unwrap --output - -- -&9"));
+        assert!(a.decrypt && a.unwrap);
+        assert_eq!(a.output.as_deref(), Some("-"));
+
+        let a = p("--batch --no-sk-comments --with-colons --list-secret-keys -- ABCD");
+        assert_eq!(a.list, Some(true));
+        assert_eq!(a.files, ["ABCD"]);
+        assert!(p("--clearsign -u alex").clearsign);
+    }
+
+    #[test]
     fn values_glued_to_short_options() {
         let a = p("-uALEX -ro.txt");
         assert_eq!(a.local_users, ["ALEX"]);
@@ -336,7 +379,7 @@ mod tests {
     fn rejects_unknown_and_unsupported() {
         let e = |s: &str| parse(&[s.to_owned()]).unwrap_err();
         assert!(e("--frobnicate").contains("invalid option"));
-        assert!(e("--clearsign").contains("--detach-sign"));
+        assert!(e("--symmetric").contains("password-only"));
         assert!(e("--gen-key").contains("vault pgp new"));
         assert!(e("-x").contains("invalid option"));
         assert!(parse(&["--local-user".into()]).is_err());

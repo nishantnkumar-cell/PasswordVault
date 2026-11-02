@@ -22,7 +22,7 @@ what it needs:
 | The desktop app (`vault-gui`) | Day-to-day use in a window |
 | The browser extension | Filling logins on websites |
 | `ssh`, `git`, `ssh-keygen` | Using SSH keys stored in the vault |
-| `vault-gpg` | Lets programs that run `gpg` (git, pass, NeoMutt) use OpenPGP keys stored in the vault |
+| `vault-gpg` | Lets programs that run `gpg` (git, pass, NeoMutt, Thunderbird) use OpenPGP keys stored in the vault |
 
 The vault is either **locked** (the keys are not in memory; nobody can read
 anything) or **unlocked** (clients can read and change items). `vaultd`
@@ -49,7 +49,7 @@ random program on your computer cannot just ask for your passwords.
 7. [OpenPGP keys](07-openpgp.md): signing, encrypting and decrypting files and mail.
 8. [Troubleshooting, backups and safety tips](08-troubleshooting.md)
 9. [Programs that call gpg](09-gpg-programs.md): git signing with OpenPGP,
-   `pass`, and NeoMutt, through `vault-gpg`.
+   `pass`, NeoMutt and Thunderbird, through `vault-gpg`.
 10. [Sync between devices](10-sync.md): one vault on several computers
     through OneDrive, Google Drive, Dropbox or any synced folder.
 11. [Versions, downloads and upgrading](11-versions-and-upgrades.md): which
@@ -83,6 +83,7 @@ random program on your computer cannot just ask for your passwords.
 | OpenPGP keys | Yes | Yes | Yes |
 | `vault-gpg` for git and NeoMutt | Yes | git only (untested on real hardware) | Yes (untested on real hardware) |
 | `vault-gpg` for `pass` | Yes | Not applicable | Should work; untested |
+| Thunderbird with a vault key (through GPGME) | Yes (not yet clicked through in Thunderbird itself) | Should work with Gpg4win; untested | Should work with Homebrew's GPGME; untested |
 | Sync through OneDrive, Google Drive, Dropbox | Yes | Yes | Yes, and iCloud Drive |
 | Apps keep passwords in the vault (Secret Service) | Yes, opt-in | Not applicable | Not applicable |
 | Locks on screen lock and suspend | Yes | Yes | Not yet (locks after 15 idle minutes) |

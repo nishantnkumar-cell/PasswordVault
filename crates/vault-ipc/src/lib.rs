@@ -389,6 +389,20 @@ pub enum Request {
     /// Generate a password in any style. Added after `Generate`, which stays
     /// for older clients.
     GenerateStyled { style: PasswordStyle },
+    /// A signed message with an item's OpenPGP key: the data inside the
+    /// signature (gpg's `--sign`), or with `cleartext` a clear-signed text
+    /// (`--clearsign`, always armored). `text` as for `PgpSign`.
+    PgpSignMessage {
+        id: ItemId,
+        data: Vec<u8>,
+        cleartext: bool,
+        armor: bool,
+        text: bool,
+    },
+    /// Like `PgpDecrypt`, but answers with the OpenPGP message that was
+    /// inside the encryption, signatures and all (gpg's `--unwrap`), so the
+    /// caller can check them.
+    PgpUnwrap { message: Vec<u8> },
 }
 
 /// A program allowed to use the Secret Service.
