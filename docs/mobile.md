@@ -159,7 +159,65 @@ cd mobile/android
 ```
 
 The APK is in `app/build/outputs/apk/`. The release build is signed with
-the debug key until a release key is configured.
+the debug key unless a release key is given (below).
+
+### Release signing
+
+Releases attach `secret-vault-<version>-android.apk`, signed with the
+project's own release key: a free, self-made key, not a Google Play key.
+Android only installs an update signed with the same key as the installed
+app, so **every release must be signed with this one key, forever**. If
+it is lost, nobody can update their installed app; they have to uninstall
+(losing anything not synced) and install again.
+
+The key is kept in two GitHub Actions secrets, never in the repository.
+`.github/workflows/release.yml` decodes it for the `android` job only, runs
+`mobile/scripts/build-android-release.sh`, and deletes it. The script
+refuses an APK signed with a debug key and puts the certificate's SHA-256
+fingerprint in the release description. Without the secrets, a release is
+still published, without the APK, and the run shows a warning. The Mobile
+workflow checks the same signing path on every change with a throwaway key.
+
+To set it up once, on the Mac (Android Studio's Java has `keytool`) or any
+computer with a JDK:
+
+1. Make the key. Pick a long password and type it when asked (twice):
+
+   ```sh
+   export PATH="/Applications/Android Studio.app/Contents/jbr/Contents/Home/bin:$PATH"   # macOS, if keytool isn't found
+   keytool -genkeypair -keystore secret-vault-release.jks -alias secret-vault \
+     -keyalg RSA -keysize 4096 -validity 10000 -dname "CN=Secret Vault"
+   ```
+
+   Keep it out of the repository folder (for example in `~/Documents`).
+2. Copy the key as text: `base64 -i secret-vault-release.jks | pbcopy`
+   (macOS) or `base64 -w0 secret-vault-release.jks` (Linux).
+3. Back it up: paste that text and the password into a secure note in your
+   vault, and keep a copy of the `.jks` file somewhere off this computer
+   (for example a USB stick). GitHub never shows a secret again.
+4. On GitHub open the repository's **Settings > Secrets and variables >
+   Actions** and click **New repository secret** twice:
+   - `ANDROID_KEYSTORE_BASE64`: paste the text from step 2.
+   - `ANDROID_KEYSTORE_PASSWORD`: the password from step 1.
+
+   With another alias, add `ANDROID_KEY_ALIAS` too (default
+   `secret-vault`). Keys made with the command above have one password;
+   the build uses the keystore password for the key.
+5. Note the fingerprint, for checking releases against:
+   `keytool -list -keystore secret-vault-release.jks -alias secret-vault`
+   prints *Certificate fingerprint (SHA-256)*.
+
+To build a signed APK by hand:
+
+```sh
+VAULT_ANDROID_KEYSTORE=~/Documents/secret-vault-release.jks \
+VAULT_ANDROID_KEYSTORE_PASSWORD=... \
+mobile/scripts/build-android-release.sh /tmp/secret-vault-android.apk
+```
+
+`versionCode` comes from the version (0.2.0 is 200), so betas of a version
+share the code of the final release; Android installs those over each other
+but refuses an older version over a newer one.
 
 ### iOS
 
@@ -204,8 +262,9 @@ adds an iPhone Duo simulator for the foldable layout.
 
 `.github/workflows/mobile.yml` builds the Android debug and release APKs
 with unit tests and lint on Linux, and the iOS app and its AutoFill
-extension for the simulator on macOS. The release APK is uploaded as a
-build artifact.
+extension for the simulator on macOS. The release APK, signed with the
+debug key, is uploaded as a build artifact; the workflow then rebuilds it
+with a throwaway release key to check [release signing](#release-signing).
 
 The same workflow then walks through each app the way a first-time user
 would (create a vault, add a login with a one-time code and a card, open

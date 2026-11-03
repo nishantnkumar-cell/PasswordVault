@@ -59,6 +59,7 @@ No GitHub account is needed. Each release has:
 | `SecretVault-<version>-macos.pkg` | macOS 11 and newer, Apple silicon and Intel: the installer ([chapter 13](13-macos.md)) |
 | `secret-vault-<version>-macos-universal.tar.gz` | macOS without an administrator password, with `install.sh` |
 | `secret-vault-extension-<version>.zip` | The browser extension, to load unpacked |
+| `secret-vault-<version>-android.apk` | Android 9 and newer, phones and tablets ([chapter 14](14-phone-apps.md#android)); from 0.2.0-beta.2 on |
 | `SHA256SUMS.txt` | A fingerprint of every file above, to check a download (below) |
 
 The release's description is that version's section of the
@@ -91,8 +92,10 @@ warning and lists everything new since the last full release.
   upgrade. Your vault, unlock methods and settings stay. On Debian and
   Ubuntu, `apt` knows that `0.2.0-beta.1` comes before `0.2.0`
   (`apt policy secret-vault` shows the beta as `0.2.0~beta.1`).
-- **Phones and tablets:** betas do not include the iPhone, iPad or Android
-  apps; see [Phone and tablet apps](14-phone-apps.md).
+- **Phones and tablets:** from `0.2.0-beta.2` on, betas include the Android
+  app (`secret-vault-<version>-android.apk`); `0.2.0-beta.1` does not. The
+  iPhone and iPad app is not on the Releases page (it needs a paid Apple
+  developer account); see [Phone and tablet apps](14-phone-apps.md).
 
 ### Checking a download (optional)
 
@@ -122,6 +125,9 @@ Windows and macOS don't know who made them and warn once. This is expected.
   Anyway**. On macOS 11 to 14, right-click the `.pkg` and choose **Open**.
   See [chapter 13](13-macos.md).
 - **Linux:** no warning. `apt` and `install.sh` install the files as they are.
+- **Android:** the phone asks once whether your browser or file manager may
+  install apps, and Google Play Protect may say it doesn't recognise the
+  developer. See [Install the Android app](14-phone-apps.md#android).
 - **Browsers** may say the file "isn't commonly downloaded". Choose **Keep**
   (Edge: **…** > **Keep**; Chrome: **Keep anyway**).
 

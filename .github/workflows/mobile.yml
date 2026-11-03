@@ -52,6 +52,17 @@ jobs:
           path: |
             mobile/android/app/build/outputs/apk/debug/app-debug.apk
             mobile/android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+      # The release workflow's signing path, with a key made for this run only
+      # (after the uploads, as it rebuilds the release APK).
+      - name: Sign a release APK with a throwaway key
+        run: |
+          export ANDROID_NDK_HOME=${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}
+          export VAULT_ANDROID_KEYSTORE="$RUNNER_TEMP/throwaway.jks" VAULT_ANDROID_KEYSTORE_PASSWORD=$(openssl rand -hex 16)
+          keytool -genkeypair -keystore "$VAULT_ANDROID_KEYSTORE" -storepass "$VAULT_ANDROID_KEYSTORE_PASSWORD" \
+            -alias secret-vault -keyalg RSA -keysize 4096 -validity 10000 -dname "CN=Throwaway test key"
+          mobile/scripts/build-android-release.sh "$RUNNER_TEMP/out/secret-vault-test-android.apk"
+          test "$(cat "$RUNNER_TEMP/out/secret-vault-test-android.apk.cert.txt")" = \
+            "$(keytool -list -keystore "$VAULT_ANDROID_KEYSTORE" -storepass "$VAULT_ANDROID_KEYSTORE_PASSWORD" | sed -n 's/^Certificate fingerprint (SHA-256): //p')"
 
   # The UI tour on emulators of three sizes, with a screenshot of each screen.
   android-ui:
