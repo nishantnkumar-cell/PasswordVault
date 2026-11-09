@@ -226,7 +226,7 @@ fn pack(s: Session) -> u8 {
 }
 
 fn unpack(b: u8) -> Option<Session> {
-    (b & 1 == 1).then(|| Session {
+    (b & 1 == 1).then_some(Session {
         on_console: b & 2 != 0,
         locked: b & 4 != 0,
     })
