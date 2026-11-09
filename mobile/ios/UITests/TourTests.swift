@@ -192,7 +192,18 @@ final class TourTests: XCTestCase {
         // The simulator may offer a strong password for new-password fields.
         let own = app.buttons["Choose My Own Password"]
         if own.waitForExistence(timeout: 1) { own.tap(); field.tap() }
+        // On a slow iPad simulator the tap can land before the field takes
+        // the keyboard ("Neither element nor any descendant has keyboard
+        // focus"). Tap again until it has focus, then type.
+        for _ in 0..<3 where !hasFocus(field) {
+            sleep(2)
+            field.tap()
+        }
         field.typeText(text)
+    }
+
+    private func hasFocus(_ field: XCUIElement) -> Bool {
+        (field.value(forKey: "hasKeyboardFocus") as? Bool) ?? false
     }
 
     /// Taps an element, scrolling down to it first. Lists and forms only
