@@ -53,6 +53,18 @@ pub struct KeyslotMeta {
     pub factor: Factor,
 }
 
+/// Smallest Argon2 memory accepted (64 MiB), section 3.1.
+pub const KDF_MIN_M_KIB: u32 = 65_536;
+/// Largest Argon2 memory accepted (1 GiB), section 3.1.
+pub const KDF_MAX_M_KIB: u32 = 1_048_576;
+/// Largest Argon2 pass count accepted, section 3.1.
+pub const KDF_MAX_T: u32 = 10;
+/// Largest Argon2 lane count accepted, section 3.1.
+pub const KDF_MAX_P: u32 = 8;
+/// Largest `m_kib * t` accepted (2 GiB of memory passes, under three times
+/// the writer default of 256 MiB x 3), section 3.1.
+pub const KDF_MAX_WORK: u64 = 2_097_152;
+
 /// Argon2id parameters stored per slot. The Argon2 version is always 0x13.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct Argon2Params {
@@ -94,11 +106,14 @@ impl KdfCost {
 }
 
 impl Argon2Params {
-    /// Section 3.1 bounds, checked before any KDF runs.
+    /// Section 3.1 bounds, checked before any KDF runs. The header is only
+    /// authenticated after the KDF, so these caps are what keeps a tampered
+    /// file from demanding minutes of work or more memory than a phone has.
     pub(crate) fn check_bounds(&self) -> Result<(), Error> {
-        let ok = (65_536..=4_194_304).contains(&self.m_kib)
-            && (1..=20).contains(&self.t)
-            && (1..=16).contains(&self.p);
+        let ok = (KDF_MIN_M_KIB..=KDF_MAX_M_KIB).contains(&self.m_kib)
+            && (1..=KDF_MAX_T).contains(&self.t)
+            && (1..=KDF_MAX_P).contains(&self.p)
+            && u64::from(self.m_kib) * u64::from(self.t) <= KDF_MAX_WORK;
         if ok {
             Ok(())
         } else {

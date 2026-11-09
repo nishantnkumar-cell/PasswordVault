@@ -80,11 +80,11 @@ class VaultAutofillService : AutofillService() {
         }
 
         fun parse(structure: AssistStructure): FillTarget {
-            var user: AutofillId? = null
-            var pass: AutofillId? = null
-            var domain: String? = null
-            fun visit(n: AssistStructure.ViewNode) {
-                n.webDomain?.takeIf { it.isNotBlank() }?.let { if (domain == null) domain = it }
+            val fields = mutableListOf<FieldCandidate<AutofillId>>()
+            // A node's web domain applies to everything under it, until an
+            // inner frame (an iframe from another site) reports its own.
+            fun visit(n: AssistStructure.ViewNode, inherited: String?) {
+                val domain = n.webDomain?.takeIf { it.isNotBlank() } ?: inherited
                 val id = n.autofillId
                 if (id != null && n.autofillType == View.AUTOFILL_TYPE_TEXT) {
                     val hints = n.autofillHints?.map { it.lowercase() }.orEmpty()
@@ -99,13 +99,38 @@ class VaultAutofillService : AutofillService() {
                         variation == InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS ||
                         variation == InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS ||
                         listOf("user", "email", "login", "account").any { it in words }
-                    if (secretField && pass == null) pass = id
-                    else if (isUser && user == null && pass == null) user = id
+                    if (secretField || isUser) fields += FieldCandidate(id, domain, secretField, isUser)
                 }
-                for (i in 0 until n.childCount) visit(n.getChildAt(i))
+                for (i in 0 until n.childCount) visit(n.getChildAt(i), domain)
             }
-            for (i in 0 until structure.windowNodeCount) visit(structure.getWindowNodeAt(i).rootViewNode)
-            return FillTarget(user, pass, domain, structure.activityComponent.packageName)
+            for (i in 0 until structure.windowNodeCount) visit(structure.getWindowNodeAt(i).rootViewNode, null)
+            val chosen = chooseFields(fields)
+            return FillTarget(chosen.username, chosen.password, chosen.webDomain, structure.activityComponent.packageName)
         }
     }
+}
+
+/** A text field that may take a username or a password, with the web domain of the frame it is in. */
+data class FieldCandidate<T>(val id: T, val webDomain: String?, val secret: Boolean, val user: Boolean)
+
+/** The fields to fill, and the one web domain they all belong to (null if none or if they differ). */
+data class ChosenFields<T>(val username: T?, val password: T?, val webDomain: String?)
+
+/**
+ * Pick the password field (the first one) and the username field before
+ * it, from the same frame only: a page can embed another site's frame,
+ * and a login must never be filled into a field of a site it isn't bound
+ * to. The domain is the chosen fields' own, never one seen elsewhere on
+ * the screen.
+ */
+fun <T> chooseFields(fields: List<FieldCandidate<T>>): ChosenFields<T> {
+    val passIndex = fields.indexOfFirst { it.secret }
+    val pass = fields.getOrNull(passIndex)
+    val user = if (pass != null) {
+        fields.subList(0, passIndex).firstOrNull { it.user && !it.secret && it.webDomain == pass.webDomain }
+    } else {
+        fields.firstOrNull { it.user && !it.secret }
+    }
+    val domain = (pass ?: user)?.webDomain
+    return ChosenFields(user?.id, pass?.id, domain)
 }

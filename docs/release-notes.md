@@ -117,6 +117,40 @@ users' signatures show as invalid in Thunderbird). Evolution and KMail are
 not connected yet. No vault file change; `vaultd`, `vault-gpg` and the other
 programs must be updated together (two new requests).
 
+### Safer unlock limits, sync limits and Android AutoFill frames
+
+These fix three findings from a security review (issues #49, #50 and #51).
+Nothing changes in day-to-day use.
+
+- **Unlock settings have a lower ceiling.** Each unlock method stores how
+  much memory and time the password check (Argon2) takes. A vault file now
+  asks for at most 1 GiB of memory, 10 passes and 8 lanes, and at most
+  2 GiB of total work, which is just under three times the default
+  (256 MiB, 3 passes). Before this, an edited vault file could ask for 4 GiB
+  and 20 passes, enough to freeze a phone or stall a computer for minutes
+  before the file was found to be fake. Vaults made by Secret Vault always
+  use the default, so they all still open. Details: [file format, section
+  3.1](format.md#31-parse-time-bounds).
+- **Sync reads only vault-sized files.** It looks at the synced copy and at
+  most 16 conflict copies, skips any file over 64 MiB, and reads at most
+  256 MiB per check, so junk in the sync folder can't run the daemon out of
+  memory. See [sync, things to know](user-guide/10-sync.md#things-to-know).
+- **Android AutoFill checks each field's own site.** When a page shows a
+  sign-in box from another site in an embedded frame, Secret Vault now uses
+  the password field's own site to pick logins. It never fills a username
+  field that belongs to a different site. Before, it used the first site
+  named anywhere on the screen. See [fill a
+  login](user-guide/14-phone-apps.md#fill-a-login).
+
+| | Linux | Windows | macOS | Android | iPhone and iPad |
+| --- | --- | --- | --- | --- | --- |
+| Unlock limits | Yes | Yes | Yes | Yes | Yes |
+| Sync limits | Yes | Yes | Yes | n/a (opens only the synced file, no conflict copies) | n/a (same) |
+| AutoFill frame check | n/a | n/a | n/a | Yes | n/a (separate code, not part of this finding) |
+
+Known limits: the Android frame check has unit tests but hasn't been tried
+on a real phone with a mixed-site page. No vault file change.
+
 ### Security fixes in the libraries the vault uses
 
 Nothing changes in how you use the vault, and the vault file is the same.
