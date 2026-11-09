@@ -18,6 +18,8 @@ permissions:
 jobs:
   packages:
     uses: ./.github/workflows/package.yml
+    # The macOS job signs and notarizes when the Apple secrets are set.
+    secrets: inherit
 
   # The Android APK, signed with the release key. Skipped, with a warning on
   # the run, when the secrets are not set.

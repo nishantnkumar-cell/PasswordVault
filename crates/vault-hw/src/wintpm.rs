@@ -39,7 +39,9 @@ use windows_sys::core::{HRESULT, PCWSTR};
 use zeroize::Zeroizing;
 
 use super::tpm2::{self, RsaPublic};
-use super::{HwResult, LINUX_TPM_HINT, Tpm, WIN_TPM_MAGIC, WIN_TPM_SEALED};
+use super::{
+    HwResult, LINUX_TPM_HINT, MAC_SE_HINT, MAC_SE_MAGIC, Tpm, WIN_TPM_MAGIC, WIN_TPM_SEALED,
+};
 
 /// The machine's TPM, through the Microsoft Platform Crypto Provider.
 pub struct WinTpm;
@@ -319,6 +321,9 @@ impl Tpm for WinTpm {
 /// Unwrap a `VWTPM1` slot. `bind_pcr7` is not needed: the key carries its
 /// own PCR binding.
 fn unseal_wrapped(blob: &[u8], pin: Option<&str>) -> HwResult<HwKey> {
+    if blob.starts_with(MAC_SE_MAGIC) {
+        return Err(MAC_SE_HINT.into());
+    }
     let rest = blob.strip_prefix(WIN_TPM_MAGIC).ok_or(LINUX_TPM_HINT)?;
     let [hash, l0, l1, rest @ ..] = rest else {
         return Err("TPM blob truncated".into());

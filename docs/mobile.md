@@ -232,6 +232,45 @@ Set your team under Signing for both targets (the app and
 keychain group need a paid developer account; on a free account the app
 runs without AutoFill and keeps its files in its own container.
 
+With the project's paid account, a build from Xcode onto a connected
+iPhone has AutoFill too: pick the team in **Signing & Capabilities** for
+both targets, choose the iPhone as the run destination and press Run.
+Xcode makes the development profiles itself. Most people install from
+TestFlight instead (below).
+
+### TestFlight
+
+`.github/workflows/testflight.yml` archives the app with its AutoFill
+extension for real devices, signs it for the App Store and uploads it to
+App Store Connect, where it appears in TestFlight
+(`mobile/scripts/testflight.sh`). It runs for every `v*` tag and by hand
+(**Actions > TestFlight > Run workflow**; untick **Upload** to only build
+and sign, with the `.ipa` as a download).
+
+Signing is automatic: given the App Store Connect API key, Xcode on the
+runner registers anything missing, makes the provisioning profiles and uses
+a cloud-managed distribution certificate, so no certificate secret is
+needed for iOS. The key must have the Admin role for that. The script then
+checks that the AutoFill extension is inside and carries the AutoFill and
+App Group entitlements.
+
+| Secret | What |
+|---|---|
+| `APPLE_TEAM_ID` | The team ID (ten characters) |
+| `APPLE_API_KEY_P8`, `APPLE_API_KEY_ID`, `APPLE_API_ISSUER_ID` | The App Store Connect API key, shared with [macOS notarization](macos-signing.md#in-ci) |
+
+Without them the workflow only warns. Pull requests that touch the iOS app
+run the same workflow without secrets: it archives for a real device
+without signing (`VAULT_UNSIGNED=1`), which catches device-only build
+problems the simulator build misses.
+
+The version is the workspace version and the build number counts commits
+(`build-ios.sh`), so each upload is higher than the last. A second upload
+of the same commit is rejected by App Store Connect as a duplicate.
+
+Setting up the account, the app record and the secrets, step by step, is
+in [apple-account.md](apple-account.md).
+
 ### Trying it on a Mac by hand
 
 `mobile/scripts/run-sim.sh` builds the app and opens it on one simulator

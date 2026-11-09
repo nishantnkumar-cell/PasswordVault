@@ -1,0 +1,74 @@
+# Builds the iPhone and iPad app (with its AutoFill extension) for the App
+# Store and uploads it to App Store Connect, where it appears in TestFlight.
+# Runs for every version tag (betas too) and by hand from the Actions tab
+# (Run workflow). Needs the Apple secrets in docs/apple-account.md; without
+# them it only warns. Pull requests that touch the iOS app archive it for a
+# real device without signing, to catch device-only build problems early.
+name: TestFlight
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths: ["mobile/ios/**", "mobile/scripts/build-ios.sh", "mobile/scripts/testflight.sh", "crates/vault-mobile/**", ".github/workflows/testflight.yml"]
+  workflow_dispatch:
+    inputs:
+      upload:
+        description: Upload to App Store Connect (off makes the signed .ipa only, as a download)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  ios:
+    runs-on: macos-26
+    env:
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+      APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+    steps:
+      - name: Apple secrets
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            echo "HAVE_KEY=unsigned" >> "$GITHUB_ENV"
+          elif [ -z "$APPLE_TEAM_ID" ] || [ -z "$APPLE_API_KEY_P8" ] || [ -z "$APPLE_API_KEY_ID" ] || [ -z "$APPLE_API_ISSUER_ID" ]; then
+            echo "::warning title=No TestFlight upload::APPLE_TEAM_ID, APPLE_API_KEY_P8, APPLE_API_KEY_ID and APPLE_API_ISSUER_ID are not all set (docs/apple-account.md)"
+            echo "HAVE_KEY=false" >> "$GITHUB_ENV"
+          else
+            echo "HAVE_KEY=true" >> "$GITHUB_ENV"
+          fi
+      - uses: actions/checkout@v7
+        if: env.HAVE_KEY != 'false'
+        with:
+          # The build number counts commits (mobile/scripts/build-ios.sh).
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        if: env.HAVE_KEY != 'false'
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-ios
+      - uses: maxim-lobanov/setup-xcode@v1
+        if: env.HAVE_KEY != 'false'
+        with:
+          xcode-version: latest-stable
+      - name: Install XcodeGen
+        if: env.HAVE_KEY != 'false'
+        run: brew install xcodegen
+      - name: Build the Rust library and Swift bindings
+        if: env.HAVE_KEY != 'false'
+        run: mobile/scripts/build-ios.sh release
+      - name: Archive, sign and upload
+        if: env.HAVE_KEY != 'false'
+        run: mobile/scripts/testflight.sh
+        env:
+          VAULT_UNSIGNED: ${{ env.HAVE_KEY == 'unsigned' && '1' || '0' }}
+          VAULT_UPLOAD: ${{ (github.event_name == 'workflow_dispatch' && !inputs.upload) && '0' || '1' }}
+      - uses: actions/upload-artifact@v7
+        if: always() && env.HAVE_KEY == 'true'
+        with:
+          name: testflight
+          path: |
+            mobile/ios/build/logs
+            mobile/ios/build/export/*.ipa

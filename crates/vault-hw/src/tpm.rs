@@ -31,7 +31,7 @@ use tss_esapi::{Context, Error as TssError};
 use vault_core::HwKey;
 use zeroize::Zeroizing;
 
-use super::{HwResult, Tpm, WIN_TPM_HINT, WIN_TPM_PREFIX};
+use super::{HwResult, MAC_SE_HINT, MAC_SE_MAGIC, Tpm, WIN_TPM_HINT, WIN_TPM_PREFIX};
 #[cfg(test)]
 use super::{WIN_TPM_MAGIC, WIN_TPM_SEALED};
 
@@ -246,6 +246,9 @@ impl Tpm for SystemTpm {
     fn unseal(&self, blob: &[u8], pin: Option<&str>, bind_pcr7: bool) -> HwResult<HwKey> {
         if blob.starts_with(WIN_TPM_PREFIX) {
             return Err(WIN_TPM_HINT.into());
+        }
+        if blob.starts_with(MAC_SE_MAGIC) {
+            return Err(MAC_SE_HINT.into());
         }
         let (len, rest) = blob.split_at_checked(2).ok_or("TPM blob truncated")?;
         let len = u16::from_le_bytes([len[0], len[1]]) as usize;

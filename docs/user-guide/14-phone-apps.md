@@ -19,7 +19,9 @@ Use them when:
 ## Before you start
 
 - **iPhone and iPad:** iOS or iPadOS 26 or later. The app isn't in the App
-  Store yet; for now it is built from source with Xcode on a Mac (see
+  Store yet. Testers invited by the project install it from Apple's
+  **TestFlight** app ([below](#install-the-iphone-and-ipad-app)); anyone
+  can also build it from source with Xcode on a Mac (see
   [mobile.md](../mobile.md#ios)).
 - **Android:** Android 9 or later. The app isn't on Google Play; install
   it from the project's Releases page as described in
@@ -91,8 +93,30 @@ from verified developers, rolling out country by country from late 2026.
 If your phone refuses to install the APK for that reason, please report
 it on the project's Issues page.
 
-There's no app store version for iPhone and iPad yet; on those the app is
-built from source (see [mobile.md](../mobile.md#ios)).
+## Install the iPhone and iPad app
+
+The iPhone and iPad app is not in the App Store yet. Until it is, it comes
+through **TestFlight**, Apple's app for trying apps before they are
+released. The project owner invites testers by email.
+
+1. On the iPhone or iPad, install **TestFlight** from the App Store (it's
+   free, made by Apple).
+2. Open the invitation email on the same device and tap **View in
+   TestFlight** (or open the public link you were given).
+3. In TestFlight, tap **Accept**, then **Install**.
+4. Open **Secret Vault** from the home screen and carry on with
+   [Set up the app](#set-up-the-app).
+
+TestFlight installs updates when the project uploads a new version; you can
+turn on automatic updates on the app's page in TestFlight. Each test build
+works for 90 days, after which TestFlight asks you to install a newer one.
+Your vault stays on the device across updates.
+
+**Building it yourself instead.** With a Mac and Xcode you can build the
+app from source ([mobile.md](../mobile.md#ios)). A build signed with a free
+Apple Account runs for 7 days and **can't fill passwords in other apps**:
+Apple only allows AutoFill providers from paid developer accounts. The
+TestFlight app has AutoFill.
 
 ## Set up the app
 
@@ -250,7 +274,9 @@ editor, which uses 20 characters of every kind.
 
 - **iPhone and iPad:** in the app go to **Settings > Turn On AutoFill**,
   or open the Settings app, go to **General > AutoFill & Passwords** and
-  switch on **Secret Vault**.
+  switch on **Secret Vault**. This needs the TestFlight (or, later, App
+  Store) app: a copy you built yourself with a free Apple Account is not
+  listed there.
 - **Android:** in the app go to **Settings > Use Secret Vault for
   autofill** and choose **Secret Vault**. (In Android's own settings this is under *Passwords,
   passkeys and accounts* or *Autofill service*, depending on the phone.)

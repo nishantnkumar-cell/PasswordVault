@@ -53,6 +53,8 @@ jobs:
   # under each run's Artifacts, versioned X.Y.Z-dev.<commit>.
   packages:
     uses: ./.github/workflows/package.yml
+    # The macOS job signs and notarizes when the Apple secrets are set.
+    secrets: inherit
 
   # Everything, including the daemon over a Unix socket, on macOS.
   macos:
@@ -64,3 +66,13 @@ jobs:
           components: clippy
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
+      # The Secure Enclave helper's slot format, with a software key (runners
+      # have no Secure Enclave), and that the real helper builds.
+      - name: Secure Enclave helper
+        run: |
+          contrib/macos/build-se.sh target/se-real
+          VAULT_SE_SOFTWARE=1 contrib/macos/build-se.sh target/se-test
+          target/se-test/vault-se check
+          VAULT_SE_TEST_HELPER=$PWD/target/se-test/vault-se cargo test -p vault-hw --lib --locked enclave -- --nocapture
+          # The real one says plainly that there is no enclave here.
+          if target/se-real/vault-se check 2> se.err; then echo "runner has a Secure Enclave"; else cat se.err; grep -q "Secure Enclave" se.err; fi
