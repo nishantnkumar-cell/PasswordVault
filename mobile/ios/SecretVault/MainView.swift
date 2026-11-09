@@ -99,6 +99,7 @@ private struct SplitLayout: View {
     @State private var entry: SidebarEntry? = .category(.all)
     @State private var selected: String?
     @State private var query = ""
+    @FocusState private var searching: Bool
 
     var body: some View {
         NavigationSplitView {
@@ -129,9 +130,10 @@ private struct SplitLayout: View {
                     ItemListView(category: c, query: query, selection: $selected)
                         .navigationTitle(c.rawValue)
                         .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search")
+                        .searchFocused($searching)
                 case .codes?: CodesView()
                 case .generator?: GeneratorView()
-                case .settings?: SettingsView()
+                case .settings?: NavigationStack { SettingsView() }
                 case nil: Text("Pick a category").foregroundStyle(.secondary)
                 }
             }
@@ -146,6 +148,10 @@ private struct SplitLayout: View {
                 }
             }
         }
+        .focusedSceneValue(\.search, SearchAction {
+            if case .category = entry {} else { entry = .category(.all) }
+            searching = true
+        })
         .onChange(of: entry) { _, now in
             // Don't keep showing an item the new list doesn't contain.
             guard case .category(let c)? = now, let id = selected,

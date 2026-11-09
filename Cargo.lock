@@ -6877,9 +6877,13 @@ dependencies = [
 name = "vault-mobile"
 version = "0.2.0"
 dependencies = [
+ "pgp",
+ "rand 0.8.8",
+ "ssh-key",
  "thiserror 2.0.21",
  "uniffi",
  "vault-core",
+ "vault-import",
  "zeroize",
 ]
 

@@ -8,6 +8,7 @@ struct ItemListView: View {
     /// Set in the three-column layout; nil on phones, which push the detail.
     var selection: Binding<String?>?
     @State private var newKind: Kind?
+    @State private var newKey = false
     @State private var filter: Category = .all
 
     private var shown: [ItemSummary] {
@@ -56,6 +57,8 @@ struct ItemListView: View {
                     ForEach([Kind.login, .note, .card, .identity], id: \.self) { k in
                         Button { newKind = k } label: { Label(k.label, systemImage: k.symbol) }
                     }
+                    Divider()
+                    Button { newKey = true } label: { Label("SSH Key", systemImage: "terminal") }
                 } label: {
                     Label("New Item", systemImage: "plus")
                 }
@@ -69,7 +72,18 @@ struct ItemListView: View {
                 }
             }
         }
+        .sheet(isPresented: $newKey) {
+            NavigationStack {
+                NewSshKeyView { saved in
+                    newKey = false
+                    if let saved { selection?.wrappedValue = saved }
+                }
+            }
+        }
         .refreshable { await vault.syncNow() }
+        .focusedSceneValue(\.newItem, NewItemAction { kind in
+            if let kind { newKind = kind } else { newKey = true }
+        })
     }
 
     @ViewBuilder private var rows: some View {

@@ -310,3 +310,204 @@ fn styled_passwords() {
         12
     );
 }
+
+#[test]
+fn change_password_keeps_items_and_recovery() {
+    let nv = new_vault();
+    let s = &nv.session;
+    s.save_item(None, login("GitHub", "github.com")).unwrap();
+    assert!(matches!(
+        s.change_password("wrong password".into(), "a new master password".into()),
+        Err(MobileError::WrongCredential)
+    ));
+    assert!(matches!(
+        s.change_password(PW.into(), "short".into()),
+        Err(MobileError::Invalid { .. })
+    ));
+    s.change_password(PW.into(), "a new master password".into())
+        .unwrap();
+    assert_eq!(
+        s.slots().iter().filter(|x| x.factor == "password").count(),
+        1
+    );
+
+    let locked = LockedVault::new(s.to_bytes().unwrap()).unwrap();
+    assert!(matches!(
+        locked.unlock_password(PW.into(), 2),
+        Err(MobileError::WrongCredential)
+    ));
+    let a = locked
+        .unlock_password("a new master password".into(), 2)
+        .unwrap();
+    assert_eq!(a.items().len(), 1);
+    locked.unlock_recovery(nv.recovery_code.clone(), 2).unwrap();
+}
+
+#[test]
+fn new_recovery_code_replaces_the_old_one() {
+    let nv = new_vault();
+    let s = &nv.session;
+    let code = s.new_recovery_code().unwrap();
+    assert_ne!(code, nv.recovery_code);
+    assert_eq!(
+        s.slots()
+            .iter()
+            .filter(|x| x.factor == "recovery code")
+            .count(),
+        1
+    );
+    let locked = LockedVault::new(s.to_bytes().unwrap()).unwrap();
+    assert!(locked.unlock_recovery(nv.recovery_code.clone(), 2).is_err());
+    locked.unlock_recovery(code, 2).unwrap();
+}
+
+#[test]
+fn remove_slot_keeps_the_last_password() {
+    let nv = new_vault();
+    let s = &nv.session;
+    let slots = s.slots();
+    let pw = slots.iter().find(|x| x.factor == "password").unwrap();
+    let rc = slots.iter().find(|x| x.factor == "recovery code").unwrap();
+    assert!(matches!(
+        s.remove_slot(pw.id.clone()),
+        Err(MobileError::Invalid { .. })
+    ));
+    s.remove_slot(rc.id.clone()).unwrap();
+    assert_eq!(s.slots().len(), 1);
+    assert!(s.remove_slot(rc.id.clone()).is_err());
+}
+
+#[test]
+fn revoke_others_rekeys_and_makes_a_new_code() {
+    let nv = new_vault();
+    let s = &nv.session;
+    let id = s.save_item(None, login("GitHub", "github.com")).unwrap();
+    // Another phone with the old key, holding a stale copy.
+    let old = LockedVault::new(s.to_bytes().unwrap())
+        .unwrap()
+        .unlock_password(PW.into(), 2)
+        .unwrap();
+    assert!(matches!(
+        s.revoke_others("wrong password".into()),
+        Err(MobileError::WrongCredential)
+    ));
+    let code = s.revoke_others(PW.into()).unwrap();
+    let factors: Vec<String> = s.slots().into_iter().map(|x| x.factor).collect();
+    assert_eq!(factors, ["password", "recovery code"]);
+
+    let bytes = s.to_bytes().unwrap();
+    let locked = LockedVault::new(bytes.clone()).unwrap();
+    assert!(locked.unlock_recovery(nv.recovery_code.clone(), 3).is_err());
+    let b = locked.unlock_recovery(code, 3).unwrap();
+    assert_eq!(b.item(id).unwrap().title, "GitHub");
+    // The other device needs the password once to take the new key.
+    assert!(matches!(
+        old.merge(bytes.clone(), None),
+        Err(MobileError::Rekeyed)
+    ));
+    assert!(old.merge(bytes, Some(PW.into())).unwrap().rekeyed);
+}
+
+#[test]
+fn import_bitwarden_and_csv() {
+    let nv = new_vault();
+    let s = &nv.session;
+    let json = r#"{"encrypted":false,"items":[
+        {"type":1,"name":"Example","login":{"username":"alex@example.com","password":"pw",
+         "uris":[{"uri":"https://example.com/login"}]}},
+        {"type":2,"name":"Wifi","notes":"pass: abc"},
+        {"type":5,"name":"SSH key"}]}"#;
+    let r = s.import_export(format!("\u{feff}  {json}")).unwrap();
+    assert_eq!(
+        (r.imported, r.skipped, r.format.as_str()),
+        (2, 1, "Bitwarden")
+    );
+
+    // Apple Passwords' export.
+    let csv = "Title,URL,Username,Password,Notes,OTPAuth\n\
+               Shop,https://shop.example.com/,alex@example.com,pw2,,otpauth://totp/Shop?secret=JBSWY3DPEHPK3PXP\n";
+    let r = s.import_export(csv.into()).unwrap();
+    assert_eq!((r.imported, r.format.as_str()), (1, "CSV"));
+    let shop = s.items().into_iter().find(|i| i.title == "Shop").unwrap();
+    assert!(shop.has_totp);
+    assert_eq!(s.items().len(), 3);
+
+    assert!(matches!(
+        s.import_export("not,an,export\n1,2,3\n".into()),
+        Err(MobileError::Invalid { .. })
+    ));
+    assert!(matches!(
+        s.import_export(r#"{"encrypted":true,"items":[]}"#.into()),
+        Err(MobileError::Invalid { .. })
+    ));
+}
+
+#[test]
+fn ssh_keys_generate_and_show_public_half() {
+    let nv = new_vault();
+    let s = &nv.session;
+    assert!(
+        s.generate_ssh_key("  ".into(), SshKeyKind::Ed25519, false)
+            .is_err()
+    );
+    let id = s
+        .generate_ssh_key("Laptop".into(), SshKeyKind::Ed25519, true)
+        .unwrap();
+    let k = s.key_public(id.clone()).unwrap().unwrap();
+    assert_eq!(
+        (k.kind.as_str(), k.algorithm.as_str()),
+        ("SSH", "ssh-ed25519")
+    );
+    assert!(k.public_text.starts_with("ssh-ed25519 AAAA") && k.public_text.ends_with(" Laptop"));
+    assert!(k.fingerprint.starts_with("SHA256:"));
+    assert!(k.confirm);
+    let summary = s.items().into_iter().find(|i| i.id == id).unwrap();
+    assert!(summary.has_key);
+
+    let id = s
+        .generate_ssh_key("Old server".into(), SshKeyKind::EcdsaP256, false)
+        .unwrap();
+    let k = s.key_public(id).unwrap().unwrap();
+    assert_eq!(k.algorithm, "ecdsa-sha2-nistp256");
+
+    let plain = s.save_item(None, login("GitHub", "github.com")).unwrap();
+    assert!(s.key_public(plain).unwrap().is_none());
+}
+
+#[test]
+fn openpgp_public_half() {
+    use pgp::composed::{KeyType, SecretKeyParamsBuilder};
+    use pgp::ser::Serialize;
+    use vault_core::item::{ItemData, KeyData};
+
+    let mut params = SecretKeyParamsBuilder::default();
+    params
+        .key_type(KeyType::Ed25519Legacy)
+        .can_certify(true)
+        .can_sign(true)
+        .primary_user_id("Alex Example <alex@example.com>".into());
+    let k = params.build().unwrap().generate(rand::rngs::OsRng).unwrap();
+    let mut item = ItemData::default();
+    item.title = "Mail".into();
+    item.key = Some(KeyData::OpenPgp {
+        tsk: k.to_bytes().unwrap(),
+        confirm: false,
+    });
+
+    let nv = new_vault();
+    let s = &nv.session;
+    let id = {
+        let mut v = s.lock();
+        let id = v.new_item_id(&mut OsRandom).unwrap();
+        v.put_item(&mut OsRandom, &id, &item.to_bytes()).unwrap();
+        hex(&id)
+    };
+    let p = s.key_public(id).unwrap().unwrap();
+    assert_eq!(p.kind, "OpenPGP");
+    assert!(
+        p.public_text
+            .starts_with("-----BEGIN PGP PUBLIC KEY BLOCK-----")
+    );
+    assert_eq!(p.fingerprint.len(), 40);
+    assert!(!p.public_text.contains("PRIVATE"));
+}

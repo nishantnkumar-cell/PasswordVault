@@ -35,21 +35,25 @@ struct SettingsView: View {
             unlockSection
             syncSection
             autofillSection
-            Section("Unlock Methods on This Vault") {
-                ForEach(vault.slots(), id: \.id) { slot in
-                    HStack {
-                        Image(systemName: slot.usableHere ? "checkmark.circle.fill" : "laptopcomputer")
-                            .foregroundStyle(slot.usableHere ? Palette.ok : Palette.muted)
-                        VStack(alignment: .leading) {
-                            // A slot without its own name is labelled with its kind; don't say it twice.
-                            let kind = slot.factor.prefix(1).uppercased() + slot.factor.dropFirst()
-                            let named = !slot.label.isEmpty && slot.label.lowercased() != slot.factor.lowercased()
-                            Text(named ? slot.label : kind)
-                            Text((named ? "\(kind) · " : "") + (slot.usableHere ? "Works on this device" : "Works on the computer that added it"))
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
+            Section {
+                NavigationLink {
+                    UnlockMethodsView()
+                } label: {
+                    LabeledContent {
+                        Text("\(vault.slots().count)")
+                    } label: {
+                        Label("Unlock Methods", systemImage: "key.horizontal")
                     }
                 }
+                NavigationLink {
+                    ImportView()
+                } label: {
+                    Label("Import from Another App", systemImage: "square.and.arrow.down")
+                }
+            } header: {
+                Text("Vault")
+            } footer: {
+                Text("Change the master password, make a new recovery code or remove a lost device's unlock method. Import brings in logins from Apple Passwords, Bitwarden, Chrome, Edge or Firefox.")
             }
             Section {
                 Button { vault.lock() } label: { Label("Lock Now", systemImage: "lock") }
