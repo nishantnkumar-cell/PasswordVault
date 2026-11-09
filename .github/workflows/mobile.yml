@@ -35,6 +35,16 @@ jobs:
           done
       - name: Install cargo-ndk
         run: cargo install cargo-ndk --locked
+      # services.gradle.org sometimes times out or answers 504; fetch the
+      # wrapper's Gradle first, with retries, so the build doesn't fail on it.
+      - name: Download Gradle
+        working-directory: mobile/android
+        run: |
+          for wait in 5 15 30 60 0; do
+            ./gradlew --no-daemon --version && exit 0
+            [ "$wait" = 0 ] && exit 1
+            echo "Gradle download failed; retrying in ${wait}s"; sleep "$wait"
+          done
       - name: Build the Rust library, then the app
         working-directory: mobile/android
         run: |
