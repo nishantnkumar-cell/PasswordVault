@@ -63,6 +63,19 @@ account cannot open another account's vault.
 2. **SmartScreen.** The installer is not code-signed yet, so Windows may say
    "Windows protected your PC". Click **More info**, check that the file is
    the one you downloaded, then click **Run anyway**.
+
+   **Smart App Control blocks it?** On a PC where Windows 11's *Smart App
+   Control* is on (new PCs and fresh Windows installs often have it on),
+   Windows refuses unsigned programs outright, with no **Run anyway**
+   button: "Smart App Control blocked an app that may be unsafe". Secret
+   Vault's programs are not code-signed yet (a signing certificate costs
+   money every year), so they cannot run on such a PC. Check under
+   **Windows Security > App & browser control > Smart App Control**. The
+   only way round it is to turn Smart App Control **Off** there, and note
+   that Windows does not let you turn it back on without resetting the PC.
+   If you would rather keep it on, wait for signed releases. The same
+   applies to building from source: Smart App Control also blocks the
+   programs `cargo` builds.
 3. **Install mode.** Choose **Install for me only** or **Install for all
    users** (see above). Only the second asks for an administrator.
 4. **Licence.** Read it and click **I accept the agreement**, then **Next**.

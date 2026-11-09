@@ -36,6 +36,12 @@ installing an older version over a newer one.
 
 ## Build
 
+Smart App Control (Windows 11, enforce mode) blocks every unsigned
+executable by reputation, including cargo's build scripts (`os error 4551`,
+"An Application Control policy has blocked this file") and the installer.
+Building or installing needs it off, or Authenticode-signed binaries, which
+the project does not have yet (no free certificate for a non-OSI licence).
+
 Install Git, and Rust from rustup.rs with the "Desktop development with C++"
 build tools, then in PowerShell:
 
