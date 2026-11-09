@@ -117,6 +117,34 @@ users' signatures show as invalid in Thunderbird). Evolution and KMail are
 not connected yet. No vault file change; `vaultd`, `vault-gpg` and the other
 programs must be updated together (two new requests).
 
+### Windows keeps your keys out of the page file and crash reports
+
+- **The last "Not yet" for Windows memory safety is closed.** vaultd now
+  locks the memory it holds keys and items in, so Windows never writes it to
+  the page file, the same as on Linux.
+- **No crash reports with secrets.** vaultd, the desktop app and the
+  approval window are excluded from Windows Error Reporting, so a crash does
+  not leave a dump of their memory on disk.
+- **Other programs cannot read their memory.** Their process permissions
+  now let other programs (even ones running as you) only see and end them,
+  not read or change their memory. vaultd also refuses legacy DLL injection
+  and loads system DLLs only from System32.
+- Nothing to set up: it is on after updating. Turn on BitLocker or Device
+  Encryption as well, because hibernation and blue-screen dumps write all of
+  memory to disk. How it works and how to check it:
+  [How vaultd protects its memory](user-guide/windows-install.md#how-vaultd-protects-its-memory).
+
+| | Linux | Windows | macOS |
+| --- | --- | --- | --- |
+| Keys kept out of swap / page file | Yes (`mlockall`) | Yes (new) | Swap is always encrypted |
+| No crash dumps | Yes | Yes (new) | Yes |
+| Other programs of yours can't read the memory | With the system-user unit | Yes, unless they change the permissions back first (new) | Debugger attach refused |
+
+Known limits: the desktop app does not lock its own memory (it holds only
+what is on screen). An administrator, or malware that first changes the
+process permissions, can still read memory. `VAULT_HARDEN=off` turns the
+permission change off for debugging. No vault file change.
+
 ### Public beta downloads
 
 - **Try Secret Vault before 0.2.0 is final.** Public betas are published on

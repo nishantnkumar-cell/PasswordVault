@@ -114,6 +114,31 @@ Manager > Startup apps**, select **vaultw**, and click **Disable**.
 - **See its messages live:** stop it, then run `vaultd.exe` in a PowerShell
   window. It keeps running until you close that window.
 
+### How vaultd protects its memory
+
+You do not need to set anything up; this happens every time vaultd, the app
+and the approval window start.
+
+- **No crash reports with your keys.** If one of them crashes, Windows does
+  not save a crash report (a "dump") of its memory. The first start adds the
+  three programs to Windows Error Reporting's list of excluded programs for
+  your account.
+- **Other programs cannot read their memory.** Even programs running as you
+  are refused when they try to read vaultd's or the app's memory. Task
+  Manager still shows them and can still end them.
+- **Keys never reach the page file.** vaultd keeps everything it holds in
+  RAM, so Windows never writes it to `pagefile.sys` when memory runs short.
+
+What this cannot do on its own: when the PC hibernates or shows a blue
+screen, Windows writes all of memory to disk. Turn on **BitLocker** or
+**Device Encryption** (Settings > Privacy & security > Device encryption)
+so those files are encrypted too. Most PCs that came with Windows 11 have
+it on already.
+
+If a developer tool needs to attach to vaultd, start it with the
+environment variable `VAULT_HARDEN=off`; see
+[windows.md](../windows.md#memory-protection).
+
 ### Why vaultd is not a Windows service
 
 A Windows service runs under a system account in a separate session with no
@@ -212,3 +237,4 @@ you no longer need the vault or have a copy of it.
 | Security keys need admin | No (Windows 11 or current Windows 10) | No (needs the udev rule in `contrib/udev`) | No |
 | TPM unlock | Yes, no administrator rights needed | Yes | No (Macs have no TPM) |
 | Quick unlock (Windows Hello) | Yes | Not yet | Touch ID |
+| Keys kept out of the page file / swap and crash dumps | Yes (use BitLocker for hibernation) | Yes (`mlockall`; the system-user unit also hides memory from your own programs) | Yes (core dumps off; swap always encrypted) |

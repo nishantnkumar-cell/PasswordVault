@@ -34,6 +34,11 @@ impl eframe::App for Window {
 }
 
 fn main() {
+    // No crash dumps and no memory reads by other programs (docs/windows.md).
+    #[cfg(windows)]
+    for w in vault_ipc::harden::harden_process() {
+        eprintln!("vault-prompt: warning: {w}");
+    }
     let args: Vec<String> = std::env::args().skip(1).collect();
     let request = Request::from_args(&args).unwrap_or_else(|e| {
         eprintln!("vault-prompt: {e}");

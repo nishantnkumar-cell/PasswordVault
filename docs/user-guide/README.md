@@ -87,7 +87,7 @@ random program on your computer cannot just ask for your passwords.
 | Sync through OneDrive, Google Drive, Dropbox | Yes | Yes | Yes, and iCloud Drive |
 | Apps keep passwords in the vault (Secret Service) | Yes, opt-in | Not applicable | Not applicable |
 | Locks on screen lock and suspend | Yes | Yes | Not yet (locks after 15 idle minutes) |
-| Keys kept out of swap and crash dumps | Yes | Not yet | Yes (core dumps off; macOS always encrypts swap) |
+| Keys kept out of swap and crash dumps | Yes | Yes (page file and crash dumps; use BitLocker for hibernation and blue-screen dumps) | Yes (core dumps off; macOS always encrypts swap) |
 
 A vault file can be copied between Linux, Windows and macOS: the file
 format is the same everywhere. Only TPM slots are tied to one computer and

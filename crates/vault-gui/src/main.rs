@@ -24,6 +24,11 @@ impl eframe::App for Window {
 }
 
 fn main() -> eframe::Result {
+    // No crash dumps and no memory reads by other programs (docs/windows.md).
+    #[cfg(windows)]
+    for w in vault_ipc::harden::harden_process() {
+        eprintln!("vault-gui: warning: {w}");
+    }
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("Secret Vault")

@@ -77,6 +77,7 @@ Status: **M** = mitigated by the design, **P** = partially mitigated, **A** = ac
 | --- | --- | --- |
 | Read `vaultd` memory while quick unlock is available (Windows) | The parked vault key and its protected wrap key are in the process, as the vault key is while unlocked. `CryptProtectMemory` keeps it out of crash dumps and the page file, not away from code running in or debugging the process | A (opt-in) |
 | Read `vaultd` memory or attach ptrace | Separate system user (`vaultd@.service`; the per-user unit does not give this), `PR_SET_DUMPABLE=0`, Yama ptrace scope, no core dumps | M with the system unit, P with the user unit |
+| Read `vaultd`, `vault-gui` or `vault-prompt` memory (Windows) | Process ACL without `PROCESS_VM_READ` for our own user, no Windows Error Reporting dumps, vaultd heap locked out of the page file (docs/windows.md, Memory protection). The owner can rewrite the ACL first, so this raises the cost only | P |
 | Connect to the socket and request secrets | One-time client pairing, by proving an unlock method or approved in `vaultd`'s own prompt (one at a time, 10 s cooldown after a decline); fresh user presence for non-allowlisted release; rate limit. The prompt names the peer by PID-derived path, not yet by pidfd | P |
 | Impersonate a paired client binary | Pairing key stored in the client's own storage, readable by the same user | A on Linux (no per-app isolation) |
 | Keylog the master password | Wayland: partially mitigated by compositor isolation. X11: any client can keylog | A on X11, P on Wayland |
