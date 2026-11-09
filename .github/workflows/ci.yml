@@ -39,8 +39,13 @@ jobs:
         working-directory: extension
 
   # Everything, including the daemon over a named pipe, on Windows.
+  # The same tests natively on Windows 11 on Arm too.
   windows:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [windows-latest, windows-11-arm]
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable

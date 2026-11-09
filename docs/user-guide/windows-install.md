@@ -27,11 +27,17 @@ from the programs, so updating or removing the app never touches it.
 - **Windows 10 version 1903 or later, 64-bit.** Windows 11 is best: on
   Windows 11 (and Windows 10 with current updates) security keys work
   without administrator rights.
-- **The installer file**, `SecretVault-Setup-<version>.exe`, from the
-  project's [Releases page](https://github.com/nishantnkumar-cell/PasswordVault/releases).
+- **The installer file** from the project's [Releases page](https://github.com/nishantnkumar-cell/PasswordVault/releases).
   Development builds (versions ending in `-dev.<commit>`) are under each CI
   run's *Artifacts* instead; see
   [Versions, downloads and upgrading](11-versions-and-upgrades.md#where-to-download).
+  There are two:
+  - `SecretVault-Setup-<version>.exe` for most PCs (Intel or AMD).
+  - `SecretVault-Setup-<version>-arm64.exe` for PCs with an Arm processor,
+    such as Snapdragon laptops and Copilot+ PCs on Arm. Not sure? Open
+    **Settings > System > About** and look at *System type*: "ARM-based
+    processor" means the `-arm64` file. The other one also works on Arm,
+    more slowly, through Windows' emulation.
 
 ## Which install to choose
 
@@ -237,5 +243,6 @@ you no longer need the vault or have a copy of it.
 | Security keys need admin | No (Windows 11 or current Windows 10) | No (needs the udev rule in `contrib/udev`) | No |
 | TPM unlock | Yes, no administrator rights needed | Yes | No (Macs have no TPM) |
 | Quick unlock (Windows Hello) | Yes | Not yet | Touch ID |
+| Arm processors | Yes, its own installer (`-arm64`), Windows 11 | Build it yourself (packages are x86-64 only) | Yes (universal) |
 | App hidden from screenshots and screen sharing | Yes (`VAULT_ALLOW_CAPTURE=1` allows them) | Not yet | Not yet |
 | Keys kept out of the page file / swap and crash dumps | Yes (use BitLocker for hibernation) | Yes (`mlockall`; the system-user unit also hides memory from your own programs) | Yes (core dumps off; swap always encrypted) |

@@ -19,7 +19,10 @@ Inno Setup 6.x if that is what you have):
     cargo build --release --locked
     iscc contrib\windows\vault.iss /DAppVersion=0.2.0
 
-It lands in `target\installer\`. CI and the release workflow
+It lands in `target\installer\`. On an Arm PC, build there and add
+`/DArch=arm64`: the installer is then `SecretVault-Setup-<version>-arm64.exe`
+and installs only on Arm64 Windows. CI builds both, the Arm one natively on
+GitHub's `windows-11-arm` runner, where the full test suite runs too. CI and the release workflow
 (`.github/workflows/package.yml`) pass `/DAppVersion` from
 `contrib/release/version.sh --build` and `/DNumVersion` (its numeric part,
 for the file's version resource).

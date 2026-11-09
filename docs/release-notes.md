@@ -152,6 +152,24 @@ what is on screen). An administrator, or malware that first changes the
 process permissions, can still read memory. `VAULT_HARDEN=off` turns the
 permission change off for debugging. No vault file change.
 
+### Windows on Arm
+
+- **A native installer for Arm PCs**, such as Snapdragon laptops:
+  `SecretVault-Setup-<version>-arm64.exe` on the Releases page, next to the
+  usual one. Everything runs natively instead of through Windows' x64
+  emulation, so unlocking (Argon2id) is faster and uses less battery.
+- Which one to download: [Before you start](user-guide/windows-install.md#before-you-start).
+  Installing the Arm version over the x64 one (or back) upgrades in place,
+  as the same app.
+
+| | Linux | Windows | macOS |
+| --- | --- | --- | --- |
+| Arm downloads | Not yet (build from source) | Yes (new) | Yes (universal, already) |
+
+Known limits: built and tested in CI on GitHub's Windows 11 Arm runners;
+not yet tried on a real Arm PC (no TPM, security key or Windows Hello there).
+Windows 10 on Arm is untested.
+
 ### Public beta downloads
 
 - **Try Secret Vault before 0.2.0 is final.** Public betas are published on

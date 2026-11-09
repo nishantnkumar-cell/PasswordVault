@@ -15,8 +15,14 @@ env:
   VAULT_COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
 jobs:
+  # x64 and native Arm64 (Windows 11 on Arm runner, free for public repos).
   windows-installer:
-    runs-on: windows-latest
+    strategy:
+      matrix:
+        include:
+          - { arch: x64, runner: windows-latest, suffix: "", artifact: windows-installer }
+          - { arch: arm64, runner: windows-11-arm, suffix: "-arm64", artifact: windows-installer-arm64 }
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -41,16 +47,25 @@ jobs:
             Select-Object -First 1 -ExpandProperty FullName
           if (-not $iscc) { throw "Inno Setup (ISCC.exe) not found" }
           Write-Host "Using $iscc for $env:VAULT_VERSION"
-          & $iscc "/DAppVersion=$env:VAULT_VERSION" "/DNumVersion=$env:VAULT_NUMBER" contrib\windows\vault.iss
+          & $iscc "/DAppVersion=$env:VAULT_VERSION" "/DNumVersion=$env:VAULT_NUMBER" "/DArch=${{ matrix.arch }}" contrib\windows\vault.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Check the version
         shell: bash
         run: |
           test "$(target/release/vaultd.exe --version)" = "vaultd $VAULT_VERSION"
-          test -f "target/installer/SecretVault-Setup-$VAULT_VERSION.exe"
+          test -f "target/installer/SecretVault-Setup-$VAULT_VERSION${{ matrix.suffix }}.exe"
+      - name: Check the CPU type of the programs
+        shell: pwsh
+        run: |
+          $want = @{ x64 = 0x8664; arm64 = 0xAA64 }['${{ matrix.arch }}']
+          foreach ($f in Get-ChildItem target\release\*.exe) {
+            $b = [IO.File]::ReadAllBytes($f.FullName)
+            $m = [BitConverter]::ToUInt16($b, [BitConverter]::ToInt32($b, 0x3c) + 4)
+            if ($m -ne $want) { throw ("{0} is machine 0x{1:x}, not ${{ matrix.arch }}" -f $f.Name, $m) }
+          }
       - uses: actions/upload-artifact@v7
         with:
-          name: windows-installer
+          name: ${{ matrix.artifact }}
           path: target/installer/*.exe
 
   linux-packages:
