@@ -117,6 +117,47 @@ users' signatures show as invalid in Thunderbird). Evolution and KMail are
 not connected yet. No vault file change; `vaultd`, `vault-gpg` and the other
 programs must be updated together (two new requests).
 
+### Security fixes in the libraries the vault uses
+
+Nothing changes in how you use the vault, and the vault file is the same.
+Install the new version as usual ([versions and
+upgrades](user-guide/11-versions-and-upgrades.md)). This entry matters
+most if you build Secret Vault yourself.
+
+- **Fixed library advisories.** `cargo audit` reported five security
+  advisories. Two are fixed by newer releases: `tokio` 1.54.1 (a timing
+  race in its timers; 1.54.0 was also withdrawn) and `ctutils` 0.4.8
+  (comparisons that were meant to take the same time for every input
+  didn't always). All Rust libraries are on their newest compatible
+  releases again.
+- **App-password sessions (Secret Service, Linux only).** The encrypted
+  session that apps such as browsers and mail clients open with the vault
+  now uses `crypto-bigint` 0.7, which fixes timing leaks in the 0.5 release
+  it used before. Apps notice no difference.
+- **Screen lock and Secret Service on `zbus` 6 (Linux only).** The parts of
+  the daemon that lock the vault when the computer sleeps or the screen
+  locks, and that serve app passwords, moved from `zbus` 5 (whose helper
+  libraries are no longer maintained) to `zbus` 6. They behave as before.
+  Windows and macOS don't use `zbus`.
+
+| | Linux | Windows | macOS |
+| --- | --- | --- | --- |
+| `tokio`, `ctutils` and other library updates | Yes | Yes | Yes |
+| App-password session fix (`crypto-bigint` 0.7) | Yes | n/a (no Secret Service) | n/a |
+| `zbus` 6 | Yes | n/a | n/a |
+
+Known limits: three advisories remain until the OpenPGP and SSH libraries
+(`pgp` 0.21.0 and `ssh-key` 0.6.7, their newest stable releases) move to
+fixed versions. A timing leak in `ml-dsa` 0.0.4 can matter when the vault
+signs with a post-quantum OpenPGP key (the Ed25519 half of that hybrid
+signature is not affected). The older `crypto-bigint` 0.5 they use is in
+the code for NIST P-256 keys, so ECDSA P-256 SSH keys are the ones it
+touches; Ed25519 SSH keys (the default) are not affected. The `rsa`
+"Marvin" advisory affects decrypting and signing with RSA secret keys,
+which the vault refuses to store, so it does not apply. The desktop app still
+pulls in `zbus` 5 through its screen-reader support (`eframe` 0.37, its
+newest release); it moves when `eframe` does.
+
 ### Public beta downloads
 
 - **Try Secret Vault before 0.2.0 is final.** Public betas are published on
@@ -962,7 +1003,9 @@ if you build Secret Vault yourself or run its tests.
   releases, and the daemon's signal handling library moved to `signal-hook`
   0.4 (Linux and macOS only; Windows does not use it). Three stay where they
   are on purpose: `zbus` stays on 5.x (Linux only) because 6.0, out on
-  2026-10-16, dropped the blocking API the screen-lock watcher uses; `rand`
+  2026-10-16, dropped the blocking API the screen-lock watcher uses (it
+  moved to 6.x later, see "Security fixes in the libraries the vault
+  uses"); `rand`
   0.8 and `signature` 2 stay because the OpenPGP and SSH libraries
   (`pgp` 0.21, `ssh-key` 0.6, both their latest stable releases) are built
   on them.
