@@ -83,6 +83,51 @@ already has, edit the login (desktop) or use `vault code add --to ID
 --replace`. Delete the screenshot afterwards: anyone with it can make your
 codes. No vault file change.
 
+### Signed Mac downloads, the iPhone app in TestFlight, and Secure Enclave unlock
+
+- **Mac downloads open with a double-click.** The `.pkg` installer and the
+  app in the `.tar.gz` are signed with the project's Apple Developer ID and
+  notarized by Apple, so macOS no longer stops them and there is no **Open
+  Anyway** step. This starts with the first release after `0.2.0-beta.1`.
+- **iPhone and iPad app in TestFlight.** Every release is uploaded to
+  App Store Connect, and invited testers install it from Apple's
+  TestFlight app instead of building it in Xcode.
+- **AutoFill on a real iPhone.** The TestFlight app can fill your
+  passwords and one-time codes in Safari and other apps. (Apple doesn't
+  allow AutoFill in apps built with a free account, which is what you had
+  to use before.)
+- **Unlock with the Mac's Secure Enclave.** A new "this device" unlock
+  method on Macs with Apple silicon or a T2 chip: the master password plus
+  a key that never leaves the Mac's security chip, so a copied vault file
+  is useless on any other computer. It is the Mac version of the TPM unlock
+  method on Linux and Windows. The enclave only does classical P-256
+  cryptography, so the slot is built to keep the vault file safe from
+  future quantum computers anyway: the file never holds the enclave key's
+  public key.
+- How to start: Mac downloads need nothing new. iPhone:
+  [Install the iPhone and iPad app](user-guide/14-phone-apps.md#install-the-iphone-and-ipad-app).
+  Secure Enclave: **Unlock methods > Add a method > Secure Enclave** in the
+  desktop app, or `vault add-slot tpm`; see
+  [Unlock with the Secure Enclave](user-guide/13-macos.md#unlock-with-the-secure-enclave).
+  Maintainers: [Setting up the Apple Developer account](apple-account.md).
+
+| | macOS | Windows | Linux | iPhone and iPad | Android |
+| --- | --- | --- | --- | --- | --- |
+| Signed downloads | Yes, Developer ID and notarized | Not yet (SmartScreen warns once) | Not needed | Through TestFlight | Signed with the project key, as before |
+| Store | n/a | n/a | n/a | TestFlight now; App Store later | Not on Google Play |
+| "This device" unlock method | Secure Enclave, no PIN | TPM, optional PIN and PCR 7 | TPM, optional PIN and PCR 7 | No | No |
+
+Known limits: Windows code signing and Google Play need separate paid
+accounts and are not done. The App Store listing needs Apple's review and
+is a later step. A Secure Enclave slot works only on the Mac that made it:
+erasing the Mac, a repair that replaces the logic board, or moving to a new
+Mac with Migration Assistant means adding it again (keep your password and
+recovery code). The enclave has no PIN with a guess limit, so `--pin` and
+`--pcr7` are refused on a Mac. Intel Macs without a T2 chip have no Secure
+Enclave. The vault file format only gains a new kind of device blob
+(`VMSEP1`, [format.md](format.md) section 4.2); older versions see such a
+slot as a TPM slot they can't open.
+
 ### Thunderbird signs and decrypts with your vault key
 
 - **Use a vault OpenPGP key in Thunderbird without giving Thunderbird the

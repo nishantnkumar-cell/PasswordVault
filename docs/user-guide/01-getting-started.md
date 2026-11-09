@@ -160,10 +160,12 @@ Download `SecretVault-<version>-macos.pkg` from the
 and double-click it. It works on Apple silicon and Intel Macs. The installer
 puts **Secret Vault.app** in Applications, the `vault` command in
 `/usr/local/bin`, and a launch agent that starts `vaultd` now and at every
-sign-in. It asks for your Mac's administrator password. The installer is
-not signed with an Apple developer ID yet, so the first time macOS stops it:
-on macOS 15 and newer, allow it under System Settings > Privacy & Security >
-**Open Anyway**; on older versions, right-click it and choose **Open**.
+sign-in. It asks for your Mac's administrator password. Releases after
+`0.2.0-beta.1` are signed and notarized by Apple, so the installer just
+opens. An unsigned copy (`0.2.0-beta.1`, or one you built) is stopped the
+first time: on macOS 15 and newer, allow it under System Settings > Privacy
+& Security > **Open Anyway**; on older versions, right-click it and choose
+**Open**.
 
 Without an administrator password, download
 `secret-vault-<version>-macos-universal.tar.gz` instead, unpack it, and run

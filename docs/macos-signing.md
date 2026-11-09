@@ -1,12 +1,17 @@
 # Signing and notarizing the macOS packages
 
-Release packages for macOS are signed **ad hoc** today: the app has a
-signature (Apple silicon needs one to run it) but no developer identity, and
-the `.pkg` is not signed. That is why users have to allow the installer once
-under System Settings > Privacy & Security (see
-[user-guide/13-macos.md](user-guide/13-macos.md)). Signing with an Apple
-Developer ID and notarizing removes that step: the installer opens with a
-double-click like any other.
+CI signs the macOS packages with the project's Apple **Developer ID** and
+notarizes them when the Apple secrets are set (see
+[apple-account.md](apple-account.md) for setting them up). A signed and
+notarized `.pkg` opens with a double-click, and the app in the `.tar.gz`
+opens without the "cannot be checked" message.
+
+Without the secrets (forks, or before the account was set up) the build
+falls back to what it did before: the app is signed **ad hoc** (Apple
+silicon needs a signature to run it, but it names no developer) and the
+`.pkg` is not signed, so users allow it once under System Settings >
+Privacy & Security (see [user-guide/13-macos.md](user-guide/13-macos.md)).
+The job then shows a warning on the run.
 
 This is for maintainers. Nothing here is needed to build or use Secret Vault.
 
@@ -39,9 +44,10 @@ contrib/macos/package.sh 0.3.0
 `package.sh` then signs every program and the app with the hardened runtime
 and a secure timestamp, and signs the `.pkg`. No entitlements are needed:
 vaultd uses Touch ID (LocalAuthentication), USB security keys (IOKit HID)
-and `PT_DENY_ATTACH`, none of which the hardened runtime blocks. (A Secure
-Enclave slot would need a keychain-access-groups entitlement and a
-provisioning profile; it is not built yet.)
+and `PT_DENY_ATTACH`, none of which the hardened runtime blocks. `vault-se`,
+the Secure Enclave helper, uses CryptoKit keys that are not stored in the
+keychain, so it needs no keychain-access-groups entitlement or
+provisioning profile either.
 
 ## Notarizing
 
@@ -58,17 +64,28 @@ online the first time it opens.
 
 ## In CI
 
-To sign releases in the `macos-package` job, add these repository secrets
-and import the certificates into a temporary keychain before `package.sh`
-runs:
+The `macos-package` job in `.github/workflows/package.yml` (run by CI for
+every push and pull request, and by the release workflow for a tag) does
+this with `contrib/macos/ci-signing.sh`:
+
+1. `ci-signing.sh import` puts the certificates from `MACOS_CERTS_P12` into
+   a keychain made for the run and sets `DEVELOPER_ID_APP` and
+   `DEVELOPER_ID_INSTALLER`, so `package.sh` signs.
+2. `package.sh` builds and signs both packages.
+3. `ci-signing.sh notarize` submits the `.pkg` with the App Store Connect
+   API key, waits for Apple, staples the ticket to the `.pkg` and to the app
+   inside the `.tar.gz`, and checks both with `spctl`. If Apple rejects the
+   submission, the job prints Apple's log and fails.
+4. The keychain is deleted at the end of the job.
 
 | Secret | What |
 |---|---|
 | `MACOS_CERTS_P12` | Both Developer ID certificates with their private keys, exported as one `.p12`, base64 |
 | `MACOS_CERTS_PASSWORD` | The `.p12` password |
-| `MACOS_NOTARY_KEY` | The App Store Connect API key (`.p8`), base64 |
-| `MACOS_NOTARY_KEY_ID`, `MACOS_NOTARY_ISSUER` | Its key ID and issuer ID |
+| `APPLE_API_KEY_P8` | The App Store Connect API key (`.p8`), base64 |
+| `APPLE_API_KEY_ID`, `APPLE_API_ISSUER_ID` | Its key ID and issuer ID |
 
-The job then sets `DEVELOPER_ID_APP` and `DEVELOPER_ID_INSTALLER`, runs
-`notarytool submit --wait` and `stapler staple` on the `.pkg`. This is not
-wired up yet, because the project has no Developer ID.
+The same API key uploads the iPhone app to TestFlight
+([mobile.md](mobile.md#testflight)). Without the certificates the job warns
+"macOS build not signed"; with them but without the API key it warns
+"macOS build not notarized".

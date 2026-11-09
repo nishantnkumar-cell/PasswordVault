@@ -1177,7 +1177,9 @@ impl Daemon {
                 },
                 UnlockMethod::Tpm { password, pin },
             ) => {
-                let dev = self.hw.tpm.as_ref().ok_or("TPM support is not built in")?;
+                let dev = self.hw.tpm.as_ref().ok_or_else(|| {
+                    format!("{} support is not built in", vault_hw::DEVICE_CHIP_NAME)
+                })?;
                 let hw = dev.unseal(
                     blob,
                     pin.as_deref().map(|s| s.as_str()),
@@ -1406,14 +1408,19 @@ impl Daemon {
             } => {
                 check_password(&password)?;
                 self.vault()?;
-                let dev = self.hw.tpm.as_ref().ok_or("TPM support is not built in")?;
+                let dev = self.hw.tpm.as_ref().ok_or_else(|| {
+                    format!("{} support is not built in", vault_hw::DEVICE_CHIP_NAME)
+                })?;
                 let pin = pin.as_deref().map(|s| s.as_str());
                 let mut secret = Zeroizing::new([0u8; 32]);
                 rng.fill(&mut secret[..]).map_err(e)?;
                 let blob = dev.seal(&secret, pin, bind_pcr7)?;
                 let hw = dev.unseal(&blob, pin, bind_pcr7)?;
                 if !hw.ct_eq(&secret) {
-                    return Err("TPM returned a different secret than it sealed".into());
+                    return Err(format!(
+                        "the {} returned a different secret than it sealed",
+                        vault_hw::DEVICE_CHIP_NAME
+                    ));
                 }
                 let factor = Factor::PasswordTpm {
                     blob,
