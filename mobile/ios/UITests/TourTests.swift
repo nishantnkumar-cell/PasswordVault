@@ -29,10 +29,13 @@ final class TourTests: XCTestCase {
         addLogin()
         addCard()
         addCode()
+        addSshKey()
         open("Generator"); shot("generator")
         app.buttons["3 Words"].tap(); sleep(1); shot("generator-words")
         app.buttons["Apple Style"].tap(); sleep(1); shot("generator-apple")
         open("Settings"); shot("settings")
+        settingsPage("Unlock Methods", expect: "Change Master Password")
+        settingsPage("Import from Another App", expect: "Choose Export File")
         tapScrolling(app.buttons["Lock Now"])
         XCTAssertTrue(app.buttons["Unlock"].waitForExistence(timeout: 10))
         unlock("locked")
@@ -118,6 +121,32 @@ final class TourTests: XCTestCase {
         }
         XCTAssertTrue(app.staticTexts["Example Chat"].waitForExistence(timeout: 10))
         shot("codes")
+    }
+
+    /// New Item › SSH Key, then the key's public half.
+    private func addSshKey() {
+        open("Items")
+        if !app.staticTexts["Example Server"].exists {
+            newItemButton.tap()
+            app.buttons["SSH Key"].firstMatch.tap()
+            XCTAssertTrue(app.buttons["Make Key"].waitForExistence(timeout: 10))
+            type("Example Server", into: app.textFields.firstMatch)
+            shot("ssh-key-new")
+            app.buttons["Make Key"].tap()
+            XCTAssertTrue(app.buttons["Make Key"].waitForNonExistence(timeout: 30))
+        }
+        openItem("Example Server")
+        XCTAssertTrue(app.buttons["Copy Public Key"].waitForExistence(timeout: 10))
+        shot("ssh-key")
+    }
+
+    /// Opens a Settings row that pushes a page, checks it, and goes back.
+    private func settingsPage(_ label: String, expect: String) {
+        tapScrolling(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", label)).firstMatch)
+        XCTAssertTrue(app.buttons[expect].waitForExistence(timeout: 10))
+        shot(label.lowercased().replacingOccurrences(of: " ", with: "-"))
+        app.navigationBars.buttons["Settings"].firstMatch.tap()
+        sleep(1)
     }
 
     // MARK: Helpers

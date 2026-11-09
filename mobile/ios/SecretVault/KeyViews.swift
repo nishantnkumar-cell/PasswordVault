@@ -24,7 +24,7 @@ struct KeyPublicSection: View {
             }
             HStack {
                 Button { copy(publicName, key.publicText, false) } label: {
-                    Label("Copy \(publicName)", systemImage: "doc.on.doc")
+                    Label(key.kind == "SSH" ? "Copy Public Key" : "Copy Certificate", systemImage: "doc.on.doc")
                 }
                 .buttonStyle(.glassProminent)
                 Spacer()
