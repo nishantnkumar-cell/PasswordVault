@@ -31,13 +31,18 @@ on a phone opens on a computer and the other way round.
 | `generate_password`, `generate_styled`, `password_strength` | The generator: random characters, three random words or Apple style (vault-core `generator::Style`), and its strength in bits |
 | `preview_totp`, `code_label`, `VaultSession::add_code` | One-time codes: check a setup key, read the issuer and account from an `otpauth://` link, and add a code to a login or a new login from the Codes screen |
 | `host_of` | Helper for the editor |
+| `VaultSession::change_password`, `new_recovery_code`, `remove_slot`, `revoke_others` | Unlock methods (iOS **Settings > Unlock Methods**). `revoke_others` rotates the vault key ([format.md section 6.4](format.md)), keeps the password slots the password opens and adds a new recovery slot. New slots are test-unlocked before they are kept |
+| `VaultSession::import_export` | Bitwarden JSON or a browser / Apple Passwords CSV, through `vault-import` (format chosen by the first character) |
+| `VaultSession::key_public`, `generate_ssh_key` | Public half and fingerprint of an SSH (`ssh-key`) or OpenPGP (`pgp`) key item; a new Ed25519 or ECDSA P-256 SSH key. Private keys never cross into Swift or Kotlin |
 
 Errors arrive as one `MobileError` type whose message is a finished sentence
 for the user.
 
-The apps only open password and recovery-code slots. Security-key, TPM and
+The apps only open password and recovery-code slots. The iOS app can remove
+any slot except the last password-only one, which is how a phone unlocks;
+Android has no unlock-method screen yet. Security-key, TPM and
 phone-passkey slots belong to the computer they were made on and are listed
-as "on another device".
+as working on that computer.
 
 ## Quick unlock on phones
 
