@@ -42,6 +42,26 @@ verified developers, rolling out country by country from late 2026; this
 may later need an extra step or block sideloading in some countries. No
 vault file change.
 
+### macOS: locks with the screen, and copied passwords stay on the Mac
+
+- **The vault locks when your Mac does.** Locking the screen, putting the
+  Mac to sleep, or switching to another account now locks the vault right
+  away and wipes its keys from memory, as on Linux and Windows. Before, a
+  Mac only locked after 15 idle minutes. With quick unlock on, Touch ID
+  opens it again.
+- **Copied secrets no longer reach your other Apple devices.** A password,
+  code or card number copied in the desktop app is marked "this Mac only",
+  so Universal Clipboard does not pass it to your iPhone, iPad or other
+  Macs. Clipboard history apps still skip it, and it is still cleared after
+  30 seconds.
+- How to start: nothing to set up, install this version. Details in
+  [When the vault locks by itself](user-guide/13-macos.md#when-the-vault-locks-by-itself)
+  and [Copying passwords](user-guide/13-macos.md#copying-passwords).
+- Linux and Windows: no change.
+- Known limits: a `vaultd` started over SSH, outside your desktop session,
+  only locks on sleep. Universal Clipboard is a macOS feature; Windows
+  already kept copies off its cloud clipboard.
+
 ### Add a one-time code on the desktop and from the command line
 
 - **Add Code on the desktop.** Open **One-time codes** in the sidebar and

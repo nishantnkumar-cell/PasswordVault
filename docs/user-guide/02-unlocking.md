@@ -34,7 +34,8 @@ vault lock --full           # the same, and also forget the quick unlock key
 The vault also locks by itself:
 
 - after 15 minutes without use (start `vaultd --idle-secs N` to change it),
-- when you lock the screen or the computer suspends (Linux and Windows),
+- when you lock the screen or the computer suspends (Linux, Windows and
+  macOS), and on a Mac also when you switch to another account,
 - when `vaultd` stops.
 
 **Wrong guesses.** The first 3 wrong attempts are free. After that, each

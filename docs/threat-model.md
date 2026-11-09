@@ -124,7 +124,7 @@ The attacker copies the vault file today (for example from a sync folder or a ba
 
 - All secret types use `zeroize` / `secrecy` wrappers that do not implement `Debug`, `Clone` or `Serialize` except where explicitly needed. Enforced by wrapper types, not review alone.
 - All daemon memory `mlockall`ed when `RLIMIT_MEMLOCK` allows (the shipped units set it); `RLIMIT_CORE=0`; `PR_SET_DUMPABLE=0`.
-- Keys are zeroized on lock, suspend and screen lock (logind D-Bus signals; session and power notifications on Windows), idle timeout and SIGTERM. Exception: with quick unlock on (Windows, opt-in), a lock within its window keeps the vault key parked (format.md 4.6) until the window ends, three Windows Hello checks fail, `vault lock --full`, or the daemon stops.
+- Keys are zeroized on lock, suspend and screen lock (logind D-Bus signals; session and power notifications on Windows; on macOS `com.apple.screenIsLocked`, IOKit sleep notifications and a two-second Quartz session check that also catches fast user switching), idle timeout and SIGTERM. Exception: with quick unlock on (Windows, opt-in), a lock within its window keeps the vault key parked (format.md 4.6) until the window ends, three Windows Hello checks fail, `vault lock --full`, or the daemon stops.
 
 ## 7. Explicitly out of scope for v1
 

@@ -8,6 +8,8 @@ use vault_core::HwKey;
 pub mod fido2;
 #[cfg(windows)]
 pub mod hello;
+#[cfg(target_os = "macos")]
+pub mod pasteboard;
 #[cfg(feature = "phone")]
 pub mod phone;
 pub mod protect;
