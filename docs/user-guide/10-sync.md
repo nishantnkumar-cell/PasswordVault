@@ -143,5 +143,14 @@ format is identical.
   a *(conflict)* copy.
 - A vault saved by this version can't be opened by older builds of Secret
   Vault, because its file now records which device changed each item.
+- Secret Vault reads only vault-sized files from the sync folder. It looks
+  at the synced copy and at most 16 conflict copies next to it ("vault
+  (1).svault", "vault (conflicted copy ...).svault"), and skips any copy
+  larger than 64 MiB. If you have more than 16 conflict copies, let it
+  merge them, delete the merged ones (they're listed under **Sync** in the
+  desktop app), and the rest are picked up on the next check. If the
+  synced copy itself is over 64 MiB, it isn't a vault file: sync stops
+  with a message saying so until you replace it. All three systems behave
+  the same.
 
 For how the merge works inside, see [docs/sync.md](../sync.md).

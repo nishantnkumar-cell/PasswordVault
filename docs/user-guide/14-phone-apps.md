@@ -294,7 +294,10 @@ editor, which uses 20 characters of every kind.
 
 Secret Vault offers a login only on the websites saved in it (the **Websites**
 section of the login), the same rule the browser extension uses, so a
-look-alike site gets no suggestion. In apps that aren't web pages, nothing
+look-alike site gets no suggestion. On Android, a page can show a sign-in
+box from another site inside it (an embedded frame). Secret Vault checks the
+site of the password field itself: it suggests logins for that site only, and
+never puts a username into a field from a different site. In apps that aren't web pages, nothing
 is suggested automatically: search for the login, and if it is saved for a
 different site, the app asks you to confirm before filling.
 

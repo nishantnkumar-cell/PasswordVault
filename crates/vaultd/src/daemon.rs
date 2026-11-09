@@ -293,6 +293,23 @@ impl Daemon {
         st.error = None;
         for c in st.folder.changed(all) {
             let main = st.folder.is_main(&c.path);
+            if c.too_big {
+                if main {
+                    st.blocked = true;
+                    return Err(format!(
+                        "the synced copy is larger than {} MiB, so it is not a vault file; \
+                         not reading it",
+                        crate::sync::MAX_COPY_BYTES >> 20
+                    ));
+                }
+                eprintln!(
+                    "vaultd: sync: ignoring {} (larger than {} MiB)",
+                    c.path.display(),
+                    crate::sync::MAX_COPY_BYTES >> 20
+                );
+                st.folder.mark(c.path, c.stamp);
+                continue;
+            }
             let parsed = match ParsedVault::parse(&c.bytes) {
                 Ok(p) => p,
                 // Possibly still being downloaded: look again next time.

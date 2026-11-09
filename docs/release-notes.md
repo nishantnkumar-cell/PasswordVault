@@ -162,6 +162,81 @@ users' signatures show as invalid in Thunderbird). Evolution and KMail are
 not connected yet. No vault file change; `vaultd`, `vault-gpg` and the other
 programs must be updated together (two new requests).
 
+### Safer unlock limits, sync limits and Android AutoFill frames
+
+These fix three findings from a security review (issues #49, #50 and #51).
+Nothing changes in day-to-day use.
+
+- **Unlock settings have a lower ceiling.** Each unlock method stores how
+  much memory and time the password check (Argon2) takes. A vault file now
+  asks for at most 1 GiB of memory, 10 passes and 8 lanes, and at most
+  2 GiB of total work, which is just under three times the default
+  (256 MiB, 3 passes). Before this, an edited vault file could ask for 4 GiB
+  and 20 passes, enough to freeze a phone or stall a computer for minutes
+  before the file was found to be fake. Vaults made by Secret Vault always
+  use the default, so they all still open. Details: [file format, section
+  3.1](format.md#31-parse-time-bounds).
+- **Sync reads only vault-sized files.** It looks at the synced copy and at
+  most 16 conflict copies, skips any file over 64 MiB, and reads at most
+  256 MiB per check, so junk in the sync folder can't run the daemon out of
+  memory. See [sync, things to know](user-guide/10-sync.md#things-to-know).
+- **Android AutoFill checks each field's own site.** When a page shows a
+  sign-in box from another site in an embedded frame, Secret Vault now uses
+  the password field's own site to pick logins. It never fills a username
+  field that belongs to a different site. Before, it used the first site
+  named anywhere on the screen. See [fill a
+  login](user-guide/14-phone-apps.md#fill-a-login).
+
+| | Linux | Windows | macOS | Android | iPhone and iPad |
+| --- | --- | --- | --- | --- | --- |
+| Unlock limits | Yes | Yes | Yes | Yes | Yes |
+| Sync limits | Yes | Yes | Yes | n/a (opens only the synced file, no conflict copies) | n/a (same) |
+| AutoFill frame check | n/a | n/a | n/a | Yes | n/a (separate code, not part of this finding) |
+
+Known limits: the Android frame check has unit tests but hasn't been tried
+on a real phone with a mixed-site page. No vault file change.
+
+### Security fixes in the libraries the vault uses
+
+Nothing changes in how you use the vault, and the vault file is the same.
+Install the new version as usual ([versions and
+upgrades](user-guide/11-versions-and-upgrades.md)). This entry matters
+most if you build Secret Vault yourself.
+
+- **Fixed library advisories.** `cargo audit` reported five security
+  advisories. Two are fixed by newer releases: `tokio` 1.54.1 (a timing
+  race in its timers; 1.54.0 was also withdrawn) and `ctutils` 0.4.8
+  (comparisons that were meant to take the same time for every input
+  didn't always). All Rust libraries are on their newest compatible
+  releases again.
+- **App-password sessions (Secret Service, Linux only).** The encrypted
+  session that apps such as browsers and mail clients open with the vault
+  now uses `crypto-bigint` 0.7, which fixes timing leaks in the 0.5 release
+  it used before. Apps notice no difference.
+- **Screen lock and Secret Service on `zbus` 6 (Linux only).** The parts of
+  the daemon that lock the vault when the computer sleeps or the screen
+  locks, and that serve app passwords, moved from `zbus` 5 (whose helper
+  libraries are no longer maintained) to `zbus` 6. They behave as before.
+  Windows and macOS don't use `zbus`.
+
+| | Linux | Windows | macOS |
+| --- | --- | --- | --- |
+| `tokio`, `ctutils` and other library updates | Yes | Yes | Yes |
+| App-password session fix (`crypto-bigint` 0.7) | Yes | n/a (no Secret Service) | n/a |
+| `zbus` 6 | Yes | n/a | n/a |
+
+Known limits: three advisories remain until the OpenPGP and SSH libraries
+(`pgp` 0.21.0 and `ssh-key` 0.6.7, their newest stable releases) move to
+fixed versions. A timing leak in `ml-dsa` 0.0.4 can matter when the vault
+signs with a post-quantum OpenPGP key (the Ed25519 half of that hybrid
+signature is not affected). The older `crypto-bigint` 0.5 they use is in
+the code for NIST P-256 keys, so ECDSA P-256 SSH keys are the ones it
+touches; Ed25519 SSH keys (the default) are not affected. The `rsa`
+"Marvin" advisory affects decrypting and signing with RSA secret keys,
+which the vault refuses to store, so it does not apply. The desktop app still
+pulls in `zbus` 5 through its screen-reader support (`eframe` 0.37, its
+newest release); it moves when `eframe` does.
+
 ### Public beta downloads
 
 - **Try Secret Vault before 0.2.0 is final.** Public betas are published on
@@ -1007,7 +1082,9 @@ if you build Secret Vault yourself or run its tests.
   releases, and the daemon's signal handling library moved to `signal-hook`
   0.4 (Linux and macOS only; Windows does not use it). Three stay where they
   are on purpose: `zbus` stays on 5.x (Linux only) because 6.0, out on
-  2026-10-16, dropped the blocking API the screen-lock watcher uses; `rand`
+  2026-10-16, dropped the blocking API the screen-lock watcher uses (it
+  moved to 6.x later, see "Security fixes in the libraries the vault
+  uses"); `rand`
   0.8 and `signature` 2 stay because the OpenPGP and SSH libraries
   (`pgp` 0.21, `ssh-key` 0.6, both their latest stable releases) are built
   on them.

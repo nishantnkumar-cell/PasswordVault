@@ -4,7 +4,7 @@
 //! Any session's `Lock` locks the vault: locking too often is safe, missing a
 //! lock is not.
 
-use zbus::blocking::{Connection, MessageIterator};
+use crate::dbus::{Connection, MessageIterator};
 use zbus::message::Type;
 use zbus::{MatchRule, Result};
 
@@ -22,8 +22,8 @@ pub enum Event {
 pub fn watch(conn: &Connection, mut on_event: impl FnMut(Event)) -> Result<()> {
     let rule = MatchRule::builder()
         .msg_type(Type::Signal)
-        .sender("org.freedesktop.login1")?
-        .build();
+        .sender("org.freedesktop.login1")
+        .build()?;
     for msg in MessageIterator::for_match_rule(rule, conn, None)? {
         let msg = msg?;
         let h = msg.header();

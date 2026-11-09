@@ -15,12 +15,12 @@ use vault_core::item::{ItemData, ItemKind};
 use vault_ipc::{ClientToken, Envelope, Request, Response, UnlockMethod};
 use vaultd::approve::Prompt;
 use vaultd::daemon::Daemon;
+use vaultd::dbus::{Connection, DBusProxy, MessageIterator, Proxy};
 use vaultd::hw::Hardware;
 use vaultd::secret_service::{self, COLLECTION, NAME};
 use vaultd::server::{self, Shared};
 use vaultd::store::Store;
-use zbus::blocking::{Connection, MessageIterator, connection};
-use zbus::zvariant::{OwnedObjectPath, OwnedValue, Value};
+use zbus::{OwnedObjectPath, OwnedVariant, Variant};
 use zeroize::Zeroizing;
 
 /// A secret struct: session, parameters, value, content type.
@@ -91,14 +91,14 @@ fn secret_tool(addr: &str, args: &[&str], input: &str) -> (bool, String) {
     (out.status.success(), text)
 }
 
-fn proxy<'a>(c: &'a Connection, path: &'a str, iface: &'a str) -> zbus::blocking::Proxy<'a> {
-    zbus::blocking::Proxy::new(c, NAME, path, iface).unwrap()
+fn proxy<'a>(c: &'a Connection, path: &'a str, iface: &'a str) -> Proxy<'a> {
+    Proxy::new(c, NAME, path, iface).unwrap()
 }
 
 /// `Collection.Locked`, read on its own (a cached proxy would read every
 /// property, and the rest need approval).
 fn collection_locked(c: &Connection) -> bool {
-    let v: OwnedValue = proxy(c, COLLECTION, "org.freedesktop.DBus.Properties")
+    let v: OwnedVariant = proxy(c, COLLECTION, "org.freedesktop.DBus.Properties")
         .call("Get", &("org.freedesktop.Secret.Collection", "Locked"))
         .unwrap();
     bool::try_from(v).unwrap()
@@ -178,20 +178,14 @@ fn apps_keep_passwords_with_approval_and_locking() {
             }));
     }
 
-    let svc_conn = connection::Builder::address(bus.addr.as_str())
-        .unwrap()
-        .build()
-        .unwrap();
+    let svc_conn = Connection::at(bus.addr.as_str()).unwrap();
     {
         let d = d.clone();
         let uid = server::current_user();
         std::thread::spawn(move || secret_service::serve(svc_conn, d, uid, None));
     }
-    let client = connection::Builder::address(bus.addr.as_str())
-        .unwrap()
-        .build()
-        .unwrap();
-    let dbus = zbus::blocking::fdo::DBusProxy::new(&client).unwrap();
+    let client = Connection::at(bus.addr.as_str()).unwrap();
+    let dbus = DBusProxy::new(&client).unwrap();
     let start = Instant::now();
     while !dbus
         .name_has_owner(NAME.try_into().unwrap())
@@ -204,10 +198,7 @@ fn apps_keep_passwords_with_approval_and_locking() {
         std::thread::sleep(Duration::from_millis(50));
     }
     // A second service on the same bus finds the name taken.
-    let again = connection::Builder::address(bus.addr.as_str())
-        .unwrap()
-        .build()
-        .unwrap();
+    let again = Connection::at(bus.addr.as_str()).unwrap();
     assert!(matches!(
         secret_service::serve(again, d.clone(), server::current_user(), None),
         Err(secret_service::Stop::NameTaken)
@@ -221,8 +212,8 @@ fn apps_keep_passwords_with_approval_and_locking() {
     let coll = proxy(&client, COLLECTION, "org.freedesktop.Secret.Collection");
     let alias: OwnedObjectPath = service.call("ReadAlias", &("default",)).unwrap();
     assert_eq!(alias.as_str(), COLLECTION);
-    let (_, session): (OwnedValue, OwnedObjectPath) = service
-        .call("OpenSession", &("plain", Value::from("")))
+    let (_, session): (OwnedVariant, OwnedObjectPath) = service
+        .call("OpenSession", &("plain", Variant::from("")))
         .unwrap();
 
     let none: HashMap<&str, &str> = HashMap::new();
@@ -413,10 +404,9 @@ print("ok")
     let rule = zbus::MatchRule::builder()
         .msg_type(zbus::message::Type::Signal)
         .interface("org.freedesktop.Secret.Prompt")
-        .unwrap()
         .member("Completed")
-        .unwrap()
-        .build();
+        .build()
+        .unwrap();
     let mut signals = MessageIterator::for_match_rule(rule, &client, None).unwrap();
     let p = proxy(&client, prompt.as_str(), "org.freedesktop.Secret.Prompt");
     let () = p.call("Prompt", &("",)).unwrap();
@@ -434,16 +424,13 @@ print("ok")
         Response::Ok
     ));
     let msg = signals.next().unwrap().unwrap();
-    let (dismissed, result): (bool, OwnedValue) = msg.body().deserialize().unwrap();
+    let (dismissed, result): (bool, OwnedVariant) = msg.body().deserialize().unwrap();
     assert!(!dismissed);
     let paths: Vec<OwnedObjectPath> = result.try_into().unwrap();
     assert_eq!(paths.len(), 1);
 
     // Only the one session's opener may use it.
-    let other = connection::Builder::address(bus.addr.as_str())
-        .unwrap()
-        .build()
-        .unwrap();
+    let other = Connection::at(bus.addr.as_str()).unwrap();
     let close: zbus::Result<()> =
         proxy(&other, session.as_str(), "org.freedesktop.Secret.Session").call("Close", &());
     assert!(close.is_err());
@@ -511,8 +498,8 @@ fn imports_from_gnome_keyring() {
     let a = bus.addr.as_str();
     // Wait for it to take the name, so the bus does not start another copy
     // through D-Bus activation.
-    let conn = connection::Builder::address(a).unwrap().build().unwrap();
-    let dbus = zbus::blocking::fdo::DBusProxy::new(&conn).unwrap();
+    let conn = Connection::at(a).unwrap();
+    let dbus = DBusProxy::new(&conn).unwrap();
     let start = Instant::now();
     while !dbus
         .name_has_owner(NAME.try_into().unwrap())

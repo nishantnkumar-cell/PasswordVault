@@ -289,6 +289,13 @@ fn kdf_bounds_are_enforced_before_running_argon2() {
         (65_536, 1_000_000, 1),
         (65_536, 1, 255),
         (1024, 1, 1),
+        // The old 4 GiB / 20-pass ceiling is now refused.
+        (4_194_304, 1, 1),
+        (65_536, 20, 1),
+        (65_536, 1, 16),
+        // Each alone is allowed, together they are too much work.
+        (1_048_576, 3, 1),
+        (524_288, 5, 4),
     ] {
         let mut header = Header {
             vault_id: p.header.vault_id,
@@ -317,6 +324,22 @@ fn kdf_bounds_are_enforced_before_running_argon2() {
         "",
     );
     assert_eq!(r.err(), Some(Error::KdfOutOfBounds));
+
+    // The largest settings still accepted (checked without running them).
+    for (m, t, pp) in [
+        (262_144, 3, 4), // the writer default
+        (1_048_576, 2, 8),
+        (262_144, 8, 4),
+        (65_536, 10, 1),
+    ] {
+        let params = crate::format::Argon2Params {
+            m_kib: m,
+            t,
+            p: pp,
+            salt: [0; 32],
+        };
+        assert_eq!(params.check_bounds(), Ok(()), "{m} {t} {pp}");
+    }
 }
 
 #[test]

@@ -94,10 +94,18 @@ Checked before any KDF runs. Violations are a hard error for that slot.
 
 | Field | Min | Max |
 | --- | --- | --- |
-| `m_kib` | 65 536 (64 MiB) | 4 194 304 (4 GiB) |
-| `t` | 1 | 20 |
-| `p` | 1 | 16 |
+| `m_kib` | 65 536 (64 MiB) | 1 048 576 (1 GiB) |
+| `t` | 1 | 10 |
+| `p` | 1 | 8 |
+| `m_kib × t` | | 2 097 152 (2 GiB of memory passes) |
 | slots | 1 | 32 |
+
+The header MAC can only be checked after a slot's KDF has run, so these caps
+are what stops a tampered file from asking for minutes of work or more memory
+than a phone has before it is found out. They allow just under three times the
+writer default. In 0.2.0-beta.1 and earlier the maxima were 4 GiB, `t = 20` and
+`p = 16`; no writer ever used more than the default, so no vault made by
+Secret Vault is affected.
 
 Writers default to `m_kib = 262 144`, `t = 3`, `p = 4`, then calibrate upward to about 0.5 to 1 s on the enrolling machine.
 
