@@ -9,6 +9,7 @@ struct ItemListView: View {
     var selection: Binding<String?>?
     @State private var newKind: Kind?
     @State private var newKey = false
+    @State private var actionToken = UUID()
     @State private var filter: Category = .all
 
     private var shown: [ItemSummary] {
@@ -81,7 +82,7 @@ struct ItemListView: View {
             }
         }
         .refreshable { await vault.syncNow() }
-        .focusedSceneValue(\.newItem, NewItemAction { kind in
+        .focusedSceneValue(\.newItem, NewItemAction(token: actionToken) { kind in
             if let kind { newKind = kind } else { newKey = true }
         })
     }

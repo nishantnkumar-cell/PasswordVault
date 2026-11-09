@@ -92,6 +92,7 @@ struct ItemDetailView: View {
         }
         .animation(.snappy, value: copied)
         .focusedSceneValue(\.itemActions, ItemActions(
+            token: "\(id)-\(vault.revision)",
             edit: { editing = true },
             copyPassword: item.password.isEmpty ? nil : { copy("Password", item.password, true) },
             copyUsername: item.username.isEmpty ? nil : { copy("Username", item.username, false) },

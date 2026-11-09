@@ -68,22 +68,34 @@ struct VaultCommands: Commands {
     }
 }
 
+// Focused values must compare equal when nothing changed: a closure is new
+// on every render, and a value that always looks changed makes SwiftUI
+// update the menu bar, re-render the view and publish it again, which
+// keeps the main thread busy. Each value compares by a token instead.
+
 /// Opens the new-item editor for a kind, or the new SSH key sheet for nil.
-struct NewItemAction {
+struct NewItemAction: Equatable {
+    let token: UUID
     let run: (Kind?) -> Void
+    static func == (a: Self, b: Self) -> Bool { a.token == b.token }
 }
 
-struct SearchAction {
+struct SearchAction: Equatable {
+    let token: UUID
     let run: () -> Void
+    static func == (a: Self, b: Self) -> Bool { a.token == b.token }
 }
 
 /// What the shortcuts can do with the item on screen. A nil action is one
-/// the item can't do (a login without a password, for example).
-struct ItemActions {
+/// the item can't do (a login without a password, for example). `token`
+/// names the item and its revision.
+struct ItemActions: Equatable {
+    let token: String
     let edit: () -> Void
     let copyPassword: (() -> Void)?
     let copyUsername: (() -> Void)?
     let copyCode: (() -> Void)?
+    static func == (a: Self, b: Self) -> Bool { a.token == b.token }
 }
 
 extension FocusedValues {

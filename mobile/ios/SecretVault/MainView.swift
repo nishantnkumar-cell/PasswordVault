@@ -100,6 +100,7 @@ private struct SplitLayout: View {
     @State private var selected: String?
     @State private var query = ""
     @FocusState private var searching: Bool
+    @State private var actionToken = UUID()
 
     var body: some View {
         NavigationSplitView {
@@ -148,7 +149,7 @@ private struct SplitLayout: View {
                 }
             }
         }
-        .focusedSceneValue(\.search, SearchAction {
+        .focusedSceneValue(\.search, SearchAction(token: actionToken) {
             if case .category = entry {} else { entry = .category(.all) }
             searching = true
         })
