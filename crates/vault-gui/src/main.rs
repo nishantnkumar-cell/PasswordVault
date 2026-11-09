@@ -11,10 +11,11 @@ use vault_gui::{App, Paths, SystemClip};
 const SIZE: [f32; 2] = [1180.0, 760.0];
 const MIN_SIZE: [f32; 2] = [760.0, 480.0];
 
-struct Window(App, bool);
+struct Window(App, bool, bool);
 
 impl eframe::App for Window {
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        vault_gui::protect_window(frame, &mut self.2);
         if !self.1 {
             // Shrink to the screen's free area on small or scaled displays.
             self.1 = vault_gui::theme::fit_to_screen(ui.ctx(), SIZE.into(), MIN_SIZE.into());
@@ -49,7 +50,7 @@ fn main() -> eframe::Result {
                 Box::new(SystemClip::default()),
                 move || ctx.request_repaint(),
             );
-            Ok(Box::new(Window(app, false)))
+            Ok(Box::new(Window(app, false, false)))
         }),
     )
 }

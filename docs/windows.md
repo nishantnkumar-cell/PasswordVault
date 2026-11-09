@@ -211,6 +211,13 @@ What it does not cover:
 - **An administrator's `LocalDumps` policy** for all programs may still
   collect a dump.
 
+**Screen capture.** vault-gui and vault-prompt call
+`SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)` on their window as soon
+as it exists (`WDA_MONITOR`, a black box, before Windows 10 2004), so
+screenshots, recordings and screen sharing leave them out.
+`VAULT_ALLOW_CAPTURE=1` skips it; vault-prompt inherits vaultd's
+environment.
+
 `VAULT_HARDEN=off` in vaultd's or the app's environment skips the ACL and
 the mitigation policies, for attaching a debugger or ruling them out when
 something misbehaves. The dump exclusion and memory locking stay on.

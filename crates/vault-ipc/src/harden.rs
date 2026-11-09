@@ -190,6 +190,31 @@ fn restrict_process_acl() -> io::Result<()> {
     result
 }
 
+/// Keep a window out of screenshots, screen recording and screen sharing
+/// (`WDA_EXCLUDEFROMCAPTURE`, Windows 10 2004 or later; older builds show
+/// it black instead, `WDA_MONITOR`). Set `VAULT_ALLOW_CAPTURE=1` to allow
+/// capture. Returns whether the window is now protected.
+pub fn exclude_from_capture(hwnd: isize) -> bool {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        SetWindowDisplayAffinity, WDA_EXCLUDEFROMCAPTURE, WDA_MONITOR,
+    };
+    if capture_allowed() {
+        return false;
+    }
+    let hwnd = hwnd as windows_sys::Win32::Foundation::HWND;
+    // SAFETY: `hwnd` is a live top-level window of this process (the
+    // caller's own); the call only changes how it is composited.
+    unsafe {
+        SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE) != 0
+            || SetWindowDisplayAffinity(hwnd, WDA_MONITOR) != 0
+    }
+}
+
+/// Whether `VAULT_ALLOW_CAPTURE=1` lets screenshots include the app.
+pub fn capture_allowed() -> bool {
+    std::env::var_os("VAULT_ALLOW_CAPTURE").is_some_and(|v| v == "1")
+}
+
 /// How many allocations could not be locked in RAM since the start.
 static NOT_LOCKED: AtomicUsize = AtomicUsize::new(0);
 

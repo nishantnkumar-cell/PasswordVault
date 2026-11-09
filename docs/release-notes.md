@@ -117,7 +117,7 @@ users' signatures show as invalid in Thunderbird). Evolution and KMail are
 not connected yet. No vault file change; `vaultd`, `vault-gpg` and the other
 programs must be updated together (two new requests).
 
-### Windows keeps your keys out of the page file and crash reports
+### Windows keeps your keys out of the page file, crash reports and screen shares
 
 - **The last "Not yet" for Windows memory safety is closed.** vaultd now
   locks the memory it holds keys and items in, so Windows never writes it to
@@ -129,6 +129,12 @@ programs must be updated together (two new requests).
   now let other programs (even ones running as you) only see and end them,
   not read or change their memory. vaultd also refuses legacy DLL injection
   and loads system DLLs only from System32.
+- **The app is left out of screenshots and screen sharing.** The desktop
+  app and the approval window no longer show up in screenshots, screen
+  recordings or a shared screen in Teams or Zoom; you still see them as
+  usual. To take a screenshot on purpose, start the app with
+  `VAULT_ALLOW_CAPTURE=1`; see
+  [Screenshots and screen sharing](user-guide/05-desktop-app.md#screenshots-and-screen-sharing-windows).
 - Nothing to set up: it is on after updating. Turn on BitLocker or Device
   Encryption as well, because hibernation and blue-screen dumps write all of
   memory to disk. How it works and how to check it:
@@ -139,6 +145,7 @@ programs must be updated together (two new requests).
 | Keys kept out of swap / page file | Yes (`mlockall`) | Yes (new) | Swap is always encrypted |
 | No crash dumps | Yes | Yes (new) | Yes |
 | Other programs of yours can't read the memory | With the system-user unit | Yes, unless they change the permissions back first (new) | Debugger attach refused |
+| App hidden from screenshots and screen sharing | Not yet | Yes (new) | Not yet |
 
 Known limits: the desktop app does not lock its own memory (it holds only
 what is on screen). An administrator, or malware that first changes the

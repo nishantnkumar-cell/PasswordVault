@@ -15,10 +15,11 @@ use vault_gui::prompt::{Prompt, Request};
 /// The window's width; its height follows the text.
 const WIDTH: f32 = 480.0;
 
-struct Window(Prompt, Rc<Cell<Option<bool>>>, f32);
+struct Window(Prompt, Rc<Cell<Option<bool>>>, f32, bool);
 
 impl eframe::App for Window {
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        vault_gui::protect_window(frame, &mut self.3);
         if self.0.show(ui) {
             self.1.set(self.0.answer);
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
@@ -61,7 +62,7 @@ fn main() {
     let r = eframe::run_native(
         "Secret Vault approval",
         options,
-        Box::new(move |_| Ok(Box::new(Window(Prompt::new(request), a, 0.0)))),
+        Box::new(move |_| Ok(Box::new(Window(Prompt::new(request), a, 0.0, false)))),
     );
     if let Err(e) = r {
         eprintln!("vault-prompt: {e}");

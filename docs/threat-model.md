@@ -83,6 +83,7 @@ Status: **M** = mitigated by the design, **P** = partially mitigated, **A** = ac
 | Keylog the master password | Wayland: partially mitigated by compositor isolation. X11: any client can keylog | A on X11, P on Wayland |
 | Read the clipboard | Prefer autofill; auto-clear; password-manager MIME hint (verify) | P |
 | Read the clipboard on a phone | Copied secrets expire (iOS `expirationDate`, Android clear after the chosen time), are marked local-only on iOS so Universal Clipboard does not send them, and sensitive on Android 13+ so the clipboard preview hides them | P |
+| Screenshot, record or screen-share the desktop app | Windows: `WDA_EXCLUDEFROMCAPTURE` on the app and approval window. Linux and macOS: not yet. Same-user code could still read the window's pixels by other means (for example by injecting into the compositor) | P on Windows, A elsewhere |
 | Screenshot or screen-record the phone app | Android sets `FLAG_SECURE`; iOS covers the window in the app switcher. iOS cannot block screenshots | P |
 | Modify the browser extension or profile | Out of scope: same-user code owns the browser profile | A |
 | Capture a phone passkey's PRF output | The desktop app or `vault` runs the phone passkey (QR code, Bluetooth, the phone maker's relay) and sends the 32-byte PRF output to `vaultd` with the password, so `vaultd` keeps its network sandbox. Same-user code that can see the password can see this output too; it opens only that slot, still with the password, and wrong guesses are rate limited as for any method | A |

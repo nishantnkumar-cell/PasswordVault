@@ -237,4 +237,5 @@ you no longer need the vault or have a copy of it.
 | Security keys need admin | No (Windows 11 or current Windows 10) | No (needs the udev rule in `contrib/udev`) | No |
 | TPM unlock | Yes, no administrator rights needed | Yes | No (Macs have no TPM) |
 | Quick unlock (Windows Hello) | Yes | Not yet | Touch ID |
+| App hidden from screenshots and screen sharing | Yes (`VAULT_ALLOW_CAPTURE=1` allows them) | Not yet | Not yet |
 | Keys kept out of the page file / swap and crash dumps | Yes (use BitLocker for hibernation) | Yes (`mlockall`; the system-user unit also hides memory from your own programs) | Yes (core dumps off; swap always encrypted) |
