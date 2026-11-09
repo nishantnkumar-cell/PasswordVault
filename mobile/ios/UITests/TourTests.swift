@@ -34,8 +34,8 @@ final class TourTests: XCTestCase {
         app.buttons["3 Words"].tap(); sleep(1); shot("generator-words")
         app.buttons["Apple Style"].tap(); sleep(1); shot("generator-apple")
         open("Settings"); shot("settings")
-        settingsPage("Unlock Methods", expect: "Change Master Password")
-        settingsPage("Import from Another App", expect: "Choose Export File")
+        settingsPage("Unlock Methods", title: "Unlock Methods", expect: "Change Master Password")
+        settingsPage("Import from Another App", title: "Import", expect: "Choose Export File")
         tapScrolling(app.buttons["Lock Now"])
         XCTAssertTrue(app.buttons["Unlock"].waitForExistence(timeout: 10))
         unlock("locked")
@@ -141,11 +141,15 @@ final class TourTests: XCTestCase {
     }
 
     /// Opens a Settings row that pushes a page, checks it, and goes back.
-    private func settingsPage(_ label: String, expect: String) {
+    private func settingsPage(_ label: String, title: String, expect: String) {
         tapScrolling(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", label)).firstMatch)
         XCTAssertTrue(app.buttons[expect].waitForExistence(timeout: 10))
         shot(label.lowercased().replacingOccurrences(of: " ", with: "-"))
-        app.navigationBars.buttons["Settings"].firstMatch.tap()
+        // The back button is the page's first navigation-bar button; on iPad
+        // it shows only a chevron, so it has no "Settings" label to find.
+        let bar = app.navigationBars[title]
+        let back = bar.buttons["Settings"].exists ? bar.buttons["Settings"] : bar.buttons.element(boundBy: 0)
+        back.tap()
         sleep(1)
     }
 
