@@ -1,6 +1,8 @@
 [workspace]
 resolver = "3"
 members = ["crates/vault-cli", "crates/vault-mobile", "crates/vault-gpg", "crates/vault-gui", "crates/vault-core", "crates/vault-hw", "crates/vault-import", "crates/vault-ipc", "crates/vault-native-host", "crates/vaultd"]
+# Patched copies of third-party crates (vendor/README.md). Not workspace members.
+exclude = ["vendor"]
 
 [workspace.package]
 # The one version for every crate, the extension and the packages. Change it
@@ -15,3 +17,9 @@ publish = false
 opt-level = 3
 [profile.dev.package.blake2]
 opt-level = 3
+
+# ml-dsa 0.0.4 (used by pgp 0.21 for post-quantum OpenPGP signatures) with the
+# upstream constant-time fix for RUSTSEC-2025-0144 backported. Remove when pgp
+# moves to ml-dsa >= 0.1. See vendor/README.md.
+[patch.crates-io]
+ml-dsa = { path = "vendor/ml-dsa" }
