@@ -57,7 +57,27 @@ vault pgp import old old.asc
 
 You are asked for the key's passphrase once; the vault then keeps it
 without one, protected by the vault's encryption. Delete `old.asc`
-afterwards. RSA, DSA and ElGamal secret keys are refused.
+afterwards.
+
+The vault only keeps secret keys on Curve25519: Ed25519 for signing, X25519
+(Curve25519) for encryption, and the post-quantum keys built on them. Keys of
+other kinds are refused with a message, because the library code the vault
+would use for them can leak timing information about the secret key:
+
+| Secret key kind | Can you import it? |
+| --- | --- |
+| Ed25519 / Curve25519 (GnuPG's default since 2.3, and `vault pgp new`) | Yes |
+| Post-quantum ML-DSA-65+Ed25519, ML-KEM-768+X25519 (`--pq`) | Yes |
+| RSA, DSA, ElGamal | No |
+| NIST P-256, P-384, P-521, brainpool, secp256k1 | No |
+| Ed448, X448 | No |
+
+This is the same on Linux, Windows and macOS. If your old key is refused,
+make a new one with `vault pgp new` and tell your contacts its fingerprint.
+You can still **encrypt to** and **check signatures from** other people who
+use any of these kinds: only the secret half is limited. To find out what
+kind your GnuPG key is, run `gpg --list-secret-keys`: `ed25519` and `cv25519`
+can be imported; `rsa3072`, `nistp256`, `ed448` and similar cannot.
 
 **Import in the desktop app:** **SSH and PGP keys**, then the **▾** next to
 **New SSH key**, then **Import OpenPGP key**. Give the `.asc` file and type
@@ -204,6 +224,9 @@ the file and delete it when done.
 - Certificates of other people are files, not vault items
   (`vault-gpg --import` keeps them in one folder for you).
 - No key expiry, revocation certificates or subkey management yet.
+- Only Curve25519-based secret keys (see [Make or import a
+  key](#1-make-or-import-a-key)). A key of another kind imported with an
+  older version keeps working; replace it when you can.
 - The desktop app can make OpenPGP keys and copy their public key, but
   importing, exporting, encrypting, decrypting and signing still use
   `vault pgp` (or `vault-gpg`, [chapter 9](09-gpg-programs.md)).

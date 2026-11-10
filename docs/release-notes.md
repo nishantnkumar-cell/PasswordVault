@@ -237,6 +237,56 @@ which the vault refuses to store, so it does not apply. The desktop app still
 pulls in `zbus` 5 through its screen-reader support (`eframe` 0.37, its
 newest release); it moves when `eframe` does.
 
+### Library advisories: what is left
+
+Nothing changes in how you use the vault, and the vault file is the same,
+with one exception: importing some kinds of OpenPGP secret key is now
+refused (below). This follows the [library security
+fixes](#security-fixes-in-the-libraries-the-vault-uses) above, which left
+three advisories waiting on the OpenPGP and SSH libraries. Their newest
+releases (`pgp` 0.21.0, `ssh-key` 0.6.7) still haven't moved, so the vault
+now deals with them itself.
+
+- **Post-quantum OpenPGP signatures are constant-time (fixed).** Signing
+  with a post-quantum key (`vault pgp new --pq`) used a division whose time
+  depended on the secret key (`ml-dsa`, RUSTSEC-2025-0144). The vault now
+  builds a copy of `ml-dsa` 0.0.4 with the upstream fix applied, until `pgp`
+  moves to the fixed `ml-dsa` 0.1. Signatures are exactly the same as
+  before.
+- **ECDSA P-256 SSH keys use the fixed code (fixed).** SSH signing moved to
+  `ssh-key` 0.7 (release candidate 12), which uses the newer P-256 code on
+  `crypto-bigint` 0.7. Existing keys keep working, and servers see the same
+  public key. Ed25519 SSH keys (the default) were never affected.
+- **Some OpenPGP secret keys can no longer be imported.** `vault pgp import`
+  (and **Import OpenPGP key** in the desktop app) now accepts only
+  Ed25519/Curve25519 keys and the post-quantum keys built on them. NIST
+  P-256/P-384/P-521, brainpool, secp256k1, Ed448 and X448 secret keys are
+  refused, joining RSA, DSA and ElGamal, because the code `pgp` 0.21 uses for
+  them can leak timing information. Keys made with `vault pgp new` are not
+  affected, and you can still encrypt to and check signatures from people
+  with any kind of key. A key of a refused kind that you imported earlier
+  keeps working; replace it with `vault pgp new` when you can. See [Make or
+  import a key](user-guide/07-openpgp.md#1-make-or-import-a-key).
+- **The build checks for advisories.** Every pull request now runs `cargo
+  audit`. The two advisories that can't be fixed yet are listed, each with
+  its reason, in `.cargo/audit.toml`.
+
+| | Linux | Windows | macOS |
+| --- | --- | --- | --- |
+| Post-quantum OpenPGP signing fix | Yes | Yes | Yes |
+| P-256 SSH signing fix | Yes | Yes | Yes |
+| OpenPGP import limited to Curve25519 keys | Yes | Yes | Yes |
+
+Known limits: two advisories stay open until other projects release fixes.
+`rsa` "Marvin" (RUSTSEC-2023-0071) doesn't apply, because the vault never
+holds an RSA secret key; it lifts when `pgp` moves to `rsa` 0.10, which came
+out on 2026-11-08. The older `crypto-bigint` 0.5 (RUSTSEC-2026-0387) is
+still in the code used for one-time keys only: the PIN exchange with a
+FIDO2 security key and the phone-unlock tunnel (`libwebauthn`, `snow`), and
+the throwaway key when you encrypt to someone else's NIST-curve OpenPGP key.
+It lifts when those libraries move to the newer P-256 code. `ssh-key` 0.7
+is a release candidate, pinned to one exact version until 0.7.0 is final.
+
 ### Public beta downloads
 
 - **Try Secret Vault before 0.2.0 is final.** Public betas are published on

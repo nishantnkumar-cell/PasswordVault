@@ -9,6 +9,17 @@ permissions:
   contents: read
 
 jobs:
+  audit:
+    # Known security advisories in the libraries (Cargo.lock). Exceptions,
+    # each with its reason, are in .cargo/audit.toml.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - run: cargo audit
+
   linux:
     runs-on: ubuntu-latest
     steps:
