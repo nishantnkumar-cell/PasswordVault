@@ -118,6 +118,11 @@ re-keyed on another device and stop writing to it. The next time you unlock
 one of them, it takes the new key and the remaining unlock methods, and
 merges its own changes in.
 
+A copy in the folder that still uses a key you revoked is never merged:
+the app says it is an old copy, because someone who kept an old file and a
+factor you removed could have put it there. Delete that file from the
+folder and your device writes the current vault again.
+
 A device that is never unlocked again keeps the old key and old unlock
 methods in its own file. Syncing can't reach a copy that stays offline,
 so wipe or remove a lost device's vault file if you can.

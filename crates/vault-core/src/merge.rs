@@ -295,8 +295,32 @@ impl Vault {
             return Err(Error::DifferentVault);
         }
         let mut report = MergeReport::default();
-        if !self.vault_key.ct_eq(&other.vault_key) && key_order(other) > key_order(self) {
-            self.adopt_key(rng, other, &mut report)?;
+        if !self.vault_key.ct_eq(&other.vault_key) {
+            let theirs_fp = other.key_fingerprint(&other.vault_key);
+            let ours_fp = self.key_fingerprint(&self.vault_key);
+            // A copy under a key this vault already retired is old, however
+            // high an epoch it claims: it could otherwise undo a revoke.
+            if self.retired_keys.binary_search(&theirs_fp).is_ok() {
+                return Err(Error::RetiredKey);
+            }
+            // The other copy descends from this key when it retired it; then
+            // it is the newer one. Only copies that do not know of each other
+            // (two revokes at once) fall back to the epoch and a keyed hash.
+            let theirs_newer = other.retired_keys.binary_search(&ours_fp).is_ok()
+                || key_order(other) > key_order(self);
+            if theirs_newer {
+                self.retire_key();
+                self.adopt_key(rng, other, &mut report)?;
+            } else {
+                // This copy keeps its key; the other's is now behind it.
+                let i = self.retired_keys.binary_search(&theirs_fp).unwrap_err();
+                self.retired_keys.insert(i, theirs_fp);
+            }
+        }
+        for fp in &other.retired_keys {
+            if let Err(i) = self.retired_keys.binary_search(fp) {
+                self.retired_keys.insert(i, *fp);
+            }
         }
         let same_key = self.vault_key.ct_eq(&other.vault_key);
         self.merge_slots(other, same_key, &mut report)?;
@@ -373,8 +397,9 @@ impl Vault {
 
         self.generation = self.generation.max(other.generation);
         self.key_epoch = self.key_epoch.max(other.key_epoch);
-        report.other_behind =
-            !self.vault_key.ct_eq(&other.vault_key) || self.shape() != other.shape();
+        report.other_behind = !self.vault_key.ct_eq(&other.vault_key)
+            || self.shape() != other.shape()
+            || self.retired_keys != other.retired_keys;
         Ok(report)
     }
 }

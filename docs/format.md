@@ -219,6 +219,7 @@ struct Body {
     tombstones: Vec<([u8; 16], Clock)>,   // deleted item id -> vector at deletion
     removed_slots: Vec<[u8; 16]>,         // every slot ever removed, sorted
     key_epoch: u64,               // +1 on every revoke (6.4)
+    retired_keys: Vec<[u8; 32]>,  // fingerprints of vault keys moved on from (5.1), sorted
 }
 
 struct Clock(Vec<(u64, u64)>);    // (device id, edit count), sorted by device, no zero counts
@@ -258,6 +259,7 @@ Two copies of one vault (same `vault_id`), edited on different devices, merge in
 - **Records.** A record taken from the other copy is copied as is, version and ciphertext included; its AAD does not depend on the copy. If the vault keys differ, its item key is unwrapped with the other key and wrapped again under this one.
 - **Slots.** `removed_slots` is unioned and every listed slot is dropped, except that the last daily-use slot is kept. When both copies hold the same vault key, slots only the other copy has are added (they wrap that key). Labels follow their slots.
 - **Different vault keys** (a revoke on one side, 6.4): the copy with the higher `key_epoch` wins, ties going to the larger `HMAC(vault_key, "vault/key-order/v1" || vault_id)`. If the other copy wins, this copy takes its vault key and its exact slot list, re-wrapping every item key; its own slots not in that list are reported as dropped. If this copy wins, it keeps its key and slots and imports the other's items. Opening a copy under a different key needs a credential for one of its slots (`ParsedVault::unlock`); `ParsedVault::open_with` reports `DifferentKey` when the header MAC does not verify under the key already held.
+- **Retired keys.** `retired_keys` lists a fingerprint, `HMAC(vault_key, "vault/retired/v1" || vault_id)`, of every vault key this vault has moved on from: the old key is added on each revoke and whenever a merge takes a newer key. It is unioned in every merge. A copy whose key is on this vault's list is an old copy and is refused (`RetiredKey`), whatever `key_epoch` it claims, so someone who holds an old file and a since-revoked factor cannot write a copy that undoes a revoke. Of two different keys neither of which is retired here, the other copy's wins when its list contains this key's fingerprint (it descends from it), and only copies that know nothing of each other (two revokes at once) fall back to the epoch rule above. Files written before this field (body v1 and v2) still open, with an empty list, and gain the field at their next write. Older program versions cannot open a file with the new field.
 - **Counters.** `generation` and `key_epoch` become the maximum of the two; the next write increments `generation` as usual.
 
 ## 6. Operations

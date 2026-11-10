@@ -102,7 +102,7 @@ Out of scope for v1. Root can read `vaultd` memory while unlocked. The vault is 
 | Craft ciphertext valid under several keys (partitioning oracle) | Key commitment on every keyslot, the body and every item | M |
 | Roll back the whole file to an older version | Generation counter inside the encrypted body; `vaultd` keeps the last seen generation in its state directory and warns on regression. A TPM NV counter is a later hardening option | P |
 | Corrupt the file | Atomic write with directory fsync; commit tag separates "wrong factor" from "corrupt" | M |
-| Feed an old or doctored synced copy (folder sync, docs/sync.md) | A synced copy is opened only under the vault key already held (header MAC) or with the user's own factor. Merging is monotone: an old copy cannot bring back deleted items or removed slots, or undo a revoke (the higher key epoch wins). A copy of another vault is refused | M |
+| Feed an old or doctored synced copy (folder sync, docs/sync.md) | A synced copy is opened only under the vault key already held (header MAC) or with the user's own factor. Merging is monotone: an old copy cannot bring back deleted items or removed slots. A revoke cannot be undone by a copy under the old key: each vault records fingerprints of the keys it retired and refuses a copy under one of them, whatever epoch it claims (format.md 5.1) A copy of another vault is refused | M |
 | Swap or withhold the synced copy so devices stop seeing each other's edits | Not prevented: the folder's owner controls delivery. Each device keeps its own file and merges again when the copy changes, so nothing is lost locally | Accepted |
 
 ### A6, quantum adversary
