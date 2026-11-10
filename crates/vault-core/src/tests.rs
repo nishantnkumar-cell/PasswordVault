@@ -933,8 +933,15 @@ fn old_key_copy_cannot_undo_a_revoke() {
     user.revoke(&mut rng, &[(f.pw_slot, pw(PW))]).unwrap();
     let before = contents(&user);
     let slots_before = user.slots().count();
-    evil.add_password_slot(&mut rng, Factor::PasswordOnly, COST, "attacker-pass-1", None, "")
-        .unwrap();
+    evil.add_password_slot(
+        &mut rng,
+        Factor::PasswordOnly,
+        COST,
+        "attacker-pass-1",
+        None,
+        "",
+    )
+    .unwrap();
     evil.key_epoch = 1_000;
     let evil_bytes = evil.to_bytes(&mut rng).unwrap();
     let parsed = ParsedVault::parse(&evil_bytes).unwrap();
