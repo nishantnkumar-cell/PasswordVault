@@ -23,6 +23,10 @@ or in the desktop app, on the "No vault yet" screen: **Join**, then pair with th
 
 `vault sync` shows the state, `vault sync now` merges at once, `vault sync off` stops (the file in the folder stays). `vault status` and the status box at the top of the app's sidebar say when the last merge was and whether something is wrong.
 
+### Sync under systemd (Linux)
+
+The shipped `vaultd.service` makes the file system read-only except `vaultd`'s own folders (`ProtectSystem=strict`), so a copy in `~/Dropbox` cannot be written and `vault sync` reports an error. Add the folder with a drop-in: run `systemctl --user edit vaultd`, paste `[Service]` and `ReadWritePaths=%h/Dropbox` (your folder), save, and run `systemctl --user restart vaultd`. `contrib/systemd/vaultd-sync.conf.example` has the text. The system service `vaultd@.service` also hides `/home` and runs as another user, so there sync needs the folder bound in with `BindPaths=` and readable by the `vault` user; most people use the user service with sync. A `vaultd` started from a terminal needs nothing.
+
 ## How it works
 
 Each device keeps its own vault file, as before, and treats the copy in the folder as a mailbox:
