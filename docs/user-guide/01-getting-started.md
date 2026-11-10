@@ -251,7 +251,9 @@ vault pair
 
 `vaultd` opens a window that names the program asking and what it would be
 allowed to do. **Deny** is selected by default; press **Allow** only if you
-started that request yourself. If you do not answer within a minute, it is
+started that request yourself. **Allow** is grey for the first second or so
+after the window has the focus (and again whenever it loses it), so a click
+meant for something else, or a program clicking for you, cannot approve it. If you do not answer within a minute, it is
 denied. After a denial, new requests are refused for 10 seconds.
 
 ![The approval window](images/approval-window.png)

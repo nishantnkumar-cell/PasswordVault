@@ -1,7 +1,8 @@
 //! The approval window `vaultd` opens: a program asking to pair, to fill a
 //! card into a web page, to use a key held in the vault (an SSH login, a
 //! git signature), or an application asking to use the Secret Service. Who is asking, what they would get, Deny or Allow. Deny
-//! has the focus, Escape denies, and the window denies by itself after a
+//! has the focus, Escape denies, Allow stays grey until the window has had
+//! the focus for [`ALLOW_DELAY`], and the window denies by itself after a
 //! minute.
 
 use std::time::{Duration, Instant};
@@ -12,6 +13,11 @@ use crate::theme;
 
 /// How long the window waits before denying.
 pub const TIMEOUT: Duration = Duration::from_secs(60);
+
+/// How long the window must have had the focus before Allow works. A click
+/// (or a script's synthetic click) on a window that just appeared, or that
+/// just came to the front under the pointer, cannot approve by accident.
+pub const ALLOW_DELAY: Duration = Duration::from_millis(1200);
 
 /// What the daemon passed on the command line.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -133,6 +139,8 @@ pub struct Prompt {
     request: Request,
     opened: Instant,
     focused: bool,
+    /// Since when the window has had the focus without a break.
+    focus_since: Option<Instant>,
     styled: bool,
     /// The height the content needed on the last frame, in points.
     pub height: f32,
@@ -145,10 +153,17 @@ impl Prompt {
             request,
             opened: Instant::now(),
             focused: false,
+            focus_since: None,
             styled: false,
             height: 0.0,
             answer: None,
         }
+    }
+
+    /// For tests: act as if the window had had the focus for a while.
+    #[doc(hidden)]
+    pub fn skip_allow_delay(&mut self) {
+        self.focus_since = Some(Instant::now() - ALLOW_DELAY);
     }
 
     /// Draw the window. Returns true once answered.
@@ -162,6 +177,16 @@ impl Prompt {
         {
             self.answer = Some(false);
         }
+        // Allow works only after the window has had the focus for a moment,
+        // and starts over whenever the focus is lost.
+        match ui.input(|i| i.viewport().focused) {
+            Some(false) => self.focus_since = None,
+            // Where the system does not say, count the window as focused.
+            _ => {
+                self.focus_since.get_or_insert_with(Instant::now);
+            }
+        }
+        let allow_ready = allow_ready(self.focus_since.map(|t| t.elapsed()));
         let r = &self.request;
         let frame = egui::Frame::new()
             .fill(theme::SURFACE)
@@ -282,7 +307,7 @@ impl Prompt {
                         .color(theme::MUTED),
                 );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if theme::primary(ui, true, "Allow").clicked() {
+                    if theme::primary(ui, allow_ready, "Allow").clicked() {
                         self.answer = Some(true);
                     }
                     let deny = ui.add(
@@ -303,14 +328,32 @@ impl Prompt {
         // The window's height follows its text, which differs per request
         // and with the display's text size.
         self.height = panel.inner + 2.0 * 24.0;
-        ui.ctx().request_repaint_after(Duration::from_millis(500));
+        ui.ctx().request_repaint_after(if allow_ready {
+            Duration::from_millis(500)
+        } else {
+            Duration::from_millis(100)
+        });
         self.answer.is_some()
     }
+}
+
+/// Whether Allow may be used, given how long the window has had the focus
+/// (`None`: it does not have it).
+pub fn allow_ready(focused_for: Option<Duration>) -> bool {
+    focused_for.is_some_and(|d| d >= ALLOW_DELAY)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn allow_waits_for_a_steady_focus() {
+        assert!(!allow_ready(None));
+        assert!(!allow_ready(Some(Duration::ZERO)));
+        assert!(!allow_ready(Some(ALLOW_DELAY - Duration::from_millis(1))));
+        assert!(allow_ready(Some(ALLOW_DELAY)));
+    }
 
     #[test]
     fn parses_what_vaultd_passes() {
