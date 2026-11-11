@@ -30,7 +30,9 @@ final class TourTests: XCTestCase {
         addCard()
         addCode()
         addSshKey()
-        open("Generator"); shot("generator")
+        open("Generator")
+        XCTAssertTrue(app.buttons["3 Words"].waitForExistence(timeout: 10), "Generator did not open")
+        shot("generator")
         app.buttons["3 Words"].tap(); sleep(1); shot("generator-words")
         app.buttons["Apple Style"].tap(); sleep(1); shot("generator-apple")
         open("Settings"); shot("settings")
@@ -145,12 +147,20 @@ final class TourTests: XCTestCase {
         tapScrolling(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", label)).firstMatch)
         XCTAssertTrue(app.buttons[expect].waitForExistence(timeout: 10))
         shot(label.lowercased().replacingOccurrences(of: " ", with: "-"))
-        // The back button is the page's first navigation-bar button; on iPad
-        // it shows only a chevron, so it has no "Settings" label to find.
-        let bar = app.navigationBars[title]
-        let back = bar.buttons["Settings"].exists ? bar.buttons["Settings"] : bar.buttons.element(boundBy: 0)
-        back.tap()
-        sleep(1)
+        // On iPhone the page is pushed over Settings and has a back button.
+        // On iPad the split view shows it in the detail column, beside the
+        // Settings list, with no back button: the list stays tappable.
+        let back = app.navigationBars.buttons.matching(
+            NSPredicate(format: "identifier == 'BackButton' OR label == 'Settings' OR label == 'Back'")
+        ).firstMatch
+        if back.waitForExistence(timeout: 3) {
+            back.tap()
+            XCTAssertTrue(app.buttons[expect].waitForNonExistence(timeout: 10))
+        } else {
+            let list = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", label)).firstMatch
+            if !list.exists { print(app.debugDescription) }
+            XCTAssertTrue(list.exists, "\(title) has no back button and hides the Settings list")
+        }
     }
 
     // MARK: Helpers
@@ -185,8 +195,14 @@ final class TourTests: XCTestCase {
         case "Items": sidebar = "All Items"
         default: sidebar = name
         }
+        // After an item opens, the iPad can collapse the sidebar: the row is
+        // still in the tree but off screen, so tapping it does nothing.
         let row = app.cells.containing(.staticText, identifier: sidebar).firstMatch
-        if !row.exists, app.buttons["ToggleSidebar"].exists { app.buttons["ToggleSidebar"].tap() }
+        if !(row.exists && row.isHittable), app.buttons["ToggleSidebar"].exists {
+            app.buttons["ToggleSidebar"].tap()
+            _ = row.waitForExistence(timeout: 5)
+            sleep(1)
+        }
         row.tap()
         sleep(1)
     }

@@ -820,6 +820,61 @@ mod merge_props {
         devs[to].merge(rng, &theirs, &ByLength).unwrap();
     }
 
+    fn run(ops: Vec<Op>) -> Result<(), String> {
+        let mut rng = TestRng(0);
+        let mut base = Vault::new(&mut rng).unwrap();
+        base.add_password_slot(&mut rng, Factor::PasswordOnly, COST, PW, None, "")
+            .unwrap();
+        let ids: Vec<ItemId> = (0..4)
+            .map(|_| base.new_item_id(&mut rng).unwrap())
+            .collect();
+        let mut devs: Vec<Vault> = (0..3)
+            .map(|d| {
+                let mut v = copy(&mut rng, &mut base);
+                v.set_device(d as u64 + 1);
+                v
+            })
+            .collect();
+        for op in ops {
+            match op {
+                Op::Put(d, i, v) => devs[d]
+                    .put_item(&mut rng, &ids[i], &vec![v; 1 + v as usize % 5])
+                    .unwrap(),
+                Op::Delete(d, i) => {
+                    let _ = devs[d].remove_item(&ids[i]);
+                }
+                Op::Sync(a, b) => pull(&mut rng, &mut devs, a, b),
+            }
+        }
+        for _ in 0..2 {
+            for a in 0..3 {
+                for b in 0..3 {
+                    pull(&mut rng, &mut devs, a, b);
+                }
+            }
+        }
+        let first = contents(&devs[0]);
+        for d in &devs[1..] {
+            if contents(d) != first {
+                return Err(format!("{:?} vs {:?}", contents(d), first));
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn three_way_conflict_copies_converge() {
+        run(vec![
+            Op::Put(2, 2, 89),
+            Op::Sync(0, 2),
+            Op::Put(1, 2, 0),
+            Op::Sync(2, 1),
+            Op::Put(0, 2, 90),
+            Op::Sync(2, 0),
+        ])
+        .unwrap();
+    }
+
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(64))]
 
