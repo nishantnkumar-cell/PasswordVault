@@ -132,7 +132,11 @@ client (`vault-hw/src/tpm2.rs`) builds the commands itself. It seals the
 secret as a keyed-hash object under the storage key Windows creates at
 `0x81000001` when it sets up the TPM, so nothing new persists in the TPM.
 The object's private part is encrypted by the TPM's own symmetric key, and
-only this TPM can load it.
+only this TPM can load it. The slot also stores the storage key's name (a
+hash of its public part), and unsealing compares it with the key at
+`0x81000001` first. If the TPM was cleared or replaced the slot says so
+and you unlock another way and add the TPM again. Slots made before this
+change have no stored name and still unlock.
 
 - The PIN is the object's authValue, so the TPM's dictionary-attack lockout
   limits guesses. An object without a PIN is exempt (nothing to guess).

@@ -259,6 +259,49 @@ fn trimmed(auth: &[u8]) -> &[u8] {
     &auth[..n]
 }
 
+/// Set in the stored public length when the storage key's name follows it.
+const PINNED: u16 = 0x8000;
+/// A SHA-256 TPM object name: the hash algorithm ID and the digest.
+const SRK_NAME_LEN: usize = 34;
+
+/// The slot blob after its magic: u16 LE public length (high bit set when the
+/// 34-byte name of the storage key follows it) || [name] || public || private.
+/// Pinning the name makes a slot refuse to unseal under a storage key other
+/// than the one it was made under, with a clear message.
+pub fn pack_sealed(srk_name: &[u8], public: &[u8], private: &[u8]) -> HwResult<Vec<u8>> {
+    let len = u16::try_from(public.len())
+        .ok()
+        .filter(|l| l & PINNED == 0)
+        .ok_or("TPM public too large")?;
+    if srk_name.len() != SRK_NAME_LEN {
+        return Err("TPM storage key name has the wrong length".into());
+    }
+    let mut out = Vec::with_capacity(2 + SRK_NAME_LEN + public.len() + private.len());
+    out.extend_from_slice(&(len | PINNED).to_le_bytes());
+    out.extend_from_slice(srk_name);
+    out.extend_from_slice(public);
+    out.extend_from_slice(private);
+    Ok(out)
+}
+
+/// Undo [`pack_sealed`]. Slots made before the name was pinned give `None`.
+pub fn unpack_sealed(rest: &[u8]) -> HwResult<(Option<&[u8]>, &[u8], &[u8])> {
+    let (len, rest) = rest.split_at_checked(2).ok_or("TPM blob truncated")?;
+    let raw = u16::from_le_bytes([len[0], len[1]]);
+    let (name, rest) = if raw & PINNED != 0 {
+        let (n, r) = rest
+            .split_at_checked(SRK_NAME_LEN)
+            .ok_or("TPM blob truncated")?;
+        (Some(n), r)
+    } else {
+        (None, rest)
+    };
+    let (public, private) = rest
+        .split_at_checked((raw & !PINNED) as usize)
+        .ok_or("TPM blob truncated")?;
+    Ok((name, public, private))
+}
+
 pub struct Client<T: Transport> {
     t: T,
     srk: u32,
@@ -300,6 +343,11 @@ impl<T: Transport> Client<T> {
         c.srk_public = parse_rsa_storage_key(&public)?;
         c.srk_name = name;
         Ok(c)
+    }
+
+    /// The name of the storage key in use (a hash of its public area).
+    pub fn srk_name(&self) -> &[u8] {
+        &self.srk_name
     }
 
     fn transact(&mut self, cmd: &[u8]) -> HwResult<Vec<u8>> {
@@ -908,5 +956,32 @@ pub(crate) mod tests {
                 .unwrap()
                 .ct_eq(&secret)
         );
+    }
+}
+
+#[cfg(test)]
+mod pin_tests {
+    use super::{pack_sealed, unpack_sealed};
+
+    #[test]
+    fn sealed_blobs_carry_the_storage_key_name() {
+        let name = [7u8; 34];
+        let blob = pack_sealed(&name, b"public", b"private bytes").unwrap();
+        let (n, pubk, prv) = unpack_sealed(&blob).unwrap();
+        assert_eq!(n, Some(&name[..]));
+        assert_eq!((pubk, prv), (&b"public"[..], &b"private bytes"[..]));
+        assert!(unpack_sealed(&blob[..10]).is_err());
+        assert!(pack_sealed(&[1u8; 5], b"p", b"q").is_err());
+    }
+
+    #[test]
+    fn blobs_made_before_pinning_still_parse() {
+        // u16 LE length 6, no flag, then public and private.
+        let mut old = vec![6, 0];
+        old.extend_from_slice(b"public");
+        old.extend_from_slice(b"private bytes");
+        let (n, pubk, prv) = unpack_sealed(&old).unwrap();
+        assert_eq!(n, None);
+        assert_eq!((pubk, prv), (&b"public"[..], &b"private bytes"[..]));
     }
 }
