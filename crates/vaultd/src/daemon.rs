@@ -111,6 +111,9 @@ impl SyncState {
 /// Why a synced copy could not be merged when it was re-keyed elsewhere.
 const REKEYED: &str = "the synced copy was re-keyed on another device (a factor was revoked there); lock and unlock to merge it";
 
+/// Why the main synced copy was not merged when it uses a revoked key.
+const RETIRED: &str = "the synced copy is locked with a vault key that was revoked, so it is an old copy (or was written by someone holding an old factor); it was not merged. If you did not expect this, someone with write access to the folder may have put it there; delete the file from the folder and this device writes its current vault again";
+
 /// Wait after a declined or unanswered prompt before showing another.
 const PROMPT_COOLDOWN: Duration = Duration::from_secs(10);
 
@@ -350,7 +353,24 @@ impl Daemon {
                 }
                 Err(_) => continue,
             };
-            let r = v.merge(&mut OsRandom, &theirs, &ItemMerge).map_err(e)?;
+            let r = match v.merge(&mut OsRandom, &theirs, &ItemMerge) {
+                Ok(r) => r,
+                // An old copy, under a key a revoke retired: not news, and
+                // not merged. Say so rather than retry it every few seconds.
+                Err(vault_core::Error::RetiredKey) => {
+                    eprintln!(
+                        "vaultd: sync: ignoring {}: it is locked with a vault key that was revoked",
+                        c.path.display()
+                    );
+                    if main {
+                        st.blocked = true;
+                        return Err(RETIRED.into());
+                    }
+                    st.folder.mark(c.path, c.stamp);
+                    continue;
+                }
+                Err(err) => return Err(e(err)),
+            };
             st.conflicts += r.conflicts as u64;
             write |= r.changed() || (main && r.other_behind);
             if !main {

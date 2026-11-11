@@ -120,7 +120,21 @@ fn golden_file_is_stable() {
 }
 
 const GOLDEN_LEN: usize = 4890;
-const GOLDEN_SHA256: &str = "e47b59546c6f2bf3c90292f627a2d7fea8b111b4ecb093b84ed7d8490833750b";
+const GOLDEN_SHA256: &str = "97b6e14f314a9fb3447190fd79ad010007a05330e8a3d831503d652a19eb9bbb";
+
+#[test]
+fn body_v2_files_still_open() {
+    // The golden file as written before retired keys (section 5.1).
+    let old = include_bytes!("testdata/body-v2.svault");
+    let f = fixture(&mut TestRng(0));
+    let mut v = unlock_pw(old, &f.pw_slot).unwrap();
+    assert_eq!(v.generation(), 1);
+    assert_eq!(&**v.get_item(&f.items[0]).unwrap(), b"item a");
+    assert!(v.retired_keys.is_empty());
+    v.put_item(&mut TestRng(1), &f.items[0], b"edited").unwrap();
+    let bytes = v.to_bytes(&mut TestRng(2)).unwrap();
+    assert!(unlock_pw(&bytes, &f.pw_slot).is_ok());
+}
 
 #[test]
 fn body_v1_files_still_open() {
@@ -900,4 +914,80 @@ fn parked_key_round_trips_through_bytes() {
     flipped[last] ^= 1;
     let parked = ParkedKey::from_bytes(&flipped).unwrap();
     assert_eq!(p.resume(&parked, &wrap).err(), Some(Error::WrongFactor));
+}
+
+// ---- Retired keys: an old copy cannot undo a revoke (section 5.1) ----
+
+/// An attacker holding the old file and a since-revoked recovery code writes a
+/// copy under the old key with an inflated epoch and a slot of their own.
+#[test]
+fn old_key_copy_cannot_undo_a_revoke() {
+    let mut rng = TestRng(4242);
+    let f = fixture(&mut rng);
+    let mut evil = ParsedVault::parse(&f.bytes)
+        .unwrap()
+        .unlock(&f.rec_slot, &Unlock::Recovery { code: &f.code })
+        .unwrap();
+    let mut user = unlock_pw(&f.bytes, &f.pw_slot).unwrap();
+    user.set_device(1);
+    user.revoke(&mut rng, &[(f.pw_slot, pw(PW))]).unwrap();
+    let before = contents(&user);
+    let slots_before = user.slots().count();
+    evil.add_password_slot(
+        &mut rng,
+        Factor::PasswordOnly,
+        COST,
+        "attacker-pass-1",
+        None,
+        "",
+    )
+    .unwrap();
+    evil.key_epoch = 1_000;
+    let evil_bytes = evil.to_bytes(&mut rng).unwrap();
+    let parsed = ParsedVault::parse(&evil_bytes).unwrap();
+    assert!(matches!(parsed.open_with(&user), Err(Error::DifferentKey)));
+    let theirs = parsed.unlock(&f.pw_slot, &pw(PW)).unwrap();
+    assert_eq!(
+        user.merge(&mut rng, &theirs, &ByLength).unwrap_err(),
+        Error::RetiredKey
+    );
+    assert_eq!(user.slots().count(), slots_before);
+    assert_eq!(contents(&user), before);
+}
+
+/// A device that was offline during a revoke still takes the new key from the
+/// device that revoked, because that copy says it retired the old one.
+#[test]
+fn revoke_still_reaches_an_offline_device() {
+    let mut rng = TestRng(77);
+    let (f, mut a, mut b) = two_devices(&mut rng);
+    a.revoke(&mut rng, &[(f.pw_slot, pw(PW))]).unwrap();
+    let a_file = a.to_bytes(&mut rng).unwrap();
+    let parsed = ParsedVault::parse(&a_file).unwrap();
+    let theirs = parsed.unlock(&f.pw_slot, &pw(PW)).unwrap();
+    let r = b.merge(&mut rng, &theirs, &ByLength).unwrap();
+    assert!(r.rekeyed);
+    assert_eq!(b.slots().count(), a.slots().count());
+    // And now b refuses the pre-revoke file.
+    let old = ParsedVault::parse(&f.bytes)
+        .unwrap()
+        .unlock(&f.pw_slot, &pw(PW))
+        .unwrap();
+    assert_eq!(
+        b.merge(&mut rng, &old, &ByLength).unwrap_err(),
+        Error::RetiredKey
+    );
+}
+
+/// Bodies written before retired keys still open, and the next write adds the field.
+#[test]
+fn body_without_retired_keys_still_opens() {
+    let mut rng = TestRng(5);
+    let f = fixture(&mut rng);
+    let mut v = unlock_pw(&f.bytes, &f.pw_slot).unwrap();
+    assert!(v.retired_keys.is_empty());
+    v.revoke(&mut rng, &[(f.pw_slot, pw(PW))]).unwrap();
+    let bytes = v.to_bytes(&mut rng).unwrap();
+    let again = unlock_pw(&bytes, &f.pw_slot).unwrap();
+    assert_eq!(again.retired_keys.len(), 1);
 }

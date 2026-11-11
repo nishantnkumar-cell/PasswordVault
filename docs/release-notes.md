@@ -1243,6 +1243,27 @@ on macOS once the app supports it. TPM unlock is Linux only.
 
 How to use it: [the desktop window and command palette](user-guide/desktop-window-and-palette.md).
 
+### A revoke can no longer be undone through a synced copy
+
+- **Fixed (security).** Before, someone who kept an old copy of your vault and
+  a factor you later revoked (a recovery code, a lost key) could write a copy
+  under the old vault key into your sync folder, claiming a newer key
+  generation. Your next unlock took that key, which brought their own unlock
+  method back into your vault. Now each vault records the keys it has retired
+  and refuses a copy under one of them. A device that was offline during the
+  revoke still takes the new key from the device that made it.
+- **What you see.** The sync status says the copy in the folder uses a
+  revoked key and was not merged. Delete that file from the folder and this
+  device writes its current vault again.
+- **Compatibility.** Vault files gain a list of retired keys at their next
+  write. Older versions of the programs cannot open such a file, so update
+  every device. Linux, Windows, macOS and the phone apps behave the same.
+- **Reported by the November 2026 security review.** If you ever revoked a
+  factor with sync turned on, revoke it again after updating, as an old copy
+  could have been merged before.
+
+How to use it: [Removing an unlock method](user-guide/10-sync.md#removing-an-unlock-method).
+
 ---
 
 ## 0.1.0: first feature-complete version (2026-10-20)

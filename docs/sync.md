@@ -53,6 +53,8 @@ The merge is in `vault-core` (`Vault::merge`, format.md section 5.1) and needs n
 
 `vault revoke` rotates the vault key. The other devices can no longer open the synced copy with the key they hold, so their status says the copy was re-keyed on another device and they stop writing to it. At their next unlock they open the copy with the factor just used, take the new key and the remaining slots, and merge their own edits in. Their old slots that the revoke removed are gone from that point on.
 
+Each vault remembers which keys it has retired. A copy in the folder that is locked with a retired key is an old copy, for example one written by someone who kept an old file and a factor you have since revoked. It is not merged, whatever it claims, and the status says so; delete the file from the folder and the device writes its current vault again. A device that was offline during the revoke has not retired the old key yet, but the copy from the device that revoked says that it did, so it is taken as the newer one.
+
 If two devices revoke at the same time, the later rotation wins (each vault counts its rotations), with a fixed tie-break, so both agree.
 
 A device that is never unlocked again keeps the old key and the old slots in its own file: syncing cannot reach into a copy that stays offline. That is the same limit as any backup (threat-model.md, A5).
