@@ -170,7 +170,156 @@ for the password again too.
 
 Security keys, TPM and phone passkeys are unlock methods of a particular
 computer. The phone app lists them under **Settings > Unlock Methods** as
-"on another device" and doesn't use them.
+"Works on the computer that added it" and doesn't use them. On iPhone and
+iPad you can still remove them there
+([Change unlock methods](#change-unlock-methods-on-the-phone)).
+
+## Change unlock methods on the phone
+
+*iPhone and iPad. On Android, use the desktop app for now.*
+
+Open **Settings > Unlock Methods**. The top of the screen lists every way
+the vault can be unlocked: your master password, your recovery code, and
+any security key, TPM or phone passkey added on a computer. A green tick
+means it works on this phone.
+
+### Change the master password
+
+Use this when you want a new password, for example because you typed the
+old one where someone could see it.
+
+1. Tap **Change Master Password**.
+2. Type your current master password.
+3. Type the new one twice. Use at least 12 characters, or four random words
+   (the **Generator** tab makes them).
+4. Tap **Change**. It takes a few seconds.
+
+Your recovery code, security keys and the other unlock methods keep
+working. Your computer and other phones use the new password from their
+next sync. Face ID and Touch ID keep working on this phone.
+
+### Make a new recovery code
+
+Use this if you lost the paper with your recovery code, or think someone
+saw it.
+
+1. Tap **Make a New Recovery Code**, then **Make New Code**.
+2. Write the new code on paper. It is shown only now.
+3. Switch on **I wrote it down** and tap **Done**.
+
+The old recovery code stops working on every device once they sync.
+
+### Remove one unlock method
+
+Use this for a security key you no longer have, or a computer you sold
+after resetting it.
+
+1. Swipe left on the method (or touch and hold it) and tap **Remove**.
+2. Confirm.
+
+You can't remove the vault's only master password here, because that is
+how the phone unlocks. Change it instead.
+
+Removing a method doesn't change the vault's key. If the key or device
+might be in someone else's hands, use the next section instead.
+
+### Lost a device or key? Remove all other unlock methods
+
+Use this if a phone, a computer or a security key was lost or stolen.
+
+1. Tap **Remove All Other Unlock Methods**.
+2. Read the two lists: what stops working (every security key, TPM, phone
+   passkey, other password and your recovery code) and what keeps working
+   (your master password, Face ID or Touch ID on this phone, and all your
+   items).
+3. Type your master password and tap **Remove**.
+4. Write down the new recovery code it shows, switch on **I wrote it
+   down** and tap **Done**.
+
+The vault gets a new key, so saves from now on can't be opened with what
+was removed. Your other phones and computers ask for the master password
+once, at their next sync. Afterwards, add security keys or the TPM again in
+the desktop app ([chapter 2](02-unlocking.md)). A copy of the vault saved
+before this (a backup, for example) still opens with the old methods.
+
+## Import from another app
+
+*iPhone and iPad. On Android, import on your computer and sync.*
+
+You can bring your passwords over from another password manager:
+
+1. Export them from the other app as a file:
+   - **Apple Passwords:** on a Mac, open the Passwords app and choose
+     **File > Export All Passwords to File**. Save it in iCloud Drive. It
+     includes one-time codes.
+   - **Bitwarden:** **Tools > Export Vault**, format **.json**. Choose the
+     unencrypted export.
+   - **Chrome or Edge:** **Settings > Passwords > Export passwords**.
+   - **Firefox:** **Passwords**, the **⋯** menu, **Export Passwords**.
+2. In Secret Vault, open **Settings > Import from Another App** and tap
+   **Choose Export File**.
+3. Pick the file in Files. The app says how many items it added.
+4. Tap **Delete the Export File**. It holds every password in plain text.
+   Then empty **Recently Deleted** in the Files app.
+
+Every entry becomes a new item, so importing the same file twice adds
+everything twice. What is brought over is the same as on the desktop
+([chapter 3](03-items.md#import-from-another-password-manager)).
+
+## SSH and PGP keys on the phone
+
+*iPhone and iPad.*
+
+SSH and OpenPGP keys you keep in the vault are listed under the **SSH and
+PGP Keys** filter. Open one to see:
+
+- its type and **fingerprint**, to check it is the key a website or server
+  shows;
+- the **public key** (for SSH) or **public certificate** (for OpenPGP), with
+  **Copy** and **Share**.
+
+To add your SSH key to GitHub from the phone: open the key, tap **Copy
+Public Key**, then in GitHub go to **Settings > SSH and GPG keys > New SSH
+key** and paste it.
+
+The phone never shows or exports the private key, and doesn't use keys
+itself: your computer's vault daemon does the SSH logins, Git signing and
+OpenPGP work ([chapter 6](06-ssh-and-git.md), [chapter 7](07-openpgp.md)).
+
+### Make a new SSH key on the phone
+
+1. On the item list, tap **+** and choose **SSH Key**.
+2. Give it a name, such as **GitHub** or **Home Server**. The name goes at
+   the end of the public key.
+3. Keep **Ed25519**, unless an older server refuses it; then choose
+   **ECDSA P-256**.
+4. Leave **Ask Before Each Use** on if you want your computer to show an
+   approval window before each use.
+5. Tap **Make Key**, then open the new item to copy its public key.
+
+Once the vault syncs, your computer's `ssh` and `git` can use the key. To
+make an OpenPGP key, use the desktop app.
+
+## Keyboard shortcuts on iPad
+
+With a keyboard attached to an iPad (or an iPhone), these shortcuts work.
+They are also in the iPadOS menu bar (move the pointer to the top of the
+screen), and holding ⌘ lists them.
+
+| Shortcut | What it does |
+| --- | --- |
+| ⌘N | New login (other kinds are under **File > New Item**) |
+| ⌥⌘N | New window |
+| ⌘F | Search |
+| ⌘E | Edit the open item |
+| ⇧⌘C | Copy the open item's password |
+| ⌥⌘C | Copy its username |
+| ⌃⌘C | Copy its one-time code |
+| ⌘R | Sync now |
+| ⌘L | Lock |
+
+⌘F works in the side-by-side layout; on a narrow window, tap the search
+tab.
 
 ## Find and use your items
 
@@ -339,7 +488,10 @@ unlocked.
 | Set up a code from the camera or a link | Yes ("Set Up Codes In") | No, scan in the app | No camera: paste the key or read a QR screenshot (**Add code**, `vault code add`) |
 | Save a new login when you sign up in another app | Not yet | Not yet | Browser extension |
 | Sync | iCloud Drive, OneDrive, Dropbox through Files | Google Drive, OneDrive, Dropbox through the file picker | Any synced folder |
-| SSH and OpenPGP keys | Shown, not used | Shown, not used | Yes |
+| Change master password, new recovery code, remove unlock methods | Yes | Not yet (use a computer) | Yes |
+| Import from another password manager | Yes, from Files | Not yet (use a computer) | Yes |
+| SSH and OpenPGP keys | Public key shown, copied and shared; SSH keys made; not used | Shown, not used | Yes |
+| Keyboard shortcuts | iPad and iPhone with a keyboard | No | Yes |
 | Screenshots of the app | Allowed; hidden in the app switcher | Blocked | Allowed |
 | Side-by-side layout | iPad, wide windows | Tablets, unfolded foldables, wide windows | Always |
 

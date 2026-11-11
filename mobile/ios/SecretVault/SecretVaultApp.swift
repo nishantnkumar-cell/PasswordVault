@@ -7,7 +7,7 @@ struct SecretVaultApp: App {
     @State private var hiddenAt: Date?
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: "main") {
             RootView()
                 .environment(vault)
                 .tint(Palette.accent)
@@ -19,6 +19,7 @@ struct SecretVaultApp: App {
                     if let setup = CodeSetup(url: url) { vault.pendingCodeSetup = setup }
                 }
         }
+        .commands { VaultCommands(vault: vault) }
         .onChange(of: phase) { _, now in
             switch now {
             case .background:

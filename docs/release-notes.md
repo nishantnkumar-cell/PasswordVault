@@ -42,6 +42,54 @@ verified developers, rolling out country by country from late 2026; this
 may later need an extra step or block sideloading in some countries. No
 vault file change.
 
+### iPhone and iPad: unlock methods, import, SSH keys and keyboard shortcuts
+
+- **Change your unlock methods on the phone.** **Settings > Unlock
+  Methods** now lets you change the master password, make a new recovery
+  code (the old one stops working), and remove any unlock method, such as
+  a security key you no longer use. Swipe left on a method to remove it.
+- **Lost a device or key?** **Remove All Other Unlock Methods** gives the
+  vault a new key, keeps only your master password, and shows a new
+  recovery code. Every security key, TPM, phone passkey, other password and
+  old recovery code stops working. Your other devices ask for the master
+  password once, at their next sync.
+- **Import from another password manager.** **Settings > Import from
+  Another App** reads an export saved in Files: the CSV from Apple
+  Passwords (with one-time codes), Chrome, Edge, Firefox or Safari, or
+  Bitwarden's unencrypted JSON. Afterwards it offers to delete the export,
+  which holds every password in plain text.
+- **SSH and OpenPGP keys show their public half.** A key item now shows the
+  key type, the fingerprint and the public key (or certificate), with
+  **Copy** and **Share**. You can add an SSH key to GitHub or a server from
+  the phone.
+- **Make an SSH key on the phone.** **+ > SSH Key** makes an Ed25519 (or
+  ECDSA P-256) key in the vault. After the vault syncs, your computer's
+  vault daemon offers it to `ssh` and `git`.
+- **Keyboard shortcuts on iPad.** With a keyboard attached, the iPadOS
+  menu bar lists them, and holding ⌘ shows them: ⌘N new login, ⌘F search,
+  ⌘E edit, ⇧⌘C copy password, ⌥⌘C copy username, ⌃⌘C copy one-time code,
+  ⌘R sync now, ⌘L lock, ⌥⌘N new window.
+- How to start: [Change unlock methods](user-guide/14-phone-apps.md#change-unlock-methods-on-the-phone),
+  [Import](user-guide/14-phone-apps.md#import-from-another-app),
+  [SSH and PGP keys](user-guide/14-phone-apps.md#ssh-and-pgp-keys-on-the-phone),
+  [Keyboard shortcuts](user-guide/14-phone-apps.md#keyboard-shortcuts-on-ipad).
+
+| | iPhone and iPad | Android | Windows, Linux, macOS |
+| --- | --- | --- | --- |
+| Change master password, new recovery code, remove a method | Yes (new) | Not yet | Yes |
+| Remove all other methods (new vault key) | Yes (new) | Not yet | Yes (`vault revoke`) |
+| Add a security key, TPM or phone passkey | No | No | Yes |
+| Import from another password manager | Yes (new), from Files | Not yet | Yes |
+| Show and share a key's public half | Yes (new) | Not yet | Yes |
+| Make a key | SSH (new) | No | SSH and OpenPGP |
+| Use a key for SSH, Git or OpenPGP | No | No | Yes |
+
+Known limits: OpenPGP keys can't be made on the phone (make them in the
+desktop app). The phone never shows or exports a private key. The phone
+can't remove its own last master password, because that is how it
+unlocks. Android gets these screens later; its app is unchanged. No vault
+file change: a vault changed on the phone opens everywhere as before.
+
 ### Add a one-time code on the desktop and from the command line
 
 - **Add Code on the desktop.** Open **One-time codes** in the sidebar and

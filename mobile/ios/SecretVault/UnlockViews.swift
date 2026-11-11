@@ -226,7 +226,7 @@ struct UnlockView: View {
     }
 }
 
-private extension Array where Element == Substring {
+extension Array where Element == Substring {
     /// Groups joined with dashes, `size` to a line.
     func chunked(_ size: Int) -> [String] {
         stride(from: 0, to: count, by: size).map { self[$0..<Swift.min($0 + size, count)].joined(separator: "-") }

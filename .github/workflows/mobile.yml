@@ -36,6 +36,17 @@ jobs:
           done
       - name: Install cargo-ndk
         run: cargo install cargo-ndk --locked
+      # The wrapper downloads Gradle from GitHub, which sometimes answers 5xx;
+      # try that download up to three times before building.
+      - name: Fetch Gradle
+        working-directory: mobile/android
+        run: |
+          for i in 1 2 3; do
+            ./gradlew --no-daemon --version && exit 0
+            echo "Gradle download failed (attempt $i), retrying in $((i * 15)) s" >&2
+            sleep $((i * 15))
+          done
+          exit 1
       - name: Build the Rust library, then the app
         working-directory: mobile/android
         run: |
