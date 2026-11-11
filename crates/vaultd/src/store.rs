@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use vault_ipc::ClientScope;
+use vault_ipc::{ActivityEntry, ClientScope};
 
 /// Paths owned by the daemon.
 pub struct Store {
@@ -19,6 +19,9 @@ pub struct Store {
 pub const KEEP_SNAPSHOTS: usize = 20;
 /// Least time between two automatic snapshots.
 pub const AUTO_SNAPSHOT_GAP: std::time::Duration = std::time::Duration::from_secs(600);
+
+/// Most entries kept in the activity log.
+pub const KEEP_ACTIVITY: usize = 2000;
 
 /// A kept copy of the vault file.
 pub struct SnapshotFile {
@@ -162,6 +165,60 @@ impl Store {
             .find(|s| s.name == name || s.name.trim_end_matches(".svault") == name)
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no such snapshot"))?;
         fs::read(self.snapshot_dir().join(found.name))
+    }
+
+    fn activity_path(&self) -> PathBuf {
+        self.state_dir.join("activity.log")
+    }
+
+    /// Add a line to the activity log: when, what, who, and whether it
+    /// worked. Never holds a secret or an item title. The log keeps
+    /// roughly the last [`KEEP_ACTIVITY`] entries.
+    pub fn log_activity(&self, event: &str, who: &str, ok: bool) {
+        fn clean(s: &str) -> String {
+            s.chars()
+                .map(|c| if c.is_control() { ' ' } else { c })
+                .take(80)
+                .collect()
+        }
+        let line = format!(
+            "{}\t{}\t{}\t{}\n",
+            unix_now(),
+            clean(event),
+            clean(who),
+            u8::from(ok)
+        );
+        let path = self.activity_path();
+        let _ = (|| -> io::Result<()> {
+            let mut f = OpenOptions::new().create(true).append(true).open(&path)?;
+            f.write_all(line.as_bytes())?;
+            if f.metadata()?.len() > (KEEP_ACTIVITY as u64) * 200 {
+                drop(f);
+                let text = fs::read_to_string(&path)?;
+                let lines: Vec<&str> = text.lines().collect();
+                let keep = lines[lines.len().saturating_sub(KEEP_ACTIVITY / 2)..].join("\n");
+                write_atomic(&path, format!("{keep}\n").as_bytes())?;
+            }
+            Ok(())
+        })();
+    }
+
+    /// The newest `limit` activity entries, newest first.
+    pub fn activity(&self, limit: usize) -> Vec<ActivityEntry> {
+        let text = fs::read_to_string(self.activity_path()).unwrap_or_default();
+        text.lines()
+            .rev()
+            .filter_map(|l| {
+                let mut p = l.split('\t');
+                Some(ActivityEntry {
+                    time: p.next()?.parse().ok()?,
+                    event: p.next()?.to_owned(),
+                    who: p.next()?.to_owned(),
+                    ok: p.next()? == "1",
+                })
+            })
+            .take(limit)
+            .collect()
     }
 
     /// The vault file as it is on disk now.

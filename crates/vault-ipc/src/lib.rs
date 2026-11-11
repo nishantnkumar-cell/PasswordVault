@@ -418,6 +418,21 @@ pub enum Request {
     EmptyTrash,
     /// A login's earlier passwords, newest first. Answers with `History`.
     PasswordHistory { id: ItemId },
+    /// The newest entries of the activity log. Answers with `Activity`.
+    Activity { limit: u32 },
+}
+
+/// One line of the activity log (`Request::Activity`).
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ActivityEntry {
+    /// Seconds since the Unix epoch.
+    pub time: u64,
+    /// What happened, as a short word such as `unlock` or `read-item`.
+    pub event: String,
+    /// The paired client or program that asked.
+    pub who: String,
+    /// Whether it worked.
+    pub ok: bool,
 }
 
 /// An item in the trash (`Request::ListTrash`).
@@ -604,6 +619,8 @@ pub enum Response {
     Trash(Vec<TrashedItem>),
     /// A login's earlier passwords, newest first, with when each was replaced.
     History(Vec<(u64, Secret)>),
+    /// The activity log, newest first.
+    Activity(Vec<ActivityEntry>),
 }
 
 /// Write one frame: u32 little-endian length, then postcard bytes.

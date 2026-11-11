@@ -70,6 +70,28 @@ delete snapshots from before it (the files in `snapshots/`) once you no
 longer need them. Restoring is manual on purpose; there is no `vault restore`
 command yet, and the desktop app does not show snapshots.
 
+## See what has been using your vault
+
+`vault activity` shows the newest entries of a log that `vaultd` keeps in its
+state folder (`activity.log`, table above): unlocks (and wrong passwords),
+pairings, items read or autofilled, exports, imports, deletes, revokes, key
+slots added or removed, SSH signatures, and programs approved or declined for
+the Secret Service on Linux.
+
+```
+vault activity --last 10
+2026-11-11 08:20:41  unlock         vault-gui
+2026-11-11 08:19:03  unlock         cli  (failed)
+```
+
+If you see an unlock you did not do, or a program you do not know, run
+`vault revoke` and change your master password. The log holds no passwords and
+no item names, only what happened, when, and which paired program asked. It
+is a plain text file on your own computer, so anyone who controls your account
+can edit it: read it as a hint, not as proof. It keeps about the last 2,000
+entries. It is the same on Linux, Windows and macOS (macOS and Windows have
+no Secret Service entries). The desktop app does not show it yet.
+
 ## Move the vault to another computer
 
 If you use [sync](10-sync.md), install Secret Vault on the new computer

@@ -589,7 +589,10 @@ impl Daemon {
     pub fn ssh_sign(&mut self, id: &ItemId, blob: &[u8], data: &[u8]) -> R<Vec<u8>> {
         match &self.item(id)?.key {
             Some(KeyData::Ssh { openssh, .. }) if ssh::public_blob(openssh)? == blob => {
-                ssh::sign(openssh, data)
+                let signed = ssh::sign(openssh, data);
+                self.store
+                    .log_activity("ssh-sign", "ssh agent", signed.is_ok());
+                signed
             }
             _ => Err("that key is no longer in the vault".into()),
         }
@@ -814,10 +817,29 @@ impl Daemon {
     /// been asked and the user allowed it.
     pub fn handle(&mut self, env: Envelope) -> Response {
         self.pending_use = None;
-        match self.dispatch(env) {
+        let event = activity_event(&env.request);
+        let who = env
+            .token
+            .as_ref()
+            .and_then(|t| self.store.client(t))
+            .map_or_else(|| "unpaired".to_owned(), |(name, _)| name);
+        let result = self.dispatch(env);
+        if let Some((name, on_failure)) = event {
+            let ok = result.is_ok();
+            if ok || on_failure {
+                self.store.log_activity(name, &who, ok);
+            }
+        }
+        match result {
             Ok(r) => r,
             Err(m) => Response::Error(m),
         }
+    }
+
+    /// Add a line to the activity log (for the SSH agent and Secret Service,
+    /// which do not come through [`Self::handle`]).
+    pub fn note(&self, event: &str, who: &str, ok: bool) {
+        self.store.log_activity(event, who, ok);
     }
 
     fn dispatch(&mut self, env: Envelope) -> R<Response> {
@@ -1575,6 +1597,9 @@ impl Daemon {
                     recovery_code: Some(Zeroizing::new(code.as_str().to_owned())),
                 })
             }
+            Request::Activity { limit } => Ok(Response::Activity(
+                self.store.activity((limit as usize).clamp(1, 500)),
+            )),
             Request::Snapshots => Ok(Response::Snapshots(
                 self.store
                     .snapshots()
@@ -1914,6 +1939,33 @@ impl Daemon {
         self.save()?;
         Ok(Response::ItemSaved { id })
     }
+}
+
+/// The activity-log word for a request worth logging, and whether a
+/// failure is worth logging too (wrong passwords are; "locked" is not).
+fn activity_event(r: &Request) -> Option<(&'static str, bool)> {
+    Some(match r {
+        Request::Init { .. } => ("init", true),
+        Request::Pair { .. } => ("pair", true),
+        Request::Unlock { .. } => ("unlock", true),
+        Request::Lock | Request::LockFully => ("lock", false),
+        Request::AddPasswordSlot { .. }
+        | Request::AddFido2Slot { .. }
+        | Request::AddPasskeySlot { .. }
+        | Request::AddTpmSlot { .. }
+        | Request::AddRecoverySlot { .. } => ("add-slot", true),
+        Request::RemoveSlot { .. } => ("remove-slot", true),
+        Request::Revoke { .. } => ("revoke", true),
+        Request::GetItem { .. } => ("read-item", false),
+        Request::GetForFill { .. } => ("autofill", false),
+        Request::ExportKey { .. } => ("export-key", true),
+        Request::ExportVault { .. } => ("export-vault", false),
+        Request::Import { .. } => ("import", false),
+        Request::DeleteItem { .. } => ("delete-item", false),
+        Request::PurgeItem { .. } | Request::EmptyTrash => ("purge", false),
+        Request::RevokeAppApproval { .. } => ("revoke-app", false),
+        _ => return None,
+    })
 }
 
 /// An item as clients see it: private keys stay in the daemon.

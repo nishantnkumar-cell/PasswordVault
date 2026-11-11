@@ -244,6 +244,18 @@ users' signatures show as invalid in Thunderbird). Evolution and KMail are
 not connected yet. No vault file change; `vaultd`, `vault-gpg` and the other
 programs must be updated together (two new requests).
 
+### `vault activity`: what has been using your vault
+
+- `vaultd` keeps a small log of what happened: unlocks and wrong passwords,
+  pairings, items read or autofilled, exports, imports, deletes, revokes,
+  key-slot changes, SSH signatures and Secret Service approvals.
+  `vault activity --last 20` shows the newest entries.
+- No passwords and no item names are logged. It is a plain file on your own
+  computer, so it is a hint, not proof, if someone else controls your account.
+- Same on Linux, Windows and macOS. The Secret Service lines exist on Linux
+  only. The desktop app does not show the log yet. The first-time-user guide
+  (chapter 8) has a section on it.
+
 ### Safer unlock limits, sync limits and Android AutoFill frames
 
 These fix three findings from a security review (issues #49, #50 and #51).
