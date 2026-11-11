@@ -80,7 +80,7 @@ Status: **M** = mitigated by the design, **P** = partially mitigated, **A** = ac
 | Connect to the socket and request secrets | One-time client pairing, by proving an unlock method or approved in `vaultd`'s own prompt (one at a time, 10 s cooldown after a decline); fresh user presence for non-allowlisted release; rate limit. The prompt names the peer by PID-derived path, not yet by pidfd | P |
 | Impersonate a paired client binary | Pairing key stored in the client's own storage, readable by the same user | A on Linux (no per-app isolation) |
 | Keylog the master password | Wayland: partially mitigated by compositor isolation. X11: any client can keylog | A on X11, P on Wayland |
-| Read the clipboard | Prefer autofill; auto-clear; password-manager MIME hint (verify) | P |
+| Read the clipboard | Prefer autofill; auto-clear after 30 s. Windows and macOS: the copy is marked so clipboard history and cloud sync skip it. Linux: no hint is set (the clipboard library has none), so a clipboard manager such as Klipper may keep a copied password | P |
 | Read the clipboard on a phone | Copied secrets expire (iOS `expirationDate`, Android clear after the chosen time), are marked local-only on iOS so Universal Clipboard does not send them, and sensitive on Android 13+ so the clipboard preview hides them | P |
 | Screenshot or screen-record the phone app | Android sets `FLAG_SECURE`; iOS covers the window in the app switcher. iOS cannot block screenshots | P |
 | Modify the browser extension or profile | Out of scope: same-user code owns the browser profile | A |

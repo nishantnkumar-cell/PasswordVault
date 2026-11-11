@@ -272,7 +272,7 @@ Requires an unlocked vault. Derive the new KEK, wrap the current `vault_key`, ap
 
 ### 6.3 Remove a slot (no compromise)
 
-Delete the slot, recompute `header_mac`, re-encrypt the body, write. The vault key is unchanged. Must leave at least one daily-use slot and one backup.
+Delete the slot, recompute `header_mac`, re-encrypt the body, write. The vault key is unchanged. Must leave at least one daily-use slot, which `remove_slot` enforces. Keeping a backup slot (recovery, or a second key) is advice: nothing warns yet when the last one is removed.
 
 ### 6.4 Revoke a factor (suspected compromise)
 

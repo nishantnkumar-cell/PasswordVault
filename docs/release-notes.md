@@ -83,6 +83,20 @@ already has, edit the login (desktop) or use `vault code add --to ID
 --replace`. Delete the screenshot afterwards: anyone with it can make your
 codes. No vault file change.
 
+### Sync with the Linux systemd service
+
+- **Fixed in the docs, with an example file.** The shipped `vaultd.service`
+  can write only its own folders, so the synced file in `~/Dropbox` or
+  `~/OneDrive` was read-only to it and sync reported an error without saying
+  why. The sync chapter now shows the two-line drop-in that allows the folder
+  (`contrib/systemd/vaultd-sync.conf.example`).
+- **Linux only.** Windows, macOS and a `vaultd` started from a terminal are
+  not affected. Found by the November 2026 security review, together with the
+  note that Linux clipboard managers can keep copied passwords (the clipboard
+  library cannot mark them); a threat-model line now says so.
+
+How to use it: [Sync, Linux notes](user-guide/10-sync.md#differences-between-systems).
+
 ### Signed Mac downloads, the iPhone app in TestFlight, and Secure Enclave unlock
 
 - **Mac downloads open with a double-click.** The `.pkg` installer and the

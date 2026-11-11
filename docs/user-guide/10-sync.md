@@ -133,6 +133,25 @@ so wipe or remove a lost device's vault file if you can.
 A vault synced between Linux and Windows works the same on both: the file
 format is identical.
 
+**Linux, if vaultd runs as a systemd service.** The service is allowed to
+write only its own folders, so the synced file in `~/Dropbox` stays
+read-only to it and the sync status shows an error. Allow the folder once:
+
+```
+systemctl --user edit vaultd
+```
+
+In the editor that opens, type these two lines (use your own folder), save,
+then run `systemctl --user restart vaultd`:
+
+```
+[Service]
+ReadWritePaths=%h/Dropbox
+```
+
+A `vaultd` you start from a terminal needs nothing. Windows and macOS need
+nothing either.
+
 ## Things to know
 
 - The cloud service sees when the file changes and its (padded) size, the
