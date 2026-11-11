@@ -203,6 +203,11 @@ fn main() {
         let d = daemon.clone();
         std::thread::spawn(move || vaultd::winsession::run(d));
     }
+    #[cfg(target_os = "macos")]
+    {
+        let d = daemon.clone();
+        std::thread::spawn(move || vaultd::macsession::run(d));
+    }
     #[cfg(target_os = "linux")]
     if secret_service {
         #[cfg(feature = "secret-service")]

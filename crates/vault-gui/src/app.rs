@@ -82,7 +82,8 @@ const PALETTE_KEY: &str = if cfg!(target_os = "macos") {
 };
 
 /// The OS clipboard. On Windows and macOS copied secrets are marked so
-/// clipboard history and sync skip them.
+/// clipboard history and sync skip them; on macOS they also stay off
+/// Universal Clipboard (other Apple devices).
 #[derive(Default)]
 pub struct SystemClip(Option<arboard::Clipboard>);
 
@@ -97,18 +98,20 @@ impl SystemClip {
 
 impl Clip for SystemClip {
     fn set(&mut self, text: &str) -> Result<(), String> {
-        let set = self.board()?.set();
-        #[cfg(target_os = "windows")]
-        let set = {
-            use arboard::SetExtWindows;
-            set.exclude_from_history().exclude_from_cloud()
-        };
         #[cfg(target_os = "macos")]
-        let set = {
-            use arboard::SetExtApple;
-            set.exclude_from_history()
-        };
-        set.text(text).map_err(|e| e.to_string())
+        {
+            vault_hw::pasteboard::set_secret(text)
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let set = self.board()?.set();
+            #[cfg(target_os = "windows")]
+            let set = {
+                use arboard::SetExtWindows;
+                set.exclude_from_history().exclude_from_cloud()
+            };
+            set.text(text).map_err(|e| e.to_string())
+        }
     }
     fn get(&mut self) -> Option<String> {
         self.board().ok()?.get_text().ok()
