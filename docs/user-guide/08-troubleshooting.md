@@ -93,7 +93,9 @@ extension's **Connect** button.
 
 **No approval window appears when pairing**
 The window is `vault-prompt`, which must be in the same folder as `vaultd`
-(or named by the `VAULT_PROMPT` variable) and needs a desktop session. If
+(or named by the `VAULT_PROMPT` variable, which is used only when it is an
+absolute path to a file that only you or root can write; otherwise `vaultd`
+prints "ignoring VAULT_PROMPT" and looks next to itself) and needs a desktop session. If
 `vaultd` runs as a systemd user service, the session must have passed
 `DISPLAY` or `WAYLAND_DISPLAY` to it (desktop environments normally do).
 A `vaultd` started with `--no-prompt` or running as the Linux system user

@@ -1332,6 +1332,20 @@ How to use it: [the desktop window and command palette](user-guide/desktop-windo
 
 How to use it: [Removing an unlock method](user-guide/10-sync.md#removing-an-unlock-method).
 
+### Helper programs from the environment are checked first
+
+- **`VAULT_PROMPT`, `VAULT_GUI` and `VAULT_SE_HELPER` are checked.** `vaultd`
+  runs the program they name only when it is an absolute path to a regular
+  file that group and others cannot write, and that belongs to you (or
+  root). Otherwise it prints `ignoring VAULT_PROMPT=...` and uses the helper
+  next to itself. This closes a way for a planted variable (for example in
+  a shell profile) to swap the approval window.
+- If you use these variables, no change is needed when the file is yours
+  and not writable by others. Windows only checks that the path is absolute
+  and a file. Linux, macOS and Windows otherwise behave the same.
+
+How it works: [`vaultd` approval window](vaultd.md).
+
 ---
 
 ## 0.1.0: first feature-complete version (2026-10-20)

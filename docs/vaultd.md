@@ -52,7 +52,7 @@ CI builds both targets, joins them with `contrib/macos/universal.sh` (`lipo`) an
 
 ## Pairing by approval
 
-A client asks with no factor. vaultd runs `vault-prompt` (found next to `vaultd`, or at `VAULT_PROMPT`), which shows the name the client gave, what it would be allowed to do, and the program that connected (`/proc/<pid>/exe` from the socket's peer credentials, or the pipe client's image path on Windows). Deny has the focus, Escape denies and the window denies by itself after a minute. The client cannot answer: it only learns the outcome.
+A client asks with no factor. vaultd runs `vault-prompt` (found next to `vaultd`, or at `VAULT_PROMPT` when that is an absolute path to a file owned by you or root and not writable by others), which shows the name the client gave, what it would be allowed to do, and the program that connected (`/proc/<pid>/exe` from the socket's peer credentials, or the pipe client's image path on Windows). Deny has the focus, Escape denies and the window denies by itself after a minute. The client cannot answer: it only learns the outcome.
 
 - One prompt at a time; a second request is refused while one is open.
 - After a decline or a timeout, new requests are refused for 10 seconds, so a client cannot keep the window popping up.
