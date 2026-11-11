@@ -113,6 +113,22 @@ folder, open a terminal there, and run:
   is the same as the one on the `SecretVault-Setup-0.2.0.exe` line of
   `SHA256SUMS.txt` (capital or small letters don't matter).
 
+### Proving where a download came from (optional)
+
+The checksums come from the same page as the files, so they show a download
+arrived intact but not who built it. From the release after
+`0.2.0-beta.2`, every download also has a **build attestation**: a statement,
+signed by GitHub with the identity of the release workflow, that this exact
+file was built by this project's workflow from the release's tag. With the
+[GitHub CLI](https://cli.github.com/) installed (Linux, macOS and Windows):
+
+```sh
+gh attestation verify secret-vault_0.2.0_amd64.deb --repo nishantnkumar-cell/PasswordVault
+```
+
+It prints `Verification succeeded` and the workflow that built the file, or
+fails if the file was changed or came from somewhere else.
+
 ### Warnings the first time you open a download
 
 The Windows installer is not signed with a paid code-signing certificate
