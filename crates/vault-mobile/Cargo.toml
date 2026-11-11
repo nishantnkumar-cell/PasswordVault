@@ -23,7 +23,9 @@ cli = ["uniffi/cli"]
 # Public halves of SSH and OpenPGP keys for the key screen, and new SSH keys.
 # Same versions and features as vaultd.
 pgp = { version = "0.21.0", default-features = false, features = ["pqc"] }
-ssh-key = { version = "0.6.7", default-features = false, features = ["std", "ed25519", "p256", "getrandom"] }
+# Same release candidate as vaultd (see its Cargo.toml for why).
+getrandom = { version = "=0.4.3", features = ["sys_rng"] }
+ssh-key = { version = "=0.7.0-rc.12", default-features = false, features = ["std", "ed25519", "p256", "getrandom"] }
 thiserror = "2.0.21"
 uniffi = "0.32.2"
 vault-core = { path = "../vault-core" }
