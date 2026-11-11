@@ -145,12 +145,15 @@ final class TourTests: XCTestCase {
         tapScrolling(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", label)).firstMatch)
         XCTAssertTrue(app.buttons[expect].waitForExistence(timeout: 10))
         shot(label.lowercased().replacingOccurrences(of: " ", with: "-"))
-        // The back button is the page's first navigation-bar button; on iPad
-        // it shows only a chevron, so it has no "Settings" label to find.
-        let bar = app.navigationBars[title]
-        let back = bar.buttons["Settings"].exists ? bar.buttons["Settings"] : bar.buttons.element(boundBy: 0)
+        // UIKit names every back button "BackButton". On iPad it shows only a
+        // chevron and its navigation bar has no title to look up, so find it
+        // by that identifier (or by the "Settings" label on iPhone).
+        let back = app.navigationBars.buttons.matching(
+            NSPredicate(format: "identifier == 'BackButton' OR label == 'Settings' OR label == 'Back'")
+        ).firstMatch
+        XCTAssertTrue(back.waitForExistence(timeout: 10), "no back button on \(title)")
         back.tap()
-        sleep(1)
+        XCTAssertTrue(app.buttons[expect].waitForNonExistence(timeout: 10))
     }
 
     // MARK: Helpers
