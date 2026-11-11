@@ -284,8 +284,11 @@ pub fn pack_sealed(srk_name: &[u8], public: &[u8], private: &[u8]) -> HwResult<V
     Ok(out)
 }
 
+/// The storage key name (if pinned), the public part and the private part.
+pub type Unpacked<'a> = (Option<&'a [u8]>, &'a [u8], &'a [u8]);
+
 /// Undo [`pack_sealed`]. Slots made before the name was pinned give `None`.
-pub fn unpack_sealed(rest: &[u8]) -> HwResult<(Option<&[u8]>, &[u8], &[u8])> {
+pub fn unpack_sealed(rest: &[u8]) -> HwResult<Unpacked<'_>> {
     let (len, rest) = rest.split_at_checked(2).ok_or("TPM blob truncated")?;
     let raw = u16::from_le_bytes([len[0], len[1]]);
     let (name, rest) = if raw & PINNED != 0 {
