@@ -118,6 +118,11 @@ re-keyed on another device and stop writing to it. The next time you unlock
 one of them, it takes the new key and the remaining unlock methods, and
 merges its own changes in.
 
+A copy in the folder that still uses a key you revoked is never merged:
+the app says it is an old copy, because someone who kept an old file and a
+factor you removed could have put it there. Delete that file from the
+folder and your device writes the current vault again.
+
 A device that is never unlocked again keeps the old key and old unlock
 methods in its own file. Syncing can't reach a copy that stays offline,
 so wipe or remove a lost device's vault file if you can.
@@ -133,6 +138,25 @@ so wipe or remove a lost device's vault file if you can.
 A vault synced between Linux and Windows works the same on both: the file
 format is identical.
 
+**Linux, if vaultd runs as a systemd service.** The service is allowed to
+write only its own folders, so the synced file in `~/Dropbox` stays
+read-only to it and the sync status shows an error. Allow the folder once:
+
+```
+systemctl --user edit vaultd
+```
+
+In the editor that opens, type these two lines (use your own folder), save,
+then run `systemctl --user restart vaultd`:
+
+```
+[Service]
+ReadWritePaths=%h/Dropbox
+```
+
+A `vaultd` you start from a terminal needs nothing. Windows and macOS need
+nothing either.
+
 ## Things to know
 
 - The cloud service sees when the file changes and its (padded) size, the
@@ -143,5 +167,14 @@ format is identical.
   a *(conflict)* copy.
 - A vault saved by this version can't be opened by older builds of Secret
   Vault, because its file now records which device changed each item.
+- Secret Vault reads only vault-sized files from the sync folder. It looks
+  at the synced copy and at most 16 conflict copies next to it ("vault
+  (1).svault", "vault (conflicted copy ...).svault"), and skips any copy
+  larger than 64 MiB. If you have more than 16 conflict copies, let it
+  merge them, delete the merged ones (they're listed under **Sync** in the
+  desktop app), and the rest are picked up on the next check. If the
+  synced copy itself is over 64 MiB, it isn't a vault file: sync stops
+  with a message saying so until you replace it. All three systems behave
+  the same.
 
 For how the merge works inside, see [docs/sync.md](../sync.md).

@@ -3768,7 +3768,12 @@ impl App {
             if PHONE {
                 ui.selectable_value(&mut f.kind, SlotKind::Phone, "Phone");
             }
-            ui.selectable_value(&mut f.kind, SlotKind::Tpm, "TPM");
+            let chip = if cfg!(target_os = "macos") {
+                "Secure Enclave"
+            } else {
+                "TPM"
+            };
+            ui.selectable_value(&mut f.kind, SlotKind::Tpm, chip);
             ui.selectable_value(&mut f.kind, SlotKind::Recovery, "Recovery code");
         });
         ui.label(
@@ -3784,6 +3789,10 @@ impl App {
                     "A passkey on your iPhone or Android phone, saved in its password manager \
                      (iCloud Keychain, Google Password Manager or another), together with the \
                      password. The app shows a QR code to scan; Bluetooth must be on on both."
+                }
+                SlotKind::Tpm if cfg!(target_os = "macos") => {
+                    "This Mac's Secure Enclave (Apple silicon or a T2 chip), together with the \
+                     password. It works only on this Mac."
                 }
                 SlotKind::Tpm => {
                     "The TPM chip in this computer, together with the password. It works only \
@@ -3813,7 +3822,9 @@ impl App {
                 submit |= secret_field(ui, "Repeat it", &mut f.password2);
                 ui.end_row();
             }
-            if f.kind == SlotKind::Tpm || f.kind == SlotKind::SecurityKey && !WINDOWS_ASKS_KEY_PIN {
+            // A Mac's Secure Enclave has no PIN or PCRs.
+            let chip_pin = f.kind == SlotKind::Tpm && !cfg!(target_os = "macos");
+            if chip_pin || f.kind == SlotKind::SecurityKey && !WINDOWS_ASKS_KEY_PIN {
                 secret_field(ui, "PIN (optional)", &mut f.pin);
                 ui.end_row();
             }
@@ -3833,7 +3844,7 @@ impl App {
                     );
                 }
             }
-            SlotKind::Tpm => {
+            SlotKind::Tpm if !cfg!(target_os = "macos") => {
                 ui.checkbox(
                     &mut f.bind_pcr7,
                     "Stop working if Secure Boot settings change (PCR 7)",
@@ -4301,8 +4312,9 @@ fn slot_text(kind: &str) -> (&'static str, &'static str) {
              passkey on your phone",
         ),
         "tpm" => (
-            "This device (TPM)",
-            "Your master password and this computer's TPM chip; works only on this computer",
+            "This device (TPM or Secure Enclave)",
+            "Your master password and this computer's TPM chip, or a Mac's Secure Enclave; \
+             works only on the computer that added it",
         ),
         "recovery" => (
             "Recovery code",

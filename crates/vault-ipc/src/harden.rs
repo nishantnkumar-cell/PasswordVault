@@ -218,9 +218,9 @@ pub fn capture_allowed() -> bool {
 /// How many allocations could not be locked in RAM since the start.
 static NOT_LOCKED: AtomicUsize = AtomicUsize::new(0);
 
-/// The most the locked working set may grow to: past this, the vault's own
-/// Argon2id ceiling (4 GiB) plus room for everything else.
-const MAX_LOCKED: usize = 5 << 30;
+/// The most the locked working set may grow to: the vault's Argon2id memory
+/// ceiling (1 GiB, `KDF_MAX_M_KIB`) plus generous room for everything else.
+const MAX_LOCKED: usize = 2 << 30;
 
 /// A global allocator that locks every block it hands out into RAM with
 /// `VirtualLock`, so keys, decrypted items and Argon2id buffers never reach

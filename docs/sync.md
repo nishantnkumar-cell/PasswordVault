@@ -23,6 +23,10 @@ or in the desktop app, on the "No vault yet" screen: **Join**, then pair with th
 
 `vault sync` shows the state, `vault sync now` merges at once, `vault sync off` stops (the file in the folder stays). `vault status` and the status box at the top of the app's sidebar say when the last merge was and whether something is wrong.
 
+### Sync under systemd (Linux)
+
+The shipped `vaultd.service` makes the file system read-only except `vaultd`'s own folders (`ProtectSystem=strict`), so a copy in `~/Dropbox` cannot be written and `vault sync` reports an error. Add the folder with a drop-in: run `systemctl --user edit vaultd`, paste `[Service]` and `ReadWritePaths=%h/Dropbox` (your folder), save, and run `systemctl --user restart vaultd`. `contrib/systemd/vaultd-sync.conf.example` has the text. The system service `vaultd@.service` also hides `/home` and runs as another user, so there sync needs the folder bound in with `BindPaths=` and readable by the `vault` user; most people use the user service with sync. A `vaultd` started from a terminal needs nothing.
+
 ## How it works
 
 Each device keeps its own vault file, as before, and treats the copy in the folder as a mailbox:
@@ -48,6 +52,8 @@ The merge is in `vault-core` (`Vault::merge`, format.md section 5.1) and needs n
 ## Revoking a factor
 
 `vault revoke` rotates the vault key. The other devices can no longer open the synced copy with the key they hold, so their status says the copy was re-keyed on another device and they stop writing to it. At their next unlock they open the copy with the factor just used, take the new key and the remaining slots, and merge their own edits in. Their old slots that the revoke removed are gone from that point on.
+
+Each vault remembers which keys it has retired. A copy in the folder that is locked with a retired key is an old copy, for example one written by someone who kept an old file and a factor you have since revoked. It is not merged, whatever it claims, and the status says so; delete the file from the folder and the device writes its current vault again. A device that was offline during the revoke has not retired the old key yet, but the copy from the device that revoked says that it did, so it is taken as the newer one.
 
 If two devices revoke at the same time, the later rotation wins (each vault counts its rotations), with a fixed tie-break, so both agree.
 

@@ -100,6 +100,10 @@ A `vaultd` started with `--no-prompt` or running as the Linux system user
 never shows it. In all these cases, pair by proving an unlock method:
 `vault pair --password`.
 
+**The Allow button in the approval window is grey**
+It stays grey for about a second after the window gets the focus, and starts
+over if you click another window and come back. Wait a moment, then press it.
+
 **"a request is already waiting" or pairing refused right after a denial**
 Only one approval window is open at a time, and after a denial or timeout
 new requests are refused for 10 seconds. Wait and try again.

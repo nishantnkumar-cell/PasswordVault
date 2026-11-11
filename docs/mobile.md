@@ -31,13 +31,18 @@ on a phone opens on a computer and the other way round.
 | `generate_password`, `generate_styled`, `password_strength` | The generator: random characters, three random words or Apple style (vault-core `generator::Style`), and its strength in bits |
 | `preview_totp`, `code_label`, `VaultSession::add_code` | One-time codes: check a setup key, read the issuer and account from an `otpauth://` link, and add a code to a login or a new login from the Codes screen |
 | `host_of` | Helper for the editor |
+| `VaultSession::change_password`, `new_recovery_code`, `remove_slot`, `revoke_others` | Unlock methods (iOS **Settings > Unlock Methods**). `revoke_others` rotates the vault key ([format.md section 6.4](format.md)), keeps the password slots the password opens and adds a new recovery slot. New slots are test-unlocked before they are kept |
+| `VaultSession::import_export` | Bitwarden JSON or a browser / Apple Passwords CSV, through `vault-import` (format chosen by the first character) |
+| `VaultSession::key_public`, `generate_ssh_key` | Public half and fingerprint of an SSH (`ssh-key`) or OpenPGP (`pgp`) key item; a new Ed25519 or ECDSA P-256 SSH key. Private keys never cross into Swift or Kotlin |
 
 Errors arrive as one `MobileError` type whose message is a finished sentence
 for the user.
 
-The apps only open password and recovery-code slots. Security-key, TPM and
+The apps only open password and recovery-code slots. The iOS app can remove
+any slot except the last password-only one, which is how a phone unlocks;
+Android has no unlock-method screen yet. Security-key, TPM and
 phone-passkey slots belong to the computer they were made on and are listed
-as "on another device".
+as working on that computer.
 
 ## Quick unlock on phones
 
@@ -231,6 +236,45 @@ Set your team under Signing for both targets (the app and
 `SecretVaultAutoFill`). The App Group `group.dev.passwordvault.app` and the
 keychain group need a paid developer account; on a free account the app
 runs without AutoFill and keeps its files in its own container.
+
+With the project's paid account, a build from Xcode onto a connected
+iPhone has AutoFill too: pick the team in **Signing & Capabilities** for
+both targets, choose the iPhone as the run destination and press Run.
+Xcode makes the development profiles itself. Most people install from
+TestFlight instead (below).
+
+### TestFlight
+
+`.github/workflows/testflight.yml` archives the app with its AutoFill
+extension for real devices, signs it for the App Store and uploads it to
+App Store Connect, where it appears in TestFlight
+(`mobile/scripts/testflight.sh`). It runs for every `v*` tag and by hand
+(**Actions > TestFlight > Run workflow**; untick **Upload** to only build
+and sign, with the `.ipa` as a download).
+
+Signing is automatic: given the App Store Connect API key, Xcode on the
+runner registers anything missing, makes the provisioning profiles and uses
+a cloud-managed distribution certificate, so no certificate secret is
+needed for iOS. The key must have the Admin role for that. The script then
+checks that the AutoFill extension is inside and carries the AutoFill and
+App Group entitlements.
+
+| Secret | What |
+|---|---|
+| `APPLE_TEAM_ID` | The team ID (ten characters) |
+| `APPLE_API_KEY_P8`, `APPLE_API_KEY_ID`, `APPLE_API_ISSUER_ID` | The App Store Connect API key, shared with [macOS notarization](macos-signing.md#in-ci) |
+
+Without them the workflow only warns. Pull requests that touch the iOS app
+run the same workflow without secrets: it archives for a real device
+without signing (`VAULT_UNSIGNED=1`), which catches device-only build
+problems the simulator build misses.
+
+The version is the workspace version and the build number counts commits
+(`build-ios.sh`), so each upload is higher than the last. A second upload
+of the same commit is rejected by App Store Connect as a duplicate.
+
+Setting up the account, the app record and the secrets, step by step, is
+in [apple-account.md](apple-account.md).
 
 ### Trying it on a Mac by hand
 

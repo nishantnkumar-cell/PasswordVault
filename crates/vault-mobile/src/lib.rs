@@ -20,6 +20,9 @@ use zeroize::Zeroizing;
 
 uniffi::setup_scaffolding!();
 
+mod manage;
+pub use manage::{ImportResult, KeyPublic, SshKeyKind};
+
 #[cfg(test)]
 mod tests;
 
@@ -778,7 +781,7 @@ fn create_with_cost(password: String, device: u64, cost: KdfCost) -> R<NewVault>
         },
     )?;
     Ok(NewVault {
-        session: VaultSession::wrap(v, device),
+        session: VaultSession::wrap_with_cost(v, device, cost),
         recovery_code: code.as_str().to_owned(),
     })
 }
@@ -860,13 +863,20 @@ pub fn host_of(url: String) -> Option<String> {
 #[derive(uniffi::Object)]
 pub struct VaultSession {
     vault: Mutex<Vault>,
+    /// Argon2id cost for new password slots (the tests use the minimum).
+    cost: KdfCost,
 }
 
 impl VaultSession {
-    fn wrap(mut v: Vault, device: u64) -> Arc<VaultSession> {
+    fn wrap(v: Vault, device: u64) -> Arc<VaultSession> {
+        Self::wrap_with_cost(v, device, KdfCost::DEFAULT)
+    }
+
+    fn wrap_with_cost(mut v: Vault, device: u64, cost: KdfCost) -> Arc<VaultSession> {
         v.set_device(device);
         Arc::new(VaultSession {
             vault: Mutex::new(v),
+            cost,
         })
     }
 

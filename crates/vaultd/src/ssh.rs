@@ -9,7 +9,8 @@
 
 use std::io::{self, Read, Write};
 
-use ssh_key::rand_core::OsRng;
+use getrandom::SysRng;
+use getrandom::rand_core::UnwrapErr;
 use ssh_key::{Algorithm, EcdsaCurve, HashAlg, LineEnding, PrivateKey};
 use vault_core::item::KeyData;
 use vault_ipc::{ItemId, KeyKind};
@@ -54,7 +55,7 @@ pub fn generate(kind: KeyKind, title: &str, confirm: bool) -> R<KeyData> {
             curve: EcdsaCurve::NistP256,
         },
     };
-    let mut k = PrivateKey::random(&mut OsRng, alg).map_err(|e| e.to_string())?;
+    let mut k = PrivateKey::random(&mut UnwrapErr(SysRng), alg).map_err(|e| e.to_string())?;
     k.set_comment(title);
     encode(&k, confirm)
 }
@@ -299,7 +300,7 @@ mod tests {
         // Re-import, encrypted with a passphrase.
         let pass = "x".repeat(12);
         let enc = k
-            .encrypt(&mut OsRng, &pass)
+            .encrypt(&mut SysRng, &pass)
             .unwrap()
             .to_openssh(LineEnding::LF)
             .unwrap();

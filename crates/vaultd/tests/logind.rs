@@ -5,8 +5,8 @@ use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::time::Duration;
 
+use vaultd::dbus::Connection;
 use vaultd::logind::{Event, watch};
-use zbus::blocking::{Connection, connection};
 
 #[test]
 fn locks_on_sleep_and_session_lock_only() {
@@ -26,19 +26,11 @@ fn locks_on_sleep_and_session_lock_only() {
     .unwrap();
     let addr = addr.trim().to_owned();
 
-    let logind = connection::Builder::address(addr.as_str())
-        .unwrap()
-        .name("org.freedesktop.login1")
-        .unwrap()
-        .build()
-        .unwrap();
+    let logind = Connection::at_named(addr.as_str(), "org.freedesktop.login1").unwrap();
     let (tx, rx) = mpsc::channel();
     let watcher_addr = addr.clone();
     std::thread::spawn(move || {
-        let conn = connection::Builder::address(watcher_addr.as_str())
-            .unwrap()
-            .build()
-            .unwrap();
+        let conn = Connection::at(watcher_addr.as_str()).unwrap();
         tx.send(None).unwrap();
         let _ = watch(&conn, |e| tx.send(Some(e)).unwrap());
     });
@@ -89,10 +81,7 @@ fn locks_on_sleep_and_session_lock_only() {
     assert!(rx.recv_timeout(Duration::from_millis(300)).is_err());
 
     // Someone else claiming to be logind is not believed.
-    let impostor = connection::Builder::address(addr.as_str())
-        .unwrap()
-        .build()
-        .unwrap();
+    let impostor = Connection::at(addr.as_str()).unwrap();
     send_empty(&impostor, "org.freedesktop.login1.Session", "Lock");
     assert!(rx.recv_timeout(Duration::from_millis(500)).is_err());
 

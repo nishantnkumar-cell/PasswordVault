@@ -25,8 +25,9 @@ Installers for Windows, Linux and macOS, the browser extension and (from
 [Releases page](https://github.com/nishantnkumar-cell/PasswordVault/releases),
 free to download without a GitHub account. The first downloads are public
 betas (marked **Pre-release**): not security audited yet, so try them with
-test data and keep a backup of your vault. Windows and macOS warn once the
-first time you open them because they are not code-signed yet; the
+test data and keep a backup of your vault. The Windows installer warns
+once the first time you open it because it is not code-signed yet (macOS
+downloads after `0.2.0-beta.1` are signed and notarized); the
 [download guide](docs/user-guide/11-versions-and-upgrades.md#where-to-download)
 says what to click and how to check a download.
 
@@ -44,6 +45,7 @@ For the technical reference, start with [`docs/vaultd.md`](docs/vaultd.md), then
 - [`docs/windows.md`](docs/windows.md): what differs on Windows (installer, background start, TPM, Windows Hello).
 - [`docs/sync.md`](docs/sync.md): syncing devices through OneDrive, Google Drive or Dropbox.
 - [`docs/mobile.md`](docs/mobile.md): the iPhone, iPad and Android apps, phone quick unlock and AutoFill.
+- [`docs/apple-account.md`](docs/apple-account.md): for maintainers, setting up the Apple Developer account for signed Mac downloads and TestFlight.
 - [`docs/ssh.md`](docs/ssh.md): SSH keys in the vault, the ssh-agent and git commit signing.
 - [`docs/pgp.md`](docs/pgp.md): OpenPGP keys in the vault, classic and post-quantum, and the gpg-compatible front end.
 - [`docs/architecture-review.md`](docs/architecture-review.md): the review that produced brief Revision 2.

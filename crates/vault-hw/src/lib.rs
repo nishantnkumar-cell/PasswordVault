@@ -4,6 +4,8 @@
 
 use vault_core::HwKey;
 
+#[cfg(all(feature = "tpm", any(target_os = "macos", test)))]
+pub mod enclave;
 #[cfg(feature = "fido2")]
 pub mod fido2;
 #[cfg(windows)]
@@ -42,12 +44,22 @@ pub const WIN_TPM_MAGIC: &[u8] = b"VWTPM1";
 /// A Windows blob sealed by the TPM under Windows' storage key (`tpm2`).
 pub const WIN_TPM_SEALED: &[u8] = b"VWTPM2";
 
+/// Starts every slot blob made by a Mac's Secure Enclave (`enclave`).
+pub const MAC_SE_MAGIC: &[u8] = b"VMSEP1";
+
 /// Whether a TPM slot blob depends on public-key cryptography that a quantum
 /// computer could break (an old Windows slot). Such a slot still works;
 /// enrolling the TPM again replaces it with a sealed one.
 pub fn tpm_blob_is_classical(blob: &[u8]) -> bool {
     blob.starts_with(WIN_TPM_MAGIC)
 }
+
+/// What this system calls its "this device" chip, for messages.
+pub const DEVICE_CHIP_NAME: &str = if cfg!(target_os = "macos") {
+    "Secure Enclave"
+} else {
+    "TPM"
+};
 
 /// What this system calls its presence check, for messages.
 pub const PRESENCE_NAME: &str = if cfg!(target_os = "macos") {
@@ -56,6 +68,8 @@ pub const PRESENCE_NAME: &str = if cfg!(target_os = "macos") {
     "Windows Hello"
 };
 
+pub const MAC_SE_HINT: &str =
+    "this slot was made by a Mac's Secure Enclave; it works only on that Mac";
 pub const LINUX_TPM_HINT: &str =
     "this TPM slot was made on Linux; Windows cannot use it, even on the same computer";
 pub const WIN_TPM_HINT: &str =
@@ -116,7 +130,12 @@ impl Hardware {
             tpm: Some(Box::new(tpm::SystemTpm)),
             #[cfg(all(feature = "tpm", windows))]
             tpm: Some(Box::new(wintpm::WinTpm)),
-            #[cfg(not(all(feature = "tpm", any(target_os = "linux", windows))))]
+            #[cfg(all(feature = "tpm", target_os = "macos"))]
+            tpm: Some(Box::new(enclave::SecureEnclave)),
+            #[cfg(not(all(
+                feature = "tpm",
+                any(target_os = "linux", windows, target_os = "macos")
+            )))]
             tpm: None,
             #[cfg(windows)]
             presence: Some(Box::new(hello::WinHello)),

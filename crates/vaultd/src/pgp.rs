@@ -10,9 +10,14 @@
 //!   ML-KEM-768+X25519 encryption subkey (RFC 9980). Only implementations
 //!   with RFC 9980 support can use it.
 //!
-//! RSA and DSA secret keys are refused: the `rsa` crate has no
-//! constant-time fix for the Marvin attack. Encrypting to RSA certificates
-//! and verifying RSA signatures (public operations) are allowed.
+//! Only secret keys on Curve25519 (Ed25519, X25519) and the post-quantum
+//! hybrids built on it are stored. Others are refused because the code
+//! pgp 0.21 uses for them is not constant-time: RSA (the `rsa` crate's
+//! Marvin attack, RUSTSEC-2023-0071), and NIST P-256/P-384/P-521,
+//! secp256k1, brainpool, Ed448 and X448 (crypto-bigint 0.5,
+//! RUSTSEC-2026-0387). DSA and ElGamal have no fix either. Encrypting to
+//! such certificates and verifying their signatures (public operations)
+//! are allowed.
 
 use pgp::composed::{
     ArmorOptions, CleartextSignedMessage, Deserializable, DetachedSignature, EncryptionCaps,
@@ -22,12 +27,11 @@ use pgp::composed::{
 use pgp::crypto::aead::{AeadAlgorithm, ChunkSize};
 use pgp::crypto::ecc_curve::ECCCurve;
 use pgp::crypto::hash::HashAlgorithm;
-use pgp::crypto::public_key::PublicKeyAlgorithm;
 use pgp::crypto::sym::SymmetricKeyAlgorithm;
 use pgp::packet::PacketTrait;
 use pgp::ser::Serialize;
 use pgp::types::CompressionAlgorithm;
-use pgp::types::{KeyDetails, KeyVersion, Password, SigningKey};
+use pgp::types::{EcdhPublicParams, KeyDetails, KeyVersion, Password, PublicParams, SigningKey};
 use rand::rngs::OsRng;
 use vault_core::item::KeyData;
 use zeroize::Zeroizing;
@@ -56,26 +60,30 @@ pub fn certificate(bytes: &[u8]) -> R<SignedPublicKey> {
     Ok(secret(bytes)?.to_public_key())
 }
 
-fn rsa_or_dsa(a: PublicKeyAlgorithm) -> bool {
+/// Whether the vault may hold the secret half of a key with these
+/// parameters (module docs: only Curve25519-based keys).
+fn secret_supported(p: &PublicParams) -> bool {
     matches!(
-        a,
-        PublicKeyAlgorithm::RSA
-            | PublicKeyAlgorithm::RSAEncrypt
-            | PublicKeyAlgorithm::RSASign
-            | PublicKeyAlgorithm::DSA
-            | PublicKeyAlgorithm::ElgamalEncrypt
-            | PublicKeyAlgorithm::Elgamal
+        p,
+        PublicParams::EdDSALegacy(_)
+            | PublicParams::Ed25519(_)
+            | PublicParams::X25519(_)
+            | PublicParams::ECDH(EcdhPublicParams::Curve25519Legacy { .. })
+            | PublicParams::MlKem768X25519(_)
+            | PublicParams::MlDsa65Ed25519(_)
     )
 }
 
 fn store(k: &SignedSecretKey, confirm: bool) -> R<KeyData> {
-    if rsa_or_dsa(k.primary_key.algorithm())
+    if !secret_supported(k.primary_key.public_params())
         || k.secret_subkeys
             .iter()
-            .any(|s| rsa_or_dsa(s.key.algorithm()))
+            .any(|s| !secret_supported(s.key.public_params()))
     {
         return Err(
-            "RSA, DSA and ElGamal secret keys are not supported; generate a new key with `vault pgp new`"
+            "only Ed25519/X25519 secret keys (and their post-quantum hybrids) are supported; \
+             RSA, DSA, ElGamal, NIST, brainpool, secp256k1 and Ed448/X448 keys are not. \
+             Generate a new key with `vault pgp new`"
                 .into(),
         );
     }
@@ -604,5 +612,27 @@ mod tests {
         let cert = certificate(&back).unwrap();
         let ct = encrypt(&[cert], b"hi", false, None).unwrap();
         assert_eq!(&**decrypt(&back, &ct).unwrap(), b"hi");
+    }
+
+    #[test]
+    fn refuses_secret_keys_without_constant_time_code() {
+        for kind in [
+            KeyType::ECDSA(ECCCurve::P256),
+            KeyType::Ed448,
+            KeyType::Rsa(2048),
+        ] {
+            let mut params = SecretKeyParamsBuilder::default();
+            params
+                .key_type(kind.clone())
+                .can_certify(true)
+                .can_sign(true)
+                .primary_user_id("Alex Example <alex@example.com>".into());
+            let k = params.build().unwrap().generate(OsRng).unwrap();
+            let armored = k.to_armored_string(ArmorOptions::default()).unwrap();
+            let Err(e) = import(armored.as_bytes(), None, false) else {
+                panic!("{kind:?} was accepted")
+            };
+            assert!(e.contains("keys are not"), "{kind:?}: {e}");
+        }
     }
 }

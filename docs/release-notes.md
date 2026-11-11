@@ -42,6 +42,54 @@ verified developers, rolling out country by country from late 2026; this
 may later need an extra step or block sideloading in some countries. No
 vault file change.
 
+### iPhone and iPad: unlock methods, import, SSH keys and keyboard shortcuts
+
+- **Change your unlock methods on the phone.** **Settings > Unlock
+  Methods** now lets you change the master password, make a new recovery
+  code (the old one stops working), and remove any unlock method, such as
+  a security key you no longer use. Swipe left on a method to remove it.
+- **Lost a device or key?** **Remove All Other Unlock Methods** gives the
+  vault a new key, keeps only your master password, and shows a new
+  recovery code. Every security key, TPM, phone passkey, other password and
+  old recovery code stops working. Your other devices ask for the master
+  password once, at their next sync.
+- **Import from another password manager.** **Settings > Import from
+  Another App** reads an export saved in Files: the CSV from Apple
+  Passwords (with one-time codes), Chrome, Edge, Firefox or Safari, or
+  Bitwarden's unencrypted JSON. Afterwards it offers to delete the export,
+  which holds every password in plain text.
+- **SSH and OpenPGP keys show their public half.** A key item now shows the
+  key type, the fingerprint and the public key (or certificate), with
+  **Copy** and **Share**. You can add an SSH key to GitHub or a server from
+  the phone.
+- **Make an SSH key on the phone.** **+ > SSH Key** makes an Ed25519 (or
+  ECDSA P-256) key in the vault. After the vault syncs, your computer's
+  vault daemon offers it to `ssh` and `git`.
+- **Keyboard shortcuts on iPad.** With a keyboard attached, the iPadOS
+  menu bar lists them, and holding ⌘ shows them: ⌘N new login, ⌘F search,
+  ⌘E edit, ⇧⌘C copy password, ⌥⌘C copy username, ⌃⌘C copy one-time code,
+  ⌘R sync now, ⌘L lock, ⌥⌘N new window.
+- How to start: [Change unlock methods](user-guide/14-phone-apps.md#change-unlock-methods-on-the-phone),
+  [Import](user-guide/14-phone-apps.md#import-from-another-app),
+  [SSH and PGP keys](user-guide/14-phone-apps.md#ssh-and-pgp-keys-on-the-phone),
+  [Keyboard shortcuts](user-guide/14-phone-apps.md#keyboard-shortcuts-on-ipad).
+
+| | iPhone and iPad | Android | Windows, Linux, macOS |
+| --- | --- | --- | --- |
+| Change master password, new recovery code, remove a method | Yes (new) | Not yet | Yes |
+| Remove all other methods (new vault key) | Yes (new) | Not yet | Yes (`vault revoke`) |
+| Add a security key, TPM or phone passkey | No | No | Yes |
+| Import from another password manager | Yes (new), from Files | Not yet | Yes |
+| Show and share a key's public half | Yes (new) | Not yet | Yes |
+| Make a key | SSH (new) | No | SSH and OpenPGP |
+| Use a key for SSH, Git or OpenPGP | No | No | Yes |
+
+Known limits: OpenPGP keys can't be made on the phone (make them in the
+desktop app). The phone never shows or exports a private key. The phone
+can't remove its own last master password, because that is how it
+unlocks. Android gets these screens later; its app is unchanged. No vault
+file change: a vault changed on the phone opens everywhere as before.
+
 ### Add a one-time code on the desktop and from the command line
 
 - **Add Code on the desktop.** Open **One-time codes** in the sidebar and
@@ -82,6 +130,65 @@ supported yet: add each code from its site. To swap the code a login
 already has, edit the login (desktop) or use `vault code add --to ID
 --replace`. Delete the screenshot afterwards: anyone with it can make your
 codes. No vault file change.
+
+### Sync with the Linux systemd service
+
+- **Fixed in the docs, with an example file.** The shipped `vaultd.service`
+  can write only its own folders, so the synced file in `~/Dropbox` or
+  `~/OneDrive` was read-only to it and sync reported an error without saying
+  why. The sync chapter now shows the two-line drop-in that allows the folder
+  (`contrib/systemd/vaultd-sync.conf.example`).
+- **Linux only.** Windows, macOS and a `vaultd` started from a terminal are
+  not affected. Found by the November 2026 security review, together with the
+  note that Linux clipboard managers can keep copied passwords (the clipboard
+  library cannot mark them); a threat-model line now says so.
+
+How to use it: [Sync, Linux notes](user-guide/10-sync.md#differences-between-systems).
+
+### Signed Mac downloads, the iPhone app in TestFlight, and Secure Enclave unlock
+
+- **Mac downloads open with a double-click.** The `.pkg` installer and the
+  app in the `.tar.gz` are signed with the project's Apple Developer ID and
+  notarized by Apple, so macOS no longer stops them and there is no **Open
+  Anyway** step. This starts with the first release after `0.2.0-beta.1`.
+- **iPhone and iPad app in TestFlight.** Every release is uploaded to
+  App Store Connect, and invited testers install it from Apple's
+  TestFlight app instead of building it in Xcode.
+- **AutoFill on a real iPhone.** The TestFlight app can fill your
+  passwords and one-time codes in Safari and other apps. (Apple doesn't
+  allow AutoFill in apps built with a free account, which is what you had
+  to use before.)
+- **Unlock with the Mac's Secure Enclave.** A new "this device" unlock
+  method on Macs with Apple silicon or a T2 chip: the master password plus
+  a key that never leaves the Mac's security chip, so a copied vault file
+  is useless on any other computer. It is the Mac version of the TPM unlock
+  method on Linux and Windows. The enclave only does classical P-256
+  cryptography, so the slot is built to keep the vault file safe from
+  future quantum computers anyway: the file never holds the enclave key's
+  public key.
+- How to start: Mac downloads need nothing new. iPhone:
+  [Install the iPhone and iPad app](user-guide/14-phone-apps.md#install-the-iphone-and-ipad-app).
+  Secure Enclave: **Unlock methods > Add a method > Secure Enclave** in the
+  desktop app, or `vault add-slot tpm`; see
+  [Unlock with the Secure Enclave](user-guide/13-macos.md#unlock-with-the-secure-enclave).
+  Maintainers: [Setting up the Apple Developer account](apple-account.md).
+
+| | macOS | Windows | Linux | iPhone and iPad | Android |
+| --- | --- | --- | --- | --- | --- |
+| Signed downloads | Yes, Developer ID and notarized | Not yet (SmartScreen warns once) | Not needed | Through TestFlight | Signed with the project key, as before |
+| Store | n/a | n/a | n/a | TestFlight now; App Store later | Not on Google Play |
+| "This device" unlock method | Secure Enclave, no PIN | TPM, optional PIN and PCR 7 | TPM, optional PIN and PCR 7 | No | No |
+
+Known limits: Windows code signing and Google Play need separate paid
+accounts and are not done. The App Store listing needs Apple's review and
+is a later step. A Secure Enclave slot works only on the Mac that made it:
+erasing the Mac, a repair that replaces the logic board, or moving to a new
+Mac with Migration Assistant means adding it again (keep your password and
+recovery code). The enclave has no PIN with a guess limit, so `--pin` and
+`--pcr7` are refused on a Mac. Intel Macs without a T2 chip have no Secure
+Enclave. The vault file format only gains a new kind of device blob
+(`VMSEP1`, [format.md](format.md) section 4.2); older versions see such a
+slot as a TPM slot they can't open.
 
 ### Thunderbird signs and decrypts with your vault key
 
@@ -169,6 +276,148 @@ permission change off for debugging. No vault file change.
 Known limits: built and tested in CI on GitHub's Windows 11 Arm runners;
 not yet tried on a real Arm PC (no TPM, security key or Windows Hello there).
 Windows 10 on Arm is untested.
+
+### Safer unlock limits, sync limits and Android AutoFill frames
+
+These fix three findings from a security review (issues #49, #50 and #51).
+Nothing changes in day-to-day use.
+
+- **Unlock settings have a lower ceiling.** Each unlock method stores how
+  much memory and time the password check (Argon2) takes. A vault file now
+  asks for at most 1 GiB of memory, 10 passes and 8 lanes, and at most
+  2 GiB of total work, which is just under three times the default
+  (256 MiB, 3 passes). Before this, an edited vault file could ask for 4 GiB
+  and 20 passes, enough to freeze a phone or stall a computer for minutes
+  before the file was found to be fake. Vaults made by Secret Vault always
+  use the default, so they all still open. Details: [file format, section
+  3.1](format.md#31-parse-time-bounds).
+- **Sync reads only vault-sized files.** It looks at the synced copy and at
+  most 16 conflict copies, skips any file over 64 MiB, and reads at most
+  256 MiB per check, so junk in the sync folder can't run the daemon out of
+  memory. See [sync, things to know](user-guide/10-sync.md#things-to-know).
+- **Android AutoFill checks each field's own site.** When a page shows a
+  sign-in box from another site in an embedded frame, Secret Vault now uses
+  the password field's own site to pick logins. It never fills a username
+  field that belongs to a different site. Before, it used the first site
+  named anywhere on the screen. See [fill a
+  login](user-guide/14-phone-apps.md#fill-a-login).
+
+| | Linux | Windows | macOS | Android | iPhone and iPad |
+| --- | --- | --- | --- | --- | --- |
+| Unlock limits | Yes | Yes | Yes | Yes | Yes |
+| Sync limits | Yes | Yes | Yes | n/a (opens only the synced file, no conflict copies) | n/a (same) |
+| AutoFill frame check | n/a | n/a | n/a | Yes | n/a (separate code, not part of this finding) |
+
+Known limits: the Android frame check has unit tests but hasn't been tried
+on a real phone with a mixed-site page. No vault file change.
+
+### The approval window ignores clicks that come too soon
+
+- **Safer approvals.** In the window that asks to pair, fill a card, use an SSH
+  or PGP key or share app passwords, **Allow** now stays grey until the
+  window has had the focus for about a second, and starts over if the focus
+  is lost. A click meant for another window, or a program that clicks for you
+  the moment the window appears, can no longer approve a request.
+  Reported by the November 2026 security review.
+- **What to do.** Nothing, except wait a moment before pressing **Allow**.
+  Deny, Escape and the one-minute timeout work as before. Linux, Windows and
+  macOS behave the same.
+- **Known limit.** Same-user malware can still wait a second and click; the
+  window narrows the attack but is not a barrier against it (threat model A3).
+  A Windows Hello check for pairing and key export is a possible next step.
+
+How to use it: [Getting started, pairing](user-guide/01-getting-started.md).
+
+### Security fixes in the libraries the vault uses
+
+Nothing changes in how you use the vault, and the vault file is the same.
+Install the new version as usual ([versions and
+upgrades](user-guide/11-versions-and-upgrades.md)). This entry matters
+most if you build Secret Vault yourself.
+
+- **Fixed library advisories.** `cargo audit` reported five security
+  advisories. Two are fixed by newer releases: `tokio` 1.54.1 (a timing
+  race in its timers; 1.54.0 was also withdrawn) and `ctutils` 0.4.8
+  (comparisons that were meant to take the same time for every input
+  didn't always). All Rust libraries are on their newest compatible
+  releases again.
+- **App-password sessions (Secret Service, Linux only).** The encrypted
+  session that apps such as browsers and mail clients open with the vault
+  now uses `crypto-bigint` 0.7, which fixes timing leaks in the 0.5 release
+  it used before. Apps notice no difference.
+- **Screen lock and Secret Service on `zbus` 6 (Linux only).** The parts of
+  the daemon that lock the vault when the computer sleeps or the screen
+  locks, and that serve app passwords, moved from `zbus` 5 (whose helper
+  libraries are no longer maintained) to `zbus` 6. They behave as before.
+  Windows and macOS don't use `zbus`.
+
+| | Linux | Windows | macOS |
+| --- | --- | --- | --- |
+| `tokio`, `ctutils` and other library updates | Yes | Yes | Yes |
+| App-password session fix (`crypto-bigint` 0.7) | Yes | n/a (no Secret Service) | n/a |
+| `zbus` 6 | Yes | n/a | n/a |
+
+Known limits: three advisories remain until the OpenPGP and SSH libraries
+(`pgp` 0.21.0 and `ssh-key` 0.6.7, their newest stable releases) move to
+fixed versions. A timing leak in `ml-dsa` 0.0.4 can matter when the vault
+signs with a post-quantum OpenPGP key (the Ed25519 half of that hybrid
+signature is not affected). The older `crypto-bigint` 0.5 they use is in
+the code for NIST P-256 keys, so ECDSA P-256 SSH keys are the ones it
+touches; Ed25519 SSH keys (the default) are not affected. The `rsa`
+"Marvin" advisory affects decrypting and signing with RSA secret keys,
+which the vault refuses to store, so it does not apply. The desktop app still
+pulls in `zbus` 5 through its screen-reader support (`eframe` 0.37, its
+newest release); it moves when `eframe` does.
+
+### Library advisories: what is left
+
+Nothing changes in how you use the vault, and the vault file is the same,
+with one exception: importing some kinds of OpenPGP secret key is now
+refused (below). This follows the [library security
+fixes](#security-fixes-in-the-libraries-the-vault-uses) above, which left
+three advisories waiting on the OpenPGP and SSH libraries. Their newest
+releases (`pgp` 0.21.0, `ssh-key` 0.6.7) still haven't moved, so the vault
+now deals with them itself.
+
+- **Post-quantum OpenPGP signatures are constant-time (fixed).** Signing
+  with a post-quantum key (`vault pgp new --pq`) used a division whose time
+  depended on the secret key (`ml-dsa`, RUSTSEC-2025-0144). The vault now
+  builds a copy of `ml-dsa` 0.0.4 with the upstream fix applied, until `pgp`
+  moves to the fixed `ml-dsa` 0.1. Signatures are exactly the same as
+  before.
+- **ECDSA P-256 SSH keys use the fixed code (fixed).** SSH signing moved to
+  `ssh-key` 0.7 (release candidate 12), which uses the newer P-256 code on
+  `crypto-bigint` 0.7. Existing keys keep working, and servers see the same
+  public key. Ed25519 SSH keys (the default) were never affected.
+- **Some OpenPGP secret keys can no longer be imported.** `vault pgp import`
+  (and **Import OpenPGP key** in the desktop app) now accepts only
+  Ed25519/Curve25519 keys and the post-quantum keys built on them. NIST
+  P-256/P-384/P-521, brainpool, secp256k1, Ed448 and X448 secret keys are
+  refused, joining RSA, DSA and ElGamal, because the code `pgp` 0.21 uses for
+  them can leak timing information. Keys made with `vault pgp new` are not
+  affected, and you can still encrypt to and check signatures from people
+  with any kind of key. A key of a refused kind that you imported earlier
+  keeps working; replace it with `vault pgp new` when you can. See [Make or
+  import a key](user-guide/07-openpgp.md#1-make-or-import-a-key).
+- **The build checks for advisories.** Every pull request now runs `cargo
+  audit`. The two advisories that can't be fixed yet are listed, each with
+  its reason, in `.cargo/audit.toml`.
+
+| | Linux | Windows | macOS |
+| --- | --- | --- | --- |
+| Post-quantum OpenPGP signing fix | Yes | Yes | Yes |
+| P-256 SSH signing fix | Yes | Yes | Yes |
+| OpenPGP import limited to Curve25519 keys | Yes | Yes | Yes |
+
+Known limits: two advisories stay open until other projects release fixes.
+`rsa` "Marvin" (RUSTSEC-2023-0071) doesn't apply, because the vault never
+holds an RSA secret key; it lifts when `pgp` moves to `rsa` 0.10, which came
+out on 2026-11-08. The older `crypto-bigint` 0.5 (RUSTSEC-2026-0387) is
+still in the code used for one-time keys only: the PIN exchange with a
+FIDO2 security key and the phone-unlock tunnel (`libwebauthn`, `snow`), and
+the throwaway key when you encrypt to someone else's NIST-curve OpenPGP key.
+It lifts when those libraries move to the newer P-256 code. `ssh-key` 0.7
+is a release candidate, pinned to one exact version until 0.7.0 is final.
 
 ### Public beta downloads
 
@@ -1015,7 +1264,9 @@ if you build Secret Vault yourself or run its tests.
   releases, and the daemon's signal handling library moved to `signal-hook`
   0.4 (Linux and macOS only; Windows does not use it). Three stay where they
   are on purpose: `zbus` stays on 5.x (Linux only) because 6.0, out on
-  2026-10-16, dropped the blocking API the screen-lock watcher uses; `rand`
+  2026-10-16, dropped the blocking API the screen-lock watcher uses (it
+  moved to 6.x later, see "Security fixes in the libraries the vault
+  uses"); `rand`
   0.8 and `signature` 2 stay because the OpenPGP and SSH libraries
   (`pgp` 0.21, `ssh-key` 0.6, both their latest stable releases) are built
   on them.
@@ -1092,6 +1343,27 @@ Platform notes: Linux and Windows. Ctrl K and Ctrl L become Cmd K and Cmd L
 on macOS once the app supports it. TPM unlock is Linux only.
 
 How to use it: [the desktop window and command palette](user-guide/desktop-window-and-palette.md).
+
+### A revoke can no longer be undone through a synced copy
+
+- **Fixed (security).** Before, someone who kept an old copy of your vault and
+  a factor you later revoked (a recovery code, a lost key) could write a copy
+  under the old vault key into your sync folder, claiming a newer key
+  generation. Your next unlock took that key, which brought their own unlock
+  method back into your vault. Now each vault records the keys it has retired
+  and refuses a copy under one of them. A device that was offline during the
+  revoke still takes the new key from the device that made it.
+- **What you see.** The sync status says the copy in the folder uses a
+  revoked key and was not merged. Delete that file from the folder and this
+  device writes its current vault again.
+- **Compatibility.** Vault files gain a list of retired keys at their next
+  write. Older versions of the programs cannot open such a file, so update
+  every device. Linux, Windows, macOS and the phone apps behave the same.
+- **Reported by the November 2026 security review.** If you ever revoked a
+  factor with sync turned on, revoke it again after updating, as an old copy
+  could have been merged before.
+
+How to use it: [Removing an unlock method](user-guide/10-sync.md#removing-an-unlock-method).
 
 ---
 

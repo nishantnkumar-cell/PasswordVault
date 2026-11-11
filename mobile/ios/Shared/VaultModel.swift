@@ -176,6 +176,98 @@ final class VaultModel {
         try persist(s)
     }
 
+    // MARK: Unlock methods, import and keys
+
+    private func unlocked() throws -> VaultSession {
+        guard let s = session else { throw MobileError.Invalid(message: "The vault is locked.") }
+        return s
+    }
+
+    /// After a change to the unlock methods: save, and park the key again
+    /// for Face ID or Touch ID when the vault key changed.
+    private func afterSlotChange(_ s: VaultSession, rekeyed: Bool) throws {
+        try persist(s)
+        if rekeyed && QuickUnlock.isEnabled {
+            do { try enableQuickUnlock() } catch { QuickUnlock.disable() }
+        }
+    }
+
+    /// Replace the master password. Argon2id runs several times, off the main actor.
+    func changePassword(current: String, new: String) async throws {
+        let s = try unlocked()
+        mergeFolder(s, password: nil)
+        try await Task.detached { try s.changePassword(current: current, new: new) }.value
+        Prefs.lastFullUnlock = Date()
+        try afterSlotChange(s, rekeyed: false)
+    }
+
+    /// A new recovery code (shown once); older codes stop working.
+    func newRecoveryCode() async throws -> String {
+        let s = try unlocked()
+        mergeFolder(s, password: nil)
+        let code = try await Task.detached { try s.newRecoveryCode() }.value
+        try afterSlotChange(s, rekeyed: false)
+        return code
+    }
+
+    func removeSlot(_ id: String) throws {
+        let s = try unlocked()
+        mergeFolder(s, password: nil)
+        try s.removeSlot(id: id)
+        try afterSlotChange(s, rekeyed: false)
+    }
+
+    /// Lost or stolen device or key: new vault key, only this password and a
+    /// new recovery code (returned) remain.
+    func revokeOthers(password: String) async throws -> String {
+        let s = try unlocked()
+        mergeFolder(s, password: nil)
+        let code = try await Task.detached { try s.revokeOthers(password: password) }.value
+        Prefs.lastFullUnlock = Date()
+        try afterSlotChange(s, rekeyed: true)
+        return code
+    }
+
+    /// Import a Bitwarden JSON or a password CSV picked in Files.
+    func importFile(_ url: URL) throws -> ImportResult {
+        let s = try unlocked()
+        let text = try withAccess(url) { () throws -> String in
+            let data = try coordinatedRead(url)
+            guard let t = String(data: data, encoding: .utf8) else {
+                throw MobileError.Invalid(message: "That file isn't a text export. Export as CSV or unencrypted JSON.")
+            }
+            return t
+        }
+        mergeFolder(s, password: nil)
+        let r = try s.importExport(data: text)
+        try persist(s)
+        return r
+    }
+
+    /// Delete an export file after importing it: it holds every password in plain text.
+    func deleteFile(_ url: URL) throws {
+        try withAccess(url) {
+            var err: NSError?
+            var result: Result<Void, Error> = .success(())
+            NSFileCoordinator().coordinate(writingItemAt: url, options: .forDeleting, error: &err) { u in
+                result = Result { try FileManager.default.removeItem(at: u) }
+            }
+            if let err { throw err }
+            try result.get()
+        }
+    }
+
+    func keyPublic(_ id: String) -> KeyPublic? { (try? session?.keyPublic(id: id)) ?? nil }
+
+    @discardableResult
+    func generateSshKey(title: String, kind: SshKeyKind, confirm: Bool) throws -> String {
+        let s = try unlocked()
+        mergeFolder(s, password: nil)
+        let id = try s.generateSshKey(title: title, kind: kind, confirm: confirm)
+        try persist(s)
+        return id
+    }
+
     // MARK: Files
 
     private func persist(_ s: VaultSession) throws {
