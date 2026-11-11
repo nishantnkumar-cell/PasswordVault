@@ -1119,7 +1119,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b6dd31f7069836e87169bc5910212571b873cebe389c7c7f2d8b1fb3e55c80d"
 dependencies = [
  "delog",
- "heapless",
+ "heapless 0.9.3",
  "heapless-bytes",
  "serde_core",
 ]
@@ -1467,9 +1467,9 @@ checksum = "7f8f80099a98041a3d1622845c271458a2d73e688351bf3cb999266764b81d48"
 
 [[package]]
 name = "cosey"
-version = "0.3.2"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75494895fa1a9713ca725ddf2db084ee84fb0c20938fdd7c89293febe732d30a"
+checksum = "540d9a2a9f2d35a876fedb35f4c0b51c7a69f71f042252cf34fc159708f962d4"
 dependencies = [
  "heapless-bytes",
  "serde",
@@ -1627,15 +1627,15 @@ dependencies = [
 
 [[package]]
 name = "ctap-types"
-version = "0.4.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bb8b105c5e728afd373e99874f0c1911c170b3a56848456cc16feb4506321606"
+checksum = "ab74c7ac39f3bde2a13960ab8257975a35cfcc3d45420ca59b21b55dcbadc6f9"
 dependencies = [
  "bitflags 1.3.2",
  "cbor-smol",
  "cosey",
  "delog",
- "heapless",
+ "heapless 0.9.3",
  "heapless-bytes",
  "iso7816",
  "serde",
@@ -3065,6 +3065,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "hash32"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "47d60b12902ba28e2730cd37e95b8c9223af2808df9e902d4df49588d1470606"
+dependencies = [
+ "byteorder",
+]
+
+[[package]]
 name = "hashbrown"
 version = "0.14.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3095,7 +3104,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cdc6457c0eb62c71aac4bc17216026d8410337c4126773b9c5daba343f17964f"
 dependencies = [
  "atomic-polyfill",
- "hash32",
+ "hash32 0.2.1",
  "rustc_version",
  "serde",
  "spin",
@@ -3103,14 +3112,24 @@ dependencies = [
 ]
 
 [[package]]
-name = "heapless-bytes"
-version = "0.3.0"
+name = "heapless"
+version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7285eba272c6af3e9f15fb9e1c1b6e7d35aa70580ffe0d47af017e97dfb6f48b"
+checksum = "25ba4bd83f9415b58b4ed8dc5714c76e626a105be4646c02630ad730ad3b5aa4"
 dependencies = [
- "heapless",
- "serde",
- "typenum",
+ "hash32 0.3.1",
+ "serde_core",
+ "stable_deref_trait",
+]
+
+[[package]]
+name = "heapless-bytes"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "774f9dbf3f3a66edc65579e68b9f564ad5ec52e770a755af46b87d40909b8024"
+dependencies = [
+ "heapless 0.9.3",
+ "serde_core",
 ]
 
 [[package]]
@@ -3403,11 +3422,11 @@ dependencies = [
 
 [[package]]
 name = "iso7816"
-version = "0.1.4"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cd3c7e91da489667bb054f9cd2f1c60cc2ac4478a899f403d11dbc62189215b0"
+checksum = "cedf53c7a948f16076ec811512f186a90009540f3cdfdb8263737244485a9015"
 dependencies = [
- "heapless",
+ "heapless 0.9.3",
 ]
 
 [[package]]
@@ -3657,16 +3676,15 @@ dependencies = [
 
 [[package]]
 name = "libwebauthn"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b7bf92efada8fcf40982774a4d8e1760ab7d086728ce2669ea1413a9a9f8c577"
+checksum = "2bcae5a7cd420e87f4f1e53eab05651135d403d94beb58905a32aac385cdc7c0"
 dependencies = [
  "aes 0.8.4",
  "aes-gcm 0.10.3",
  "async-trait",
  "base64-url",
  "bitflags 2.13.2",
- "bluer",
  "btleplug",
  "byteorder",
  "cbc 0.1.2",
@@ -3677,7 +3695,6 @@ dependencies = [
  "der 0.7.10",
  "flate2",
  "futures",
- "heapless",
  "hex",
  "hidapi",
  "hkdf 0.12.4",
@@ -3692,8 +3709,8 @@ dependencies = [
  "num_enum",
  "p256 0.13.2",
  "publicsuffix",
+ "pxp",
  "rand 0.8.8",
- "rustls",
  "serde",
  "serde-indexed 0.2.0",
  "serde_bytes",
@@ -3702,16 +3719,13 @@ dependencies = [
  "serde_json",
  "serde_repr",
  "sha2 0.10.9",
- "snow",
  "spki",
  "text_io",
  "thiserror 2.0.21",
  "time",
  "tokio",
  "tokio-stream",
- "tokio-tungstenite",
  "tracing",
- "tungstenite",
  "url",
  "uuid",
  "x509-parser 0.17.0",
@@ -5062,7 +5076,7 @@ dependencies = [
  "cobs",
  "embedded-io 0.4.0",
  "embedded-io 0.6.1",
- "heapless",
+ "heapless 0.7.17",
  "serde",
 ]
 
@@ -5225,6 +5239,40 @@ name = "pxfm"
 version = "0.1.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d55d956fa96f5ec02be2e13af0e20391a5aa83d6a074e3ad368959d0fab299ea"
+
+[[package]]
+name = "pxp"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a68da311ec7a720ec6e41339fb6d593966d38d7f4b251277d1021484d9d8cdd"
+dependencies = [
+ "aes 0.8.4",
+ "async-trait",
+ "base64-url",
+ "bluer",
+ "btleplug",
+ "futures",
+ "hex",
+ "hkdf 0.12.4",
+ "hmac 0.12.1",
+ "p256 0.13.2",
+ "rand 0.8.8",
+ "rustls",
+ "serde",
+ "serde-indexed 0.2.0",
+ "serde_bytes",
+ "serde_cbor_2",
+ "serde_repr",
+ "sha2 0.10.9",
+ "snow",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-tungstenite",
+ "tracing",
+ "tungstenite",
+ "url",
+ "uuid",
+]
 
 [[package]]
 name = "qrcode"
@@ -5527,6 +5575,7 @@ dependencies = [
  "pkcs1",
  "pkcs8",
  "rand_core 0.6.4",
+ "sha2 0.10.9",
  "signature 2.2.0",
  "spki",
  "subtle",
@@ -6229,6 +6278,16 @@ dependencies = [
 
 [[package]]
 name = "ssh-cipher"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "caac132742f0d33c3af65bfcde7f6aa8f62f0e991d80db99149eb9d44708784f"
+dependencies = [
+ "cipher 0.4.4",
+ "ssh-encoding 0.2.0",
+]
+
+[[package]]
+name = "ssh-cipher"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d801accda99469cde6d73da741422610fdf6508a72d9a69d1b55cb241c720597"
@@ -6241,8 +6300,19 @@ dependencies = [
  "ctutils",
  "des 0.9.0",
  "poly1305 0.9.1",
- "ssh-encoding",
+ "ssh-encoding 0.3.0",
  "zeroize",
+]
+
+[[package]]
+name = "ssh-encoding"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eb9242b9ef4108a78e8cd1a2c98e193ef372437f8c22be363075233321dd4a15"
+dependencies = [
+ "base64ct",
+ "pem-rfc7468 0.7.0",
+ "sha2 0.10.9",
 ]
 
 [[package]]
@@ -6260,6 +6330,27 @@ dependencies = [
 
 [[package]]
 name = "ssh-key"
+version = "0.6.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3b86f5297f0f04d08cabaa0f6bff7cb6aec4d9c3b49d87990d63da9d9156a8c3"
+dependencies = [
+ "ed25519-dalek 2.2.0",
+ "p256 0.13.2",
+ "p384",
+ "p521",
+ "rand_core 0.6.4",
+ "rsa",
+ "sec1 0.7.3",
+ "sha2 0.10.9",
+ "signature 2.2.0",
+ "ssh-cipher 0.2.0",
+ "ssh-encoding 0.2.0",
+ "subtle",
+ "zeroize",
+]
+
+[[package]]
+name = "ssh-key"
 version = "0.7.0-rc.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0701b552e6bd8f13a6e07bde25307c32d7daad80a79b65832d110c0416e7b638"
@@ -6272,8 +6363,8 @@ dependencies = [
  "sec1 0.8.1",
  "sha2 0.11.1",
  "signature 3.0.0",
- "ssh-cipher",
- "ssh-encoding",
+ "ssh-cipher 0.3.0",
+ "ssh-encoding 0.3.0",
  "zeroize",
 ]
 
@@ -7168,7 +7259,7 @@ version = "0.2.0"
 dependencies = [
  "pgp",
  "rand 0.8.8",
- "ssh-key",
+ "ssh-key 0.6.7",
  "thiserror 2.0.21",
  "uniffi",
  "vault-core",
@@ -7206,7 +7297,7 @@ dependencies = [
  "sha2 0.11.1",
  "signal-hook",
  "signature 3.0.0",
- "ssh-key",
+ "ssh-key 0.7.0-rc.12",
  "tempfile",
  "vault-core",
  "vault-hw",
