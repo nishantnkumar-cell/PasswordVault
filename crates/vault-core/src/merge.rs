@@ -347,7 +347,26 @@ impl Vault {
             };
             let mine = self.clock(&id);
             match mine.compare(&theirs) {
-                Order::Equal | Order::After => {}
+                Order::After => {}
+                Order::Equal => {
+                    // Two devices can settle the same conflict differently
+                    // (each keeping its own side when the ranks tie on
+                    // length) and end with one clock and two contents.
+                    // Break that tie the same way everywhere. The losing
+                    // content already has a conflict copy from the merge
+                    // that made this clock.
+                    let same = self.items[i].data_nonce == rec.data_nonce
+                        && self.items[i].data_ciphertext == rec.data_ciphertext;
+                    if !same {
+                        let a = self.get_item(&id)?;
+                        let b = other.get_item(&id)?;
+                        let rank = |d: &[u8]| (resolve.rank(d), Sha256::digest(d));
+                        if *a != *b && rank(&b) > rank(&a) {
+                            self.items[i] = self.import(rng, other, rec)?;
+                            report.updated += 1;
+                        }
+                    }
+                }
                 Order::Before => {
                     self.items[i] = self.import(rng, other, rec)?;
                     self.clocks.insert(id, theirs);
