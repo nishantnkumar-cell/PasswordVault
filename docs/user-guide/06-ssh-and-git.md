@@ -135,6 +135,20 @@ it with `--no-confirm`. Without confirmation, any program running
 as you can use the key while the vault is unlocked, just as with a key
 loaded into the usual `ssh-agent`.
 
+### Agent forwarding (`ssh -A`)
+
+If you connect with `ssh -A server` (or `ForwardAgent yes`), programs on that
+server can ask your computer's agent to sign. With OpenSSH 8.9 or later the
+vault recognises such a forwarded connection and **always asks**, even for a
+key whose confirmation you turned off. The window says *forwarded from another
+computer* and shows the server's host key fingerprint (check it against
+`ssh-keygen -lf` of the server's key), and for a normal login it shows
+*for the server SHA256:...*. If you see a forwarded request you did not
+expect, press **Deny**: someone on that server is trying to use your key. A
+safer habit is `ssh -J jumphost server` instead of agent forwarding. Older
+`ssh` programs do not tell the agent about the server, so a forwarded
+connection from one is not recognised.
+
 If `vaultd` runs with `--no-prompt`, or as the separate system user on Linux
 (no desktop), keys that need confirmation are never used. Turn confirmation
 off for those keys, or run the daemon in your session.

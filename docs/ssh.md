@@ -35,6 +35,15 @@ The purpose comes from the data the program sent, so it is a hint, not proof. De
 
 With confirmation off, any program running as you can sign with the key while the vault is unlocked, exactly like a key loaded into `ssh-agent`.
 
+### Which server, and forwarded agents (`session-bind@openssh.com`)
+
+The agent understands OpenSSH's `session-bind@openssh.com` extension (SSH_AGENTC_EXTENSION 27). An `ssh` client that supports it (OpenSSH 8.9 and later) sends, once the server is authenticated, the server's host key, the session identifier, the host's signature over it, and whether this connection to the agent is a forwarded one. The agent checks the signature (Ed25519 and ECDSA host keys; others are not verified and the bind is refused, which the client tolerates), keeps up to 8 bindings per connection, and then:
+
+- adds `for the server SHA256:...` to the approval window for a sign request whose session matches a binding (the host key's fingerprint; the window does not know its name);
+- treats a connection that has a binding with `is_forwarding` set as **forwarded** (`ssh -A`, or `ForwardAgent yes`): every signature on it asks, even for a key with confirmation off, and says `forwarded from another computer`. A sign request for a session that was not bound on such a connection says `for an unknown server`.
+
+This is a policy on the connection and needs no stored per-key setting: leave a key's confirmation on and a program on a server you forwarded to cannot use it without you seeing the window. Clients that do not send the extension (older `ssh`, git signing) are served as before, so a forwarded agent from such a client is not recognised.
+
 ## What the agent does and does not do
 
 - Lists and signs with Ed25519 and ECDSA (P-256) keys from the vault, only while it is unlocked. Locked, it lists nothing. P-256 keys use ssh-key 0.7 (a release candidate, pinned exactly) because 0.6 signs them with crypto-bigint 0.5 (RUSTSEC-2026-0387); move to 0.7.0 when it ships.
