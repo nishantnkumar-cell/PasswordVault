@@ -991,3 +991,40 @@ fn body_without_retired_keys_still_opens() {
     let again = unlock_pw(&bytes, &f.pw_slot).unwrap();
     assert_eq!(again.retired_keys.len(), 1);
 }
+
+#[test]
+fn edits_and_revokes_use_fresh_item_keys() {
+    let mut rng = TestRng(0);
+    let f = fixture(&mut rng);
+    let mut v = unlock_pw(&f.bytes, &f.pw_slot).unwrap();
+    let id = f.items[0];
+    let key_of = |v: &Vault| {
+        let rec = v.items.iter().find(|r| r.item_id == id).unwrap();
+        v.unwrap_item_key(rec).unwrap().as_bytes().to_vec()
+    };
+    let k0 = key_of(&v);
+    v.put_item(&mut rng, &id, b"edited").unwrap();
+    let k1 = key_of(&v);
+    assert_ne!(k0, k1, "an edit must not reuse the item key");
+
+    v.revoke(&mut rng, &[(f.pw_slot, pw(PW))]).unwrap();
+    let k2 = key_of(&v);
+    assert_ne!(k1, k2, "a revoke must not keep the item keys");
+    assert_eq!(&**v.get_item(&id).unwrap(), b"edited");
+    assert_eq!(&**v.get_item(&f.items[1]).unwrap(), b"item b");
+
+    // Someone who kept the old item key cannot read the item as it is now.
+    v.put_item(&mut rng, &id, b"after revoke").unwrap();
+    let rec = v.items.iter().find(|r| r.item_id == id).unwrap();
+    let old = crate::secret::Key::from_bytes(k1.clone().try_into().unwrap());
+    assert!(
+        crypto::open(
+            &old,
+            &rec.data_nonce,
+            &rec.data_commit,
+            &rec.data_ciphertext,
+            &crate::vault::item_data_aad(&v.vault_id, &id, rec.version),
+        )
+        .is_err()
+    );
+}

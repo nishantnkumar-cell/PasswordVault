@@ -245,7 +245,7 @@ item_key_aad  = "vault/item-key/v1"  || vault_id || item_id
 item_data_aad = "vault/item-data/v1" || vault_id || item_id || u64(version) || u16(format_version)
 ```
 
-`wrapped_item_key` is the AEAD of a random 32-byte item key under `vault_key`. `data_ciphertext` is the AEAD of `postcard(ItemData)` under the item key. Both use the commitment rule in 4.4.
+`wrapped_item_key` is the AEAD of a random 32-byte item key under `vault_key`. `data_ciphertext` is the AEAD of `postcard(ItemData)` under the item key. Both use the commitment rule in 4.4. Every write of an item (`put_item`) generates a new item key and wraps it again, so a key that leaked from an older copy of the file never opens what the item says now.
 
 `ItemData` (title, URLs, username, password, TOTP, notes, custom fields, timestamps) is specified in `docs/items.md` and is not part of this document's freeze.
 
@@ -279,7 +279,7 @@ Delete the slot, recompute `header_mac`, re-encrypt the body, write. The vault k
 ### 6.4 Revoke a factor (suspected compromise)
 
 1. Generate a new `vault_key`.
-2. Re-wrap every item key under the new vault key.
+2. Give every item a fresh item key: decrypt each item with its old key, encrypt it again under a new random key, and wrap that key under the new vault key. Old item keys, which the revoked party may hold, then open nothing in the new file.
 3. Re-wrap every remaining slot whose factor is available on this machine.
 4. Device-local slots enrolled on other machines cannot be re-wrapped; they are removed and listed to the user for re-enrollment.
 5. Recompute `header_mac`, re-encrypt the body, write, test-unlock.
