@@ -315,3 +315,6 @@ it to whole-site matching.
 in plain text. Empty the recycle bin or trash too.
 
 The desktop app can import as well; it asks for the file's path.
+On iPhone and iPad, use **Settings > Import from Another App**
+([chapter 14](14-phone-apps.md#import-from-another-app)). It also reads the
+CSV that Apple's Passwords app exports.

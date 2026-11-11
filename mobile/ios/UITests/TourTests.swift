@@ -29,10 +29,13 @@ final class TourTests: XCTestCase {
         addLogin()
         addCard()
         addCode()
+        addSshKey()
         open("Generator"); shot("generator")
         app.buttons["3 Words"].tap(); sleep(1); shot("generator-words")
         app.buttons["Apple Style"].tap(); sleep(1); shot("generator-apple")
         open("Settings"); shot("settings")
+        settingsPage("Unlock Methods", title: "Unlock Methods", expect: "Change Master Password")
+        settingsPage("Import from Another App", title: "Import", expect: "Choose Export File")
         tapScrolling(app.buttons["Lock Now"])
         XCTAssertTrue(app.buttons["Unlock"].waitForExistence(timeout: 10))
         unlock("locked")
@@ -120,6 +123,36 @@ final class TourTests: XCTestCase {
         shot("codes")
     }
 
+    /// New Item › SSH Key, then the key's public half.
+    private func addSshKey() {
+        open("Items")
+        if !app.staticTexts["Example Server"].exists {
+            newItemButton.tap()
+            app.buttons["SSH Key"].firstMatch.tap()
+            XCTAssertTrue(app.buttons["Make Key"].waitForExistence(timeout: 10))
+            type("Example Server", into: app.textFields.firstMatch)
+            shot("ssh-key-new")
+            app.buttons["Make Key"].tap()
+            XCTAssertTrue(app.buttons["Make Key"].waitForNonExistence(timeout: 30))
+        }
+        openItem("Example Server")
+        XCTAssertTrue(app.buttons["Copy Public Key"].waitForExistence(timeout: 10))
+        shot("ssh-key")
+    }
+
+    /// Opens a Settings row that pushes a page, checks it, and goes back.
+    private func settingsPage(_ label: String, title: String, expect: String) {
+        tapScrolling(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", label)).firstMatch)
+        XCTAssertTrue(app.buttons[expect].waitForExistence(timeout: 10))
+        shot(label.lowercased().replacingOccurrences(of: " ", with: "-"))
+        // The back button is the page's first navigation-bar button; on iPad
+        // it shows only a chevron, so it has no "Settings" label to find.
+        let bar = app.navigationBars[title]
+        let back = bar.buttons["Settings"].exists ? bar.buttons["Settings"] : bar.buttons.element(boundBy: 0)
+        back.tap()
+        sleep(1)
+    }
+
     // MARK: Helpers
 
     private var newItemButton: XCUIElement { app.buttons["New Item"].firstMatch }
@@ -163,7 +196,18 @@ final class TourTests: XCTestCase {
         // The simulator may offer a strong password for new-password fields.
         let own = app.buttons["Choose My Own Password"]
         if own.waitForExistence(timeout: 1) { own.tap(); field.tap() }
+        // On a slow iPad simulator the tap can land before the field takes
+        // the keyboard ("Neither element nor any descendant has keyboard
+        // focus"). Tap again until it has focus, then type.
+        for _ in 0..<3 where !hasFocus(field) {
+            sleep(2)
+            field.tap()
+        }
         field.typeText(text)
+    }
+
+    private func hasFocus(_ field: XCUIElement) -> Bool {
+        (field.value(forKey: "hasKeyboardFocus") as? Bool) ?? false
     }
 
     /// Taps an element, scrolling down to it first. Lists and forms only

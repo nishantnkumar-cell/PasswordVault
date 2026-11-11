@@ -188,6 +188,9 @@ protect the file.
 ## Limits
 
 - No RSA keys.
+- ECDSA P-256 keys are signed with newer, constant-time library code from
+  this release on. Nothing changes for you: existing P-256 keys keep
+  working and servers see the same public key.
 - `ssh-add` cannot add keys to the vault's agent or remove them; manage
   keys with `vault ssh`.
 - The desktop app can make new keys and copy their public half, but

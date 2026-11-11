@@ -196,7 +196,10 @@ both Linux and Windows, a TPM slot added under one system does not open
 under the other, even though the chip is the same: each system uses the TPM
 in its own way. Add one TPM slot from each system if you want both.
 
-On a Mac there is no TPM; Secure Enclave support is planned.
+**On a Mac** the same kind of slot uses the Secure Enclave, the security
+chip in Apple silicon and T2 Macs, instead of a TPM: `vault add-slot tpm`
+or **Secure Enclave** under **Unlock methods**. It has no PIN and no PCR 7
+option. See [Unlock with the Secure Enclave](13-macos.md#unlock-with-the-secure-enclave).
 
 ### Post-quantum protection
 
@@ -397,11 +400,12 @@ slots but not revoke.
   and talks to the phone, and may offer a phone you used before directly.
   Not available on macOS yet.
 - **macOS:** quick unlock uses Touch ID (or an Apple Watch, or the login
-  password) the way Windows uses Windows Hello. Macs have no TPM, so there
-  is no `tpm` slot; TPM slots made elsewhere are skipped. Security keys go
-  over USB directly, with the PIN typed in the app or the `vault` command,
-  as on Linux, and need no extra permission. A Secure Enclave slot (the
-  Mac's counterpart of the TPM) is not supported yet. See
+  password) the way Windows uses Windows Hello. Macs have no TPM; the
+  `tpm` slot uses the Secure Enclave instead (Apple silicon or a T2 chip),
+  without a PIN. TPM slots made on Linux or Windows don't work on a Mac,
+  and a Mac's slot works only on that Mac. Security keys go over USB
+  directly, with the PIN typed in the app or the `vault` command, as on
+  Linux, and need no extra permission. See
   [Installing and running on macOS](13-macos.md).
 - **Linux:** no Windows Hello equivalent yet. Face and fingerprint unlock
   are planned as the same kind of quick unlock.

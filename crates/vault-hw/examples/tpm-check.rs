@@ -4,12 +4,17 @@
 //!     cargo run -p vault-hw --example tpm-check
 //!     cargo run -p vault-hw --example tpm-check -- 1234    (test PIN, no prompt)
 //!
+//! On a Mac it checks the Secure Enclave instead, through vault-se (build it
+//! first with `contrib/macos/build-se.sh target/debug/examples`, or point
+//! VAULT_SE_HELPER at one): one seal and unseal, as Macs have no PIN or PCR
+//! mode.
+//!
 //! It wraps a random test secret three ways (no PIN, with a PIN, bound to
 //! PCR 7) and unwraps each again. With a PIN it also tries one wrong PIN,
 //! which the TPM counts towards its lockout like any wrong guess. Nothing is
 //! stored, in the TPM or on disk.
 
-#[cfg(any(target_os = "linux", windows))]
+#[cfg(any(target_os = "linux", windows, target_os = "macos"))]
 fn check(tpm: &dyn vault_hw::Tpm, pin: Option<&str>, pcr7: bool) -> Result<(), String> {
     use vault_core::SecureRandom;
     let mode = match (pin.is_some(), pcr7) {
@@ -75,8 +80,21 @@ fn main() {
     }
 }
 
-#[cfg(not(any(target_os = "linux", windows)))]
+#[cfg(target_os = "macos")]
 fn main() {
-    eprintln!("This system has no TPM support (macOS uses the Secure Enclave instead).");
+    let Some(se) = vault_hw::Hardware::system().tpm else {
+        eprintln!("FAIL: Secure Enclave support is not built in (build with the `tpm` feature)");
+        std::process::exit(1);
+    };
+    if let Err(e) = check(se.as_ref(), None, false) {
+        eprintln!("FAIL: {e}");
+        std::process::exit(1);
+    }
+    println!("\nPASS: this Mac's Secure Enclave works for vault \"this device\" slots.");
+}
+
+#[cfg(not(any(target_os = "linux", windows, target_os = "macos")))]
+fn main() {
+    eprintln!("This system has no TPM support.");
     std::process::exit(1);
 }

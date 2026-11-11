@@ -62,6 +62,7 @@ impl Extra {
     fn name(self) -> &'static str {
         match self {
             Extra::Hello => HELLO,
+            Extra::Tpm if cfg!(target_os = "macos") => "This Mac's Secure Enclave",
             Extra::Tpm => "This computer's TPM chip",
             Extra::SecurityKey => "Security key",
         }
@@ -89,10 +90,9 @@ pub(super) struct Setup {
 
 /// Which methods this build of the daemon can add, by platform.
 fn extras() -> &'static [Extra] {
-    if cfg!(windows) {
+    // Windows Hello or Touch ID, then the TPM or a Mac's Secure Enclave.
+    if cfg!(any(windows, target_os = "macos")) {
         &[Extra::Hello, Extra::Tpm, Extra::SecurityKey]
-    } else if cfg!(target_os = "macos") {
-        &[Extra::Hello, Extra::SecurityKey]
     } else {
         &[Extra::Tpm, Extra::SecurityKey]
     }
@@ -537,6 +537,14 @@ impl App {
                              confirms it's you."
                         ));
                     }
+                    Extra::Tpm if cfg!(target_os = "macos") => {
+                        ui.label(
+                            "Unlocking then needs both your master password and this Mac: \
+                             the Secure Enclave, the security chip in Apple silicon and T2 \
+                             Macs, holds a key that never leaves it. A copy of the vault file \
+                             is useless on any other computer.",
+                        );
+                    }
                     Extra::Tpm => {
                         ui.label(
                             "Unlocking then needs both your master password and this \
@@ -611,16 +619,6 @@ impl App {
                 });
             });
             ui.add_space(8.0);
-        }
-        if cfg!(target_os = "macos") {
-            ui.label(
-                RichText::new(
-                    "Macs have no TPM chip. Touch ID quick unlock re-opens the vault after a \
-                     full unlock; unlocking with the Secure Enclave alone is not supported yet.",
-                )
-                .small()
-                .color(theme::MUTED),
-            );
         }
         let any = !s.added.is_empty();
         if let Some((busy, op, req)) = request {

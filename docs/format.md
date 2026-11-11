@@ -94,10 +94,18 @@ Checked before any KDF runs. Violations are a hard error for that slot.
 
 | Field | Min | Max |
 | --- | --- | --- |
-| `m_kib` | 65 536 (64 MiB) | 4 194 304 (4 GiB) |
-| `t` | 1 | 20 |
-| `p` | 1 | 16 |
+| `m_kib` | 65 536 (64 MiB) | 1 048 576 (1 GiB) |
+| `t` | 1 | 10 |
+| `p` | 1 | 8 |
+| `m_kib × t` | | 2 097 152 (2 GiB of memory passes) |
 | slots | 1 | 32 |
+
+The header MAC can only be checked after a slot's KDF has run, so these caps
+are what stops a tampered file from asking for minutes of work or more memory
+than a phone has before it is found out. They allow just under three times the
+writer default. In 0.2.0-beta.1 and earlier the maxima were 4 GiB, `t = 20` and
+`p = 16`; no writer ever used more than the default, so no vault made by
+Secret Vault is affected.
 
 Writers default to `m_kib = 262 144`, `t = 3`, `p = 4`, then calibrate upward to about 0.5 to 1 s on the enrolling machine.
 
@@ -113,7 +121,7 @@ The password is normalized to Unicode NFC and encoded as UTF-8. No trimming, no 
 | --- | --- |
 | `PasswordOnly` | 32 zero bytes |
 | `PasswordFido2` | hmac-secret output for `salt1 = SHA-256("WebAuthn PRF" || 0x00 || prf_input)`, with UV performed if and only if `require_uv` |
-| `PasswordTpm` | Random secret sealed in `blob`, unsealed with the PIN (if `has_pin`) and PCR policy (if set), over a salted, encrypted session (Linux). A blob starting with `VWTPM2` was made on Windows: `VWTPM2 \|\| u16 LE public_len \|\| TPMT_PUBLIC \|\| TPM2B_PRIVATE contents`, the same kind of sealed object, under Windows' storage key at `0x81000001`. A blob starting with `VWTPM1` was made on Windows by earlier versions and is only read: `VWTPM1 \|\| u8 oaep_hash (1 = SHA-256) \|\| u16 LE key_len \|\| opaque Platform Crypto Provider key blob \|\| RSA-OAEP ciphertext of the secret`, decrypted by that TPM-bound RSA-2048 key with the PIN as its usage auth. It is not post-quantum (see docs/windows.md) |
+| `PasswordTpm` | Random secret sealed in `blob`, unsealed with the PIN (if `has_pin`) and PCR policy (if set), over a salted, encrypted session (Linux). A blob starting with `VWTPM2` was made on Windows: `VWTPM2 \|\| u16 LE public_len \|\| TPMT_PUBLIC \|\| TPM2B_PRIVATE contents`, the same kind of sealed object, under Windows' storage key at `0x81000001`. A blob starting with `VWTPM1` was made on Windows by earlier versions and is only read: `VWTPM1 \|\| u8 oaep_hash (1 = SHA-256) \|\| u16 LE key_len \|\| opaque Platform Crypto Provider key blob \|\| RSA-OAEP ciphertext of the secret`, decrypted by that TPM-bound RSA-2048 key with the PIN as its usage auth. It is not post-quantum (see docs/windows.md). A blob starting with `VMSEP1` was made by a Mac's Secure Enclave (`vault-se`, contrib/macos/secure-enclave): `VMSEP1 \|\| u16 BE key_len \|\| enclave key data (CryptoKit `dataRepresentation`, usable only by that Mac's enclave) \|\| one-time P-256 public key (65 bytes, X9.63) \|\| salt (32) \|\| AES-256-GCM nonce \|\| ciphertext \|\| tag (12 + 32 + 16)`. The AES key is HKDF-SHA256(ECDH(enclave key, one-time key), salt, info = `secret-vault/secure-enclave/v1` \|\| one-time public key); everything before the AES-GCM part is its associated data. No PIN and no PCR policy. ECDH is classical, but the enclave key's public half is stored nowhere, so the file alone does not give a quantum attacker both public keys it would need |
 | `Recovery` | Not used, see 4.3 |
 
 The FIDO2 salt construction matches the WebAuthn PRF extension, so a PRF passkey yields the same secret for the same credential. A phone passkey slot is therefore a `PasswordFido2` slot with `require_uv = true` (phones always verify the user): `hw_key` is the passkey's PRF output for `prf_input`. The reserved `PasswordPasskeyPrf` variant stays unused in format version 1. The client, not `vaultd`, runs the passkey and passes the output to `vaultd` (see docs/threat-model.md, A3).
@@ -211,6 +219,7 @@ struct Body {
     tombstones: Vec<([u8; 16], Clock)>,   // deleted item id -> vector at deletion
     removed_slots: Vec<[u8; 16]>,         // every slot ever removed, sorted
     key_epoch: u64,               // +1 on every revoke (6.4)
+    retired_keys: Vec<[u8; 32]>,  // fingerprints of vault keys moved on from (5.1), sorted
 }
 
 struct Clock(Vec<(u64, u64)>);    // (device id, edit count), sorted by device, no zero counts
@@ -250,6 +259,7 @@ Two copies of one vault (same `vault_id`), edited on different devices, merge in
 - **Records.** A record taken from the other copy is copied as is, version and ciphertext included; its AAD does not depend on the copy. If the vault keys differ, its item key is unwrapped with the other key and wrapped again under this one.
 - **Slots.** `removed_slots` is unioned and every listed slot is dropped, except that the last daily-use slot is kept. When both copies hold the same vault key, slots only the other copy has are added (they wrap that key). Labels follow their slots.
 - **Different vault keys** (a revoke on one side, 6.4): the copy with the higher `key_epoch` wins, ties going to the larger `HMAC(vault_key, "vault/key-order/v1" || vault_id)`. If the other copy wins, this copy takes its vault key and its exact slot list, re-wrapping every item key; its own slots not in that list are reported as dropped. If this copy wins, it keeps its key and slots and imports the other's items. Opening a copy under a different key needs a credential for one of its slots (`ParsedVault::unlock`); `ParsedVault::open_with` reports `DifferentKey` when the header MAC does not verify under the key already held.
+- **Retired keys.** `retired_keys` lists a fingerprint, `HMAC(vault_key, "vault/retired/v1" || vault_id)`, of every vault key this vault has moved on from: the old key is added on each revoke and whenever a merge takes a newer key. It is unioned in every merge. A copy whose key is on this vault's list is an old copy and is refused (`RetiredKey`), whatever `key_epoch` it claims, so someone who holds an old file and a since-revoked factor cannot write a copy that undoes a revoke. Of two different keys neither of which is retired here, the other copy's wins when its list contains this key's fingerprint (it descends from it), and only copies that know nothing of each other (two revokes at once) fall back to the epoch rule above. Files written before this field (body v1 and v2) still open, with an empty list, and gain the field at their next write. Older program versions cannot open a file with the new field.
 - **Counters.** `generation` and `key_epoch` become the maximum of the two; the next write increments `generation` as usual.
 
 ## 6. Operations
@@ -264,7 +274,7 @@ Requires an unlocked vault. Derive the new KEK, wrap the current `vault_key`, ap
 
 ### 6.3 Remove a slot (no compromise)
 
-Delete the slot, recompute `header_mac`, re-encrypt the body, write. The vault key is unchanged. Must leave at least one daily-use slot and one backup.
+Delete the slot, recompute `header_mac`, re-encrypt the body, write. The vault key is unchanged. Must leave at least one daily-use slot, which `remove_slot` enforces. Keeping a backup slot (recovery, or a second key) is advice: nothing warns yet when the last one is removed.
 
 ### 6.4 Revoke a factor (suspected compromise)
 

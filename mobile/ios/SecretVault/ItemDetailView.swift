@@ -43,9 +43,11 @@ struct ItemDetailView: View {
             case .note: EmptyView()
             }
 
-            if let key = item.key {
+            if let key = vault.keyPublic(id) {
+                KeyPublicSection(key: key, copy: copy)
+            } else if let key = item.key {
                 Section("Key") {
-                    Text("\(key). Your computer's vault daemon uses it for SSH and Git signing; the phone app shows it but does not use it.")
+                    Text("\(key). Your computer's vault daemon uses it for SSH and Git signing.")
                         .font(.subheadline).foregroundStyle(.secondary)
                 }
             }
@@ -89,6 +91,13 @@ struct ItemDetailView: View {
             }
         }
         .animation(.snappy, value: copied)
+        .focusedSceneValue(\.itemActions, ItemActions(
+            token: "\(id)-\(vault.revision)",
+            edit: { editing = true },
+            copyPassword: item.password.isEmpty ? nil : { copy("Password", item.password, true) },
+            copyUsername: item.username.isEmpty ? nil : { copy("Username", item.username, false) },
+            copyCode: item.hasTotp ? { if let c = vault.totp(id) { copy("One-time code", c.code, true) } } : nil
+        ))
     }
 
     private func copy(_ label: String, _ value: String, _ sensitive: Bool) {

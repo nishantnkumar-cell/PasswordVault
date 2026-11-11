@@ -92,6 +92,7 @@ KEYSLOTS
   add-slot fido2 [--uv] [--label L]       touch the key when it blinks
   add-slot phone [--label L]              a passkey on your phone: scan the QR code with it
   add-slot tpm [--pin] [--pcr7] [--label L]
+                               on a Mac: this Mac's Secure Enclave (no --pin or --pcr7)
   add-slot recovery [--label L]
   rm-slot SLOT                 remove a slot (no key rotation)
   revoke --keep SLOT[,SLOT..]  rotate the vault key, keeping only these slots
@@ -325,7 +326,12 @@ fn method(args: &[String]) -> UnlockMethod {
         phone_method()
     } else if args.iter().any(|a| a == "--tpm") {
         let password = secret("Password: ");
-        let pin = optional(secret("TPM PIN (Enter if none): "));
+        // A Mac's Secure Enclave slot has no PIN.
+        let pin = if cfg!(target_os = "macos") {
+            None
+        } else {
+            optional(secret("TPM PIN (Enter if none): "))
+        };
         UnlockMethod::Tpm { password, pin }
     } else {
         UnlockMethod::Password {

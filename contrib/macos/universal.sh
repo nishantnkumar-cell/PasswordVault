@@ -17,4 +17,6 @@ for b in vaultd vault vault-gui vault-prompt vault-native-host vault-gpg; do
         "target/aarch64-apple-darwin/release/$b" "target/x86_64-apple-darwin/release/$b"
     lipo "$out/$b" -verify_arch arm64 x86_64
 done
+# The Secure Enclave helper (Swift), already universal.
+contrib/macos/build-se.sh "$out"
 lipo -info "$out"/*

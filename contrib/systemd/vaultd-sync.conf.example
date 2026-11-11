@@ -1,0 +1,16 @@
+# Lets vaultd write the synced vault copy (docs/sync.md, "Sync under systemd").
+# vaultd.service makes the whole file system read-only except its own
+# folders, so a copy in ~/Dropbox or ~/OneDrive cannot be merged or saved.
+#
+# User service:
+#   systemctl --user edit vaultd
+# and paste the lines below (change the folder), then
+#   systemctl --user restart vaultd
+#
+# System service (vaultd@.service also hides /home, so name the folder in
+# both lines; the folder must be readable by the "vault" user):
+#   sudo systemctl edit vaultd@$USER
+[Service]
+ReadWritePaths=%h/Dropbox
+# System service only:
+# BindPaths=/home/alex/Dropbox

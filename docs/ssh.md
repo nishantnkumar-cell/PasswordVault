@@ -37,7 +37,7 @@ With confirmation off, any program running as you can sign with the key while th
 
 ## What the agent does and does not do
 
-- Lists and signs with Ed25519 and ECDSA (P-256) keys from the vault, only while it is unlocked. Locked, it lists nothing.
+- Lists and signs with Ed25519 and ECDSA (P-256) keys from the vault, only while it is unlocked. Locked, it lists nothing. P-256 keys use ssh-key 0.7 (a release candidate, pinned exactly) because 0.6 signs them with crypto-bigint 0.5 (RUSTSEC-2026-0387); move to 0.7.0 when it ships.
 - Does not accept keys from `ssh-add`, does not remove or lock keys on request, and has no RSA support (the `rsa` crate has no constant-time fix for the Marvin attack).
 - Checks the peer's user on every connection, like the main socket. The agent socket is `$XDG_RUNTIME_DIR/vault/ssh-agent.sock` (`\\.\pipe\vaultd-ssh-<SID>` on Windows); change it with `vaultd --ssh-agent PATH` or turn it off with `--no-ssh-agent`.
 

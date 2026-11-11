@@ -115,14 +115,17 @@ folder, open a terminal there, and run:
 
 ### Warnings the first time you open a download
 
-The installers are not signed with a paid code-signing certificate yet, so
-Windows and macOS don't know who made them and warn once. This is expected.
+The Windows installer is not signed with a paid code-signing certificate
+yet, so Windows doesn't know who made it and warns once. This is expected.
+The macOS downloads are signed and notarized by Apple from the release
+after `0.2.0-beta.1`, so a Mac opens them without a warning.
 
 - **Windows:** "Windows protected your PC" (SmartScreen). Click **More
   info**, then **Run anyway**. See [Installing on Windows](windows-install.md).
-- **macOS 15 and newer:** "SecretVault-…pkg Not Opened". Click **Done**, open
-  System Settings > Privacy & Security, scroll down and click **Open
-  Anyway**. On macOS 11 to 14, right-click the `.pkg` and choose **Open**.
+- **macOS, only for `0.2.0-beta.1` or a copy you built:** on macOS 15 and
+  newer, "SecretVault-…pkg Not Opened". Click **Done**, open System
+  Settings > Privacy & Security, scroll down and click **Open Anyway**. On
+  macOS 11 to 14, right-click the `.pkg` and choose **Open**.
   See [chapter 13](13-macos.md).
 - **Linux:** no warning. `apt` and `install.sh` install the files as they are.
 - **Android:** the phone asks once whether your browser or file manager may
@@ -232,7 +235,7 @@ browser's extensions page). It keeps its pairing.
 | Daemon restarted for you | Yes | `.tar.gz`: yes; `.deb`: run `systemctl --user restart vaultd` | Yes |
 | Older over newer | Asks first (default No) | apt refuses; `install.sh` asks first | `.pkg` refuses; `install.sh` asks first |
 | Administrator rights | Only for an all-users install | `sudo` for the `.deb`; none for the `.tar.gz` | For the `.pkg`; none for the `.tar.gz` |
-| Warning on first open | SmartScreen: **More info** > **Run anyway** | None | **Open Anyway** in Privacy & Security |
+| Warning on first open | SmartScreen: **More info** > **Run anyway** | None | None from the release after `0.2.0-beta.1` (signed and notarized); **Open Anyway** in Privacy & Security for older or self-built copies |
 
 ## For maintainers: making a release
 
@@ -283,11 +286,13 @@ Once a release is published, never move or reuse its tag.
 ### Signing the installers (optional, costs money)
 
 Unsigned installers work, but Windows and macOS warn once (see above).
-Signing removes the warnings:
+Signing removes the warnings. macOS signing is set up: CI signs and
+notarizes with the project's Apple Developer ID whenever its secrets are
+set ([apple-account.md](../apple-account.md)); Windows is not signed yet.
 
 | | What it takes | Rough cost |
 |---|---|---|
-| macOS | Apple Developer Program: a Developer ID certificate and notarization. Steps in [macos-signing.md](../macos-signing.md). | USD 99 a year |
+| macOS (done) | Apple Developer Program: a Developer ID certificate and notarization. Steps in [macos-signing.md](../macos-signing.md). The same membership puts the iPhone app in TestFlight. | USD 99 a year |
 | Windows | A code-signing certificate. Microsoft's Azure Artifact Signing (formerly Trusted Signing) is the cheapest, if your country and account type are eligible; otherwise an OV certificate from a certificate authority, delivered on a hardware token or cloud HSM. | About USD 10 a month (Azure), or roughly USD 200 to 400 a year (OV certificate) |
 | Linux | Nothing needed. | Free |
 

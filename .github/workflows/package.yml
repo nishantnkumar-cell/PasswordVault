@@ -19,7 +19,9 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch
+        with:
+          toolchain: stable
       - name: Version
         shell: bash
         run: |
@@ -57,7 +59,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch
+        with:
+          toolchain: stable
       - run: sudo apt-get update && sudo apt-get install -y libtss2-dev libudev-dev libhidapi-dev libdbus-1-dev pkg-config dpkg-dev
       - name: Version
         run: |
@@ -86,8 +90,9 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch
         with:
+          toolchain: stable
           targets: aarch64-apple-darwin,x86_64-apple-darwin
       - name: Version
         run: |
@@ -95,10 +100,25 @@ jobs:
           echo "VAULT_VERSION=$(contrib/release/version.sh --build)" >> "$GITHUB_ENV"
       - run: cargo build --release --locked --target aarch64-apple-darwin --target x86_64-apple-darwin
       - run: contrib/macos/universal.sh
+      # Pull requests are never given the certificates (ad hoc signing only):
+      # they run build scripts and dependency code.
+      # Developer ID signing when the certificates are set as repository
+      # secrets (docs/macos-signing.md); ad hoc otherwise, with a warning.
+      - name: Signing certificates
+        run: contrib/macos/ci-signing.sh import
+        env:
+          MACOS_CERTS_P12: ${{ github.event_name != 'pull_request' && secrets.MACOS_CERTS_P12 || '' }}
+          MACOS_CERTS_PASSWORD: ${{ github.event_name != 'pull_request' && secrets.MACOS_CERTS_PASSWORD || '' }}
       - run: contrib/macos/package.sh "$VAULT_VERSION"
         env:
           BIN_DIR: target/universal
           ARCH: universal
+      - name: Notarize
+        run: contrib/macos/ci-signing.sh notarize
+        env:
+          APPLE_API_KEY_P8: ${{ github.event_name != 'pull_request' && secrets.APPLE_API_KEY_P8 || '' }}
+          APPLE_API_KEY_ID: ${{ github.event_name != 'pull_request' && secrets.APPLE_API_KEY_ID || '' }}
+          APPLE_API_ISSUER_ID: ${{ github.event_name != 'pull_request' && secrets.APPLE_API_ISSUER_ID || '' }}
       - name: Check the archive
         run: |
           test "$(target/universal/vaultd --version)" = "vaultd $VAULT_VERSION"
@@ -110,12 +130,16 @@ jobs:
           pkg=target/packages/SecretVault-$VAULT_VERSION-macos.pkg
           pkgutil --payload-files "$pkg" | tee payload.txt
           grep -q "Applications/Secret Vault.app/Contents/MacOS/vaultd$" payload.txt
+          grep -q "Applications/Secret Vault.app/Contents/MacOS/vault-se$" payload.txt
           grep -q "Applications/Secret Vault.app/Contents/Resources/uninstall.sh$" payload.txt
           grep -q "Library/LaunchAgents/dev.passwordvault.vaultd.plist$" payload.txt
           sudo installer -verbose -pkg "$pkg" -target /
           app="/Applications/Secret Vault.app"
           codesign --verify --strict --verbose "$app"
+          codesign --display --verbose=2 "$app" 2>&1 | grep -E "^(Authority|TeamIdentifier|Signature)=" || true
+          pkgutil --check-signature "$pkg" || true
           lipo "$app/Contents/MacOS/vaultd" -verify_arch arm64 x86_64
+          lipo "$app/Contents/MacOS/vault-se" -verify_arch arm64 x86_64
           test "$(/usr/local/bin/vault --version)" = "vault $VAULT_VERSION"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Contents/Info.plist")" = "$VAULT_VERSION"
           plutil -lint /Library/LaunchAgents/dev.passwordvault.vaultd.plist
@@ -127,6 +151,9 @@ jobs:
           test ! -e /usr/local/bin/vault
           test ! -e /Library/LaunchAgents/dev.passwordvault.vaultd.plist
           if pkgutil --pkg-info dev.passwordvault.pkg; then exit 1; fi
+      - name: Remove the signing keychain
+        if: always()
+        run: if [ -n "${VAULT_SIGNING_KEYCHAIN:-}" ]; then security delete-keychain "$VAULT_SIGNING_KEYCHAIN"; fi
       - uses: actions/upload-artifact@v7
         with:
           name: macos-package

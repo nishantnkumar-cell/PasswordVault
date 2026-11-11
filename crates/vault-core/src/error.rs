@@ -41,6 +41,9 @@ pub enum Error {
     /// The other copy's header does not verify under this vault key: the key
     /// was rotated on another device, or the file was tampered with.
     DifferentKey,
+    /// The other copy is locked with a vault key this vault retired in a
+    /// revoke, so it is an old copy, not news (section 5.1).
+    RetiredKey,
 }
 
 impl fmt::Display for Error {
@@ -63,6 +66,9 @@ impl fmt::Display for Error {
             Error::Random => "random number generator failed",
             Error::DifferentVault => "the files belong to different vaults",
             Error::DifferentKey => "the other copy is locked with a different vault key",
+            Error::RetiredKey => {
+                "the other copy uses a vault key that was revoked; it is an old copy and was not merged"
+            }
         };
         f.write_str(s)
     }

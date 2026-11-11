@@ -107,6 +107,14 @@ class TourTest {
         rule.onAllNodes(hasSetTextAction()).onFirst().performTextInput(phrase)
         // The keyboard can cover the button; scroll it into view first.
         press(rule.onNode(hasText("Unlock") and hasClickAction()))
+        // As in createVault: a tap sent while the keyboard moves the page can
+        // be lost (seen on the foldable emulator). While unlocking, the button
+        // shows a spinner instead of its label, so a label still there after
+        // a while means the tap missed: tap again.
+        repeat(3) {
+            runCatching { rule.waitUntil(15_000) { !exists("Unlock") || exists("New item") } }
+            if (exists("Unlock") && !exists("New item")) press(rule.onNode(hasText("Unlock") and hasClickAction()))
+        }
         waitFor("New item", 180_000)
     }
 

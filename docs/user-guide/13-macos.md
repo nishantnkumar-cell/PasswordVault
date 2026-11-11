@@ -14,6 +14,7 @@ Intel Macs.
 - [When the vault locks by itself](#when-the-vault-locks-by-itself)
 - [Copying passwords](#copying-passwords)
 - [Security keys](#security-keys)
+- [Unlock with the Secure Enclave](#unlock-with-the-secure-enclave)
 - [Browser autofill](#browser-autofill)
 - [SSH keys](#ssh-keys)
 - [Where your files are](#where-your-files-are)
@@ -38,8 +39,11 @@ Pick one. If you install the `.pkg` after the `.tar.gz`, it replaces the
 ### With the installer (.pkg)
 
 1. Download `SecretVault-<version>-macos.pkg`.
-2. Double-click it in your Downloads folder. Because the installer is not
-   signed with an Apple developer ID yet, macOS stops it the first time:
+2. Double-click it in your Downloads folder. Releases after
+   `0.2.0-beta.1` are signed with the project's Apple Developer ID and
+   notarized by Apple, so the installer simply opens. Only if macOS stops
+   it (`0.2.0-beta.1`, a build from a GitHub Actions run of a fork, or one
+   you made yourself, which are not signed):
    - **macOS 15 (Sequoia) and newer:** macOS says it "cannot verify" the
      installer. Click **Done**. Open the Apple menu > **System Settings** >
      **Privacy & Security**, scroll down to **Security**, and click
@@ -91,9 +95,11 @@ It does three things:
 If it says to add `~/.local/bin` to your `PATH`, run the command it prints,
 then open a new Terminal window.
 
-> **Why Terminal, and not a double-click?** The app is not signed with an
-> Apple developer ID yet, so macOS would refuse to open a downloaded copy
-> ("Secret Vault can't be opened because Apple cannot check it"). The
+> **Why Terminal, and not a double-click?** `install.sh` also sets up the
+> launch agent and the commands. The app in a signed release is notarized,
+> so macOS opens it without asking. In an unsigned build (`0.2.0-beta.1`,
+> or one you made yourself) macOS would refuse to open a downloaded copy
+> ("Secret Vault can't be opened because Apple cannot check it"), so the
 > install script clears that download flag on the copy it installs. If you
 > ever see that message anyway, right-click (or Control-click) the app in
 > Finder, choose **Open**, then **Open** again.
@@ -251,6 +257,68 @@ To check a key before you add it:
 cargo run -p vault-hw --example fido2-check
 ```
 
+## Unlock with the Secure Enclave
+
+The **Secure Enclave** is the security chip built into every Mac with
+Apple silicon (M1 and later) and Intel Macs with a T2 chip (most models
+from 2018 to 2020). It is the Mac's counterpart of the TPM chip in Windows
+and Linux PCs, and Secret Vault uses it the same way: as a "this device"
+unlock method.
+
+**What it does.** A Secure Enclave slot needs both your master password and
+this Mac. The enclave holds a key that never leaves the chip, not even to
+macOS. So someone who copies your vault file (from a sync folder, a backup
+or a stolen USB disk) can't open it on another computer, even if they
+learn your password. Use it when you want that extra protection on the Mac
+you use most.
+
+**What it doesn't do.** You still type the master password; for unlocking
+without typing, use [Touch ID quick unlock](#quick-unlock-with-touch-id),
+which works together with this. A Secure Enclave slot is only for this
+Mac: on your other computers and phones, the vault opens with its other
+methods (keep at least the password and recovery code).
+
+**Add it in the app.** Unlock the vault, then:
+
+1. Click **Unlock methods** in the sidebar (under *Tools*).
+2. Under **Add a method**, pick **Secure Enclave**.
+3. Type your master password and click **Add**.
+
+Secret Vault makes the key in the chip, then unlocks once with the new
+slot to check it before keeping it. On a new vault the setup wizard offers
+**This Mac's Secure Enclave** on its *Unlock methods* step.
+
+**Or in Terminal:**
+
+```sh
+vault add-slot tpm --label "MacBook Air"     # asks for your master password
+vault unlock --tpm                           # later: password + this Mac
+```
+
+(The command is called `tpm` on every system so scripts work everywhere.
+On a Mac, `--pin` and `--pcr7` are refused: the Secure Enclave has no PIN
+with a guess limit and no PCRs.)
+
+**Check this Mac first (optional).** From the source folder, run
+`contrib/macos/build-se.sh target/debug/examples` and then
+`cargo run -p vault-hw --example tpm-check`. It prints PASS when a test
+secret goes into the enclave and back. Or, in an installed copy, run
+`"/Applications/Secret Vault.app/Contents/MacOS/vault-se" check`, which
+prints `Secure Enclave OK`.
+
+**When it stops working.** The slot belongs to this Mac's enclave. Erasing
+the Mac (**Erase All Content and Settings**), restoring it from a backup
+to new hardware, or a logic-board repair makes it unusable; unlock with
+your password or another method, remove the old slot in **Unlock methods**,
+and add a new one. Migration Assistant does not carry it
+to a new Mac either.
+
+**Post-quantum.** The Secure Enclave only knows the P-256 curve, which a
+future quantum computer could break. Secret Vault stores only the half of
+the exchange that is useless on its own: the vault file never contains the
+enclave key's public key, so a copied file can't be attacked that way even
+in the future. See [Post-quantum protection](02-unlocking.md#post-quantum-protection).
+
 ## Browser autofill
 
 Chrome, Chromium, Microsoft Edge and Firefox work. Follow
@@ -355,8 +423,7 @@ rm ~/.local/bin/vault ~/.local/bin/vaultd ~/.local/bin/vault-gpg
 | Install | Installer `.pkg` (admin password, all accounts), or `.tar.gz` with `install.sh` (no admin rights) | `.deb`, or `.tar.gz` with `install.sh` | Installer, no admin rights |
 | Starts at sign-in | Launch agent | systemd user service | Run key (`vaultw.exe`) |
 | Quick unlock | Touch ID, Apple Watch or login password | Not yet | Windows Hello |
-| TPM slot | Not applicable (no TPM) | Yes | Yes |
-| Secure Enclave slot | Not yet | Not applicable | Not applicable |
+| "This device" slot (`add-slot tpm`) | Secure Enclave (Apple silicon or T2), no PIN | TPM, optional PIN and PCR 7 | TPM, optional PIN and PCR 7 |
 | Security key PIN | Typed in the app | Typed in the app | Windows asks in its own window |
 | Browsers | Chrome, Chromium, Edge, Firefox (not Safari) | Chrome, Chromium, Edge, Firefox | Chrome, Edge, Firefox |
 | Copied secrets kept out of clipboard history | Yes (marked so clipboard managers skip them), and off Universal Clipboard | No such feature | Yes |
@@ -367,9 +434,9 @@ rm ~/.local/bin/vault ~/.local/bin/vaultd ~/.local/bin/vault-gpg
 | Apps keep passwords in the vault (Secret Service) | Not applicable | Yes, opt-in | Not applicable |
 
 The vault file is the same everywhere: one made on a Mac opens on Linux and
-Windows, and you can [sync](10-sync.md) it between them. TPM slots made on
-another computer are skipped on a Mac; use the password, a security key or
-the recovery code there.
+Windows, and you can [sync](10-sync.md) it between them. TPM and Secure
+Enclave slots made on another computer don't work on this one; use the
+password, a security key or the recovery code there.
 
 ## Troubleshooting
 
@@ -394,9 +461,22 @@ from `target/release` too.
 **"Secret Vault can't be opened."** See the note under
 [With the archive](#with-the-archive-targz-no-administrator-password).
 
-**The installer "cannot be verified" or "can't be opened".** It is not
-signed with an Apple developer ID yet; step 2 of
+**The installer "cannot be verified" or "can't be opened".** That copy is
+not signed (`0.2.0-beta.1`, or a build you made); step 2 of
 [With the installer](#with-the-installer-pkg) shows how to open it anyway.
+In a signed release, the lock at the top right of the installer window
+shows the developer's name and "Developer ID Installer".
+
+**"This Mac has no Secure Enclave."** Intel Macs without a T2 chip don't
+have one; use a security key for the same kind of protection.
+
+**"Cannot start the Secure Enclave helper."** `vault-se` must be next to
+`vaultd`. The installed app has it; if you run `vaultd` from a build
+folder, run `contrib/macos/build-se.sh` once to put it in `target/release`.
+
+**"This slot was made by another Mac's Secure Enclave."** The vault came
+from another Mac through sync or a copy, or this Mac was erased. Unlock
+another way and add a new Secure Enclave slot.
 
 **The installation failed.** Open the Console app, or run
 `grep -i "secret vault" /var/log/install.log | tail`. The usual reason is

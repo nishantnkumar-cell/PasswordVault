@@ -1,0 +1,25 @@
+# cargo audit settings. Every ignored advisory says why it can't be fixed yet
+# and what lifts it. Review this list whenever pgp, libwebauthn or snow ship a
+# new release (docs/release-notes.md, "Library advisories: what is left").
+
+[advisories]
+ignore = [
+    # rsa 0.9 "Marvin" timing attack on RSA decryption and signing. Only pgp
+    # 0.21 (its newest release) pulls in rsa 0.9; rsa 0.10.0 has the fix but
+    # pgp has not moved to it yet (rpgp/rpgp#573). The vault refuses to store
+    # RSA secret keys (crates/vaultd/src/pgp.rs), so it never decrypts or
+    # signs with RSA; encrypting to RSA certificates and verifying RSA
+    # signatures use only public values. Lift when pgp moves to rsa 0.10.
+    "RUSTSEC-2023-0071",
+    # crypto-bigint 0.5 timing variability. Still pulled in through p256 0.13
+    # and friends by pgp 0.21, libwebauthn 0.10/0.11 and snow 0.10 (none has a
+    # release on the fixed 0.7 line yet). Where the vault keeps long-term
+    # secrets the vulnerable code is no longer used: SSH P-256 keys moved to
+    # ssh-key 0.7 (p256 0.14, crypto-bigint 0.7), and the vault refuses
+    # OpenPGP secret keys on NIST, brainpool, secp256k1 and 448-bit curves.
+    # What is left handles one-time keys only: the PIN exchange with a
+    # security key (libwebauthn), the phone-unlock tunnel (snow), and the
+    # throwaway key when encrypting to someone else's NIST-curve OpenPGP
+    # certificate. Lift when those crates move to p256 0.14.
+    "RUSTSEC-2026-0387",
+]

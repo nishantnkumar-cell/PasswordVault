@@ -9,12 +9,24 @@ permissions:
   contents: read
 
 jobs:
+  audit:
+    # Known security advisories in the libraries (Cargo.lock). Exceptions,
+    # each with its reason, are in .cargo/audit.toml.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2
+        with:
+          tool: cargo-audit
+      - run: cargo audit
+
   linux:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch
         with:
+          toolchain: stable
           components: rustfmt, clippy
       - run: sudo apt-get update && sudo apt-get install -y libtss2-dev libudev-dev libhidapi-dev libdbus-1-dev pkg-config swtpm swtpm-tools dbus libsecret-tools python3-secretstorage gnome-keyring
       - run: cargo fmt --all --check
@@ -43,8 +55,9 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch
         with:
+          toolchain: stable
           components: clippy
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
@@ -53,14 +66,27 @@ jobs:
   # under each run's Artifacts, versioned X.Y.Z-dev.<commit>.
   packages:
     uses: ./.github/workflows/package.yml
+    # The macOS job signs and notarizes when the Apple secrets are set.
+    secrets: inherit
 
   # Everything, including the daemon over a Unix socket, on macOS.
   macos:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch
         with:
+          toolchain: stable
           components: clippy
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
+      # The Secure Enclave helper's slot format, with a software key (runners
+      # have no Secure Enclave), and that the real helper builds.
+      - name: Secure Enclave helper
+        run: |
+          contrib/macos/build-se.sh target/se-real
+          VAULT_SE_SOFTWARE=1 contrib/macos/build-se.sh target/se-test
+          target/se-test/vault-se check
+          VAULT_SE_TEST_HELPER=$PWD/target/se-test/vault-se cargo test -p vault-hw --lib --locked enclave -- --nocapture
+          # The real one says plainly that there is no enclave here.
+          if target/se-real/vault-se check 2> se.err; then echo "runner has a Secure Enclave"; else cat se.err; grep -q "Secure Enclave" se.err; fi

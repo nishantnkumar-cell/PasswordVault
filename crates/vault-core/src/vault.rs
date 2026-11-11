@@ -44,8 +44,20 @@ struct BodyV1 {
     items: Vec<ItemRecord>,
 }
 
-/// The body with merge metadata (section 5.1). Readers try this first and
-/// fall back to [`BodyV1`].
+/// The body with merge metadata (section 5.1), before retired keys.
+#[derive(Serialize, Deserialize)]
+struct BodyV2 {
+    generation: u64,
+    slot_labels: Vec<(SlotId, String)>,
+    items: Vec<ItemRecord>,
+    clocks: Vec<(ItemId, Clock)>,
+    tombstones: Vec<(ItemId, Clock)>,
+    removed_slots: Vec<SlotId>,
+    key_epoch: u64,
+}
+
+/// The body with retired vault keys (section 5.1). Readers try this first
+/// and fall back to [`BodyV2`] and [`BodyV1`].
 #[derive(Serialize, Deserialize)]
 struct Body {
     generation: u64,
@@ -55,6 +67,7 @@ struct Body {
     tombstones: Vec<(ItemId, Clock)>,
     removed_slots: Vec<SlotId>,
     key_epoch: u64,
+    retired_keys: Vec<[u8; 32]>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -87,6 +100,10 @@ pub struct Vault {
     /// +1 on every revoke; on a merge of two different vault keys, the
     /// higher epoch wins.
     pub(crate) key_epoch: u64,
+    /// Fingerprints of every vault key this vault has moved on from (a
+    /// revoke, or taking a newer key in a merge), sorted. A copy under one of
+    /// these keys is old and is never merged, whatever epoch it claims.
+    pub(crate) retired_keys: Vec<[u8; 32]>,
     /// Who is editing, for the clocks. Not stored in the file.
     pub(crate) device: DeviceId,
 }
@@ -378,6 +395,9 @@ impl ParsedVault {
         let mut removed_slots = body.removed_slots;
         removed_slots.sort_unstable();
         removed_slots.dedup();
+        let mut retired_keys = body.retired_keys;
+        retired_keys.sort_unstable();
+        retired_keys.dedup();
 
         Ok(Vault {
             vault_id,
@@ -394,6 +414,7 @@ impl ParsedVault {
                 .collect(),
             removed_slots,
             key_epoch: body.key_epoch,
+            retired_keys,
             device: 0,
         })
     }
@@ -402,6 +423,18 @@ impl ParsedVault {
 fn decode_body(bytes: &[u8]) -> Result<Body, Error> {
     if let Ok(b) = format::decode_canonical::<Body>(bytes) {
         return Ok(b);
+    }
+    if let Ok(b) = format::decode_canonical::<BodyV2>(bytes) {
+        return Ok(Body {
+            generation: b.generation,
+            slot_labels: b.slot_labels,
+            items: b.items,
+            clocks: b.clocks,
+            tombstones: b.tombstones,
+            removed_slots: b.removed_slots,
+            key_epoch: b.key_epoch,
+            retired_keys: Vec::new(),
+        });
     }
     let v1: BodyV1 = format::decode_canonical(bytes).map_err(|_| Error::CorruptBody)?;
     Ok(Body {
@@ -412,6 +445,7 @@ fn decode_body(bytes: &[u8]) -> Result<Body, Error> {
         tombstones: Vec::new(),
         removed_slots: Vec::new(),
         key_epoch: 0,
+        retired_keys: Vec::new(),
     })
 }
 
@@ -430,6 +464,7 @@ impl Vault {
             tombstones: BTreeMap::new(),
             removed_slots: Vec::new(),
             key_epoch: 0,
+            retired_keys: Vec::new(),
             device: 0,
         })
     }
@@ -633,9 +668,23 @@ impl Vault {
         self.note_removed(&removed);
         self.slots = kept;
         self.items = items;
+        self.retire_key();
         self.vault_key = new_key;
         self.key_epoch = self.key_epoch.saturating_add(1);
         Ok(removed)
+    }
+
+    /// Fingerprint of a vault key. Only a holder of the key can compute it.
+    pub(crate) fn key_fingerprint(&self, key: &Key) -> [u8; 32] {
+        crypto::hmac(key, &[b"vault/retired/v1", &self.vault_id])
+    }
+
+    /// Record the current vault key as retired. Call before replacing it.
+    pub(crate) fn retire_key(&mut self) {
+        let fp = self.key_fingerprint(&self.vault_key);
+        if let Err(i) = self.retired_keys.binary_search(&fp) {
+            self.retired_keys.insert(i, fp);
+        }
     }
 
     pub(crate) fn note_removed(&mut self, ids: &[SlotId]) {
@@ -802,6 +851,7 @@ impl Vault {
                 .collect(),
             removed_slots: self.removed_slots.clone(),
             key_epoch: self.key_epoch,
+            retired_keys: self.retired_keys.clone(),
         };
         let encoded = Zeroizing::new(format::encode(&body));
         let mut plain = Zeroizing::new(vec![0u8; padded_len(8 + encoded.len())]);

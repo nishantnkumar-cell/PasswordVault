@@ -4,6 +4,11 @@
 
 pub mod approve;
 pub mod daemon;
+#[cfg(all(
+    any(feature = "logind", feature = "secret-service"),
+    target_os = "linux"
+))]
+pub mod dbus;
 pub use vault_hw as hw;
 #[cfg(all(feature = "logind", target_os = "linux"))]
 pub mod logind;

@@ -25,15 +25,15 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use crate::dbus::{Connection, DBusProxy, MessageIterator, Proxy};
 use vault_core::item::{CustomField, FieldKind, ItemData, ItemKind};
 use vault_core::{ItemId, OsRandom, SecureRandom};
-use zbus::blocking::{Connection, MessageIterator, fdo::DBusProxy};
 use zbus::fdo::RequestNameFlags;
 use zbus::fdo::RequestNameReply;
 use zbus::message::{Header, Type};
 use zbus::names::BusName;
-use zbus::zvariant::{ObjectPath, OwnedObjectPath, OwnedValue, Value};
 use zbus::{MatchRule, Message};
+use zbus::{ObjectPath, OwnedObjectPath, OwnedVariant, Variant};
 use zeroize::Zeroizing;
 
 use crate::approve::{self, AppPrompt, Prompt};
@@ -233,32 +233,36 @@ pub struct DhKey {
     pub public: Vec<u8>,
 }
 
-fn modp() -> crypto_bigint::U1024 {
-    crypto_bigint::U1024::from_be_hex(MODP1024)
+fn modp() -> crypto_bigint::modular::FixedMontyParams<{ crypto_bigint::U1024::LIMBS }> {
+    use crypto_bigint::{Odd, U1024};
+    crypto_bigint::modular::FixedMontyParams::new(Odd::<U1024>::from_be_hex(MODP1024))
+}
+
+/// `base^exp mod p` for the MODP 1024 group, in constant time, big-endian.
+fn modp_pow(base: &crypto_bigint::U1024, exp: &crypto_bigint::U1024) -> Zeroizing<[u8; 128]> {
+    use crypto_bigint::modular::FixedMontyForm;
+    let v = FixedMontyForm::new(base, &modp()).pow(exp).retrieve();
+    let mut out = Zeroizing::new([0u8; 128]);
+    out.copy_from_slice(v.to_be_bytes().as_ref());
+    out
 }
 
 impl DhKey {
     /// A fresh key pair.
     pub fn new() -> Result<DhKey, String> {
-        use crypto_bigint::modular::runtime_mod::{DynResidue, DynResidueParams};
-        use crypto_bigint::{Encoding, U1024};
+        use crypto_bigint::U1024;
         let mut private = Zeroizing::new([0u8; 128]);
         OsRandom
             .fill(&mut private[..])
             .map_err(|_| "no randomness")?;
         let x = U1024::from_be_slice(&private[..]);
-        let public = DynResidue::new(&U1024::from_u8(2), DynResidueParams::new(&modp()))
-            .pow(&x)
-            .retrieve()
-            .to_be_bytes()
-            .to_vec();
+        let public = modp_pow(&U1024::from_u8(2), &x).to_vec();
         Ok(DhKey { private, public })
     }
 
     /// The session key shared with the holder of `peer`.
     pub fn agree(&self, peer: &[u8]) -> Result<Zeroizing<[u8; 16]>, String> {
-        use crypto_bigint::modular::runtime_mod::{DynResidue, DynResidueParams};
-        use crypto_bigint::{Encoding, U1024};
+        use crypto_bigint::U1024;
         let peer = peer.strip_prefix(&[0u8][..]).unwrap_or(peer);
         if peer.is_empty() || peer.len() > 128 {
             return Err("bad public key".into());
@@ -266,18 +270,13 @@ impl DhKey {
         let mut padded = [0u8; 128];
         padded[128 - peer.len()..].copy_from_slice(peer);
         let y = U1024::from_be_slice(&padded);
-        let p = modp();
+        let p = U1024::from_be_hex(MODP1024);
         // 1 < y < p - 1, so the shared value is not trivially known.
         if y <= U1024::ONE || y >= p.wrapping_sub(&U1024::ONE) {
             return Err("bad public key".into());
         }
         let x = U1024::from_be_slice(&self.private[..]);
-        let shared = Zeroizing::new(
-            DynResidue::new(&y, DynResidueParams::new(&p))
-                .pow(&x)
-                .retrieve()
-                .to_be_bytes(),
-        );
+        let shared = modp_pow(&y, &x);
         let mut key = Zeroizing::new([0u8; 16]);
         hkdf::Hkdf::<sha2::Sha256>::new(None, &shared[..])
             .expand(&[], &mut key[..])
@@ -363,12 +362,6 @@ impl From<zbus::fdo::Error> for Fail {
     }
 }
 
-impl From<zbus::zvariant::Error> for Fail {
-    fn from(e: zbus::zvariant::Error) -> Fail {
-        Fail::Invalid(e.to_string())
-    }
-}
-
 struct PendingPrompt {
     owner: String,
     objects: Vec<OwnedObjectPath>,
@@ -439,11 +432,11 @@ pub fn serve(
     bus.add_match_rule(
         MatchRule::builder()
             .msg_type(Type::Signal)
-            .sender("org.freedesktop.DBus")?
-            .member("NameOwnerChanged")?
-            .build(),
+            .sender("org.freedesktop.DBus")
+            .member("NameOwnerChanged")
+            .build()?,
     )?;
-    match conn.request_name_with_flags(NAME, RequestNameFlags::DoNotQueue.into()) {
+    match conn.request_name_with_flags(NAME, RequestNameFlags::DO_NOT_QUEUE) {
         Ok(RequestNameReply::PrimaryOwner | RequestNameReply::AlreadyOwner) => {}
         Ok(_) | Err(zbus::Error::NameTaken) => return Err(Stop::NameTaken),
         Err(e) => return Err(e.into()),
@@ -553,7 +546,7 @@ impl Service {
 
     fn reply<B>(&self, h: &Header<'_>, body: &B) -> Res
     where
-        B: serde::Serialize + zbus::zvariant::DynamicType,
+        B: serde::Serialize + zbus::DynamicType,
     {
         let _ = self.conn.reply(h, body);
         Ok(())
@@ -747,15 +740,15 @@ impl Service {
         }
         match member {
             "OpenSession" => {
-                let (alg, input): (String, OwnedValue) = msg.body().deserialize()?;
+                let (alg, input): (String, OwnedVariant) = msg.body().deserialize()?;
                 let (output, cipher) = match alg.as_str() {
-                    "plain" => (Value::from(""), Cipher::Plain),
+                    "plain" => (Variant::from(""), Cipher::Plain),
                     "dh-ietf1024-sha256-aes128-cbc-pkcs7" => {
                         let peer: Vec<u8> = input
                             .try_into()
                             .map_err(|_| Fail::Invalid("expected a byte array".into()))?;
                         let (ours, key) = dh_exchange(&peer).map_err(Fail::Invalid)?;
-                        (Value::from(ours), Cipher::Aes(key))
+                        (Variant::from(ours), Cipher::Aes(key))
                     }
                     _ => return Err(Fail::NotSupported("unsupported session algorithm")),
                 };
@@ -845,7 +838,7 @@ impl Service {
                 ))
             }
             "CreateCollection" => {
-                let (_props, alias): (HashMap<String, OwnedValue>, String) =
+                let (_props, alias): (HashMap<String, OwnedVariant>, String) =
                     msg.body().deserialize()?;
                 if alias == "default" {
                     return self.reply(h, &(path(COLLECTION)?, path("/")?));
@@ -883,7 +876,7 @@ impl Service {
                 self.reply(h, &paths)
             }
             "CreateItem" => {
-                let (props, secret, replace): (HashMap<String, OwnedValue>, SecretStruct, bool) =
+                let (props, secret, replace): (HashMap<String, OwnedVariant>, SecretStruct, bool) =
                     msg.body().deserialize()?;
                 self.open_for(sender)?;
                 let label = match props.get(P_LABEL) {
@@ -1037,7 +1030,7 @@ impl Service {
     }
 
     fn complete(&self, p: &str, dismissed: bool, objects: Vec<OwnedObjectPath>) {
-        let result = Value::from(objects);
+        let result = Variant::from(objects);
         let _ = self
             .conn
             .emit_signal(None::<&str>, p, I_PROMPT, "Completed", &(dismissed, result));
@@ -1066,12 +1059,12 @@ impl Service {
             }
             "GetAll" => {
                 let iface: String = msg.body().deserialize()?;
-                let all: HashMap<&str, Value<'static>> =
+                let all: HashMap<&str, Variant<'static>> =
                     self.props(p, &iface, sender, None)?.into_iter().collect();
                 self.reply(h, &all)
             }
             "Set" => {
-                let (iface, name, value): (String, String, OwnedValue) =
+                let (iface, name, value): (String, String, OwnedVariant) =
                     msg.body().deserialize()?;
                 let id = item_id(p)
                     .filter(|_| iface == I_ITEM)
@@ -1099,18 +1092,21 @@ impl Service {
         iface: &str,
         sender: &str,
         only: Option<&str>,
-    ) -> Result<Vec<(&'static str, Value<'static>)>, Fail> {
+    ) -> Result<Vec<(&'static str, Variant<'static>)>, Fail> {
         let locked = !self.lock().is_unlocked();
         let wants = |n: &str| only.is_none_or(|o| o == n);
         if p == SERVICE && iface == I_SERVICE {
-            return Ok(vec![("Collections", Value::from(vec![path(COLLECTION)?]))]);
+            return Ok(vec![(
+                "Collections",
+                Variant::from(vec![path(COLLECTION)?]),
+            )]);
         }
         if is_collection(p) && iface == I_COLLECTION {
             let mut out = vec![
-                ("Label", Value::from("Vault")),
-                ("Locked", Value::from(locked)),
-                ("Created", Value::from(0u64)),
-                ("Modified", Value::from(0u64)),
+                ("Label", Variant::from("Vault")),
+                ("Locked", Variant::from(locked)),
+                ("Created", Variant::from(0u64)),
+                ("Modified", Variant::from(0u64)),
             ];
             if wants("Items") {
                 let items: Vec<OwnedObjectPath> = if locked {
@@ -1122,7 +1118,7 @@ impl Service {
                         .map(|(id, _)| item_path(id))
                         .collect()
                 };
-                out.push(("Items", Value::from(items)));
+                out.push(("Items", Variant::from(items)));
             }
             return Ok(out);
         }
@@ -1130,16 +1126,16 @@ impl Service {
             && iface == I_ITEM
         {
             if only == Some("Locked") {
-                return Ok(vec![("Locked", Value::from(locked))]);
+                return Ok(vec![("Locked", Variant::from(locked))]);
             }
             self.open_for(sender)?;
             let item = self.get(&id)?;
             return Ok(vec![
-                ("Locked", Value::from(false)),
-                ("Label", Value::from(item.title.clone())),
-                ("Attributes", Value::from(attributes(&item))),
-                ("Created", Value::from(item.created)),
-                ("Modified", Value::from(item.modified)),
+                ("Locked", Variant::from(false)),
+                ("Label", Variant::from(item.title.clone())),
+                ("Attributes", Variant::from(attributes(&item))),
+                ("Created", Variant::from(item.created)),
+                ("Modified", Variant::from(item.modified)),
             ]);
         }
         if p.starts_with(SESSIONS) || p.starts_with(PROMPTS) {
@@ -1169,10 +1165,10 @@ pub struct Read {
 
 fn get<T>(conn: &Connection, path: &str, iface: &str, name: &str) -> Result<T, String>
 where
-    T: TryFrom<OwnedValue>,
-    <T as TryFrom<OwnedValue>>::Error: std::fmt::Display,
+    T: TryFrom<OwnedVariant>,
+    <T as TryFrom<OwnedVariant>>::Error: std::fmt::Display,
 {
-    let v: OwnedValue = zbus::blocking::Proxy::new(conn, NAME, path, I_PROPS)
+    let v: OwnedVariant = Proxy::new(conn, NAME, path, I_PROPS)
         .and_then(|p| p.call("Get", &(iface, name)))
         .map_err(|e| format!("{path}: {e}"))?;
     T::try_from(v).map_err(|e| format!("{path} {name}: {e}"))
@@ -1186,8 +1182,7 @@ fn unlock_other(
     collection: &OwnedObjectPath,
     wait: Duration,
 ) -> Result<bool, String> {
-    let service =
-        zbus::blocking::Proxy::new(conn, NAME, SERVICE, I_SERVICE).map_err(|e| e.to_string())?;
+    let service = Proxy::new(conn, NAME, SERVICE, I_SERVICE).map_err(|e| e.to_string())?;
     let (_, prompt): (Vec<OwnedObjectPath>, OwnedObjectPath) = service
         .call("Unlock", &(vec![collection.clone()],))
         .map_err(|e| format!("unlocking {collection}: {e}"))?;
@@ -1195,21 +1190,20 @@ fn unlock_other(
         let rule = MatchRule::builder()
             .msg_type(Type::Signal)
             .interface(I_PROMPT)
-            .and_then(|r| r.member("Completed"))
-            .and_then(|r| r.path(prompt.as_str()))
-            .map_err(|e| e.to_string())?
-            .build();
+            .member("Completed")
+            .path(prompt.as_str())
+            .build()
+            .map_err(|e| e.to_string())?;
         let mut signals =
             MessageIterator::for_match_rule(rule, conn, None).map_err(|e| e.to_string())?;
-        let p = zbus::blocking::Proxy::new(conn, NAME, prompt.as_str(), I_PROMPT)
-            .map_err(|e| e.to_string())?;
+        let p = Proxy::new(conn, NAME, prompt.as_str(), I_PROMPT).map_err(|e| e.to_string())?;
         let () = p.call("Prompt", &("",)).map_err(|e| e.to_string())?;
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
             if let Some(Ok(msg)) = signals.next() {
                 let _ = tx.send(
                     msg.body()
-                        .deserialize::<(bool, OwnedValue)>()
+                        .deserialize::<(bool, OwnedVariant)>()
                         .map(|x| x.0)
                         .unwrap_or(true),
                 );
@@ -1236,14 +1230,13 @@ fn unlock_other(
 /// `wait`; those that stay locked are skipped. The transient `session`
 /// collection is left out.
 pub fn read_other(conn: &Connection, wait: Duration) -> Result<Read, String> {
-    let service =
-        zbus::blocking::Proxy::new(conn, NAME, SERVICE, I_SERVICE).map_err(|e| e.to_string())?;
+    let service = Proxy::new(conn, NAME, SERVICE, I_SERVICE).map_err(|e| e.to_string())?;
     let dh = DhKey::new()?;
-    let (cipher, session) = match service.call::<_, _, (OwnedValue, OwnedObjectPath)>(
+    let (cipher, session) = match service.call::<_, (OwnedVariant, OwnedObjectPath)>(
         "OpenSession",
         &(
             "dh-ietf1024-sha256-aes128-cbc-pkcs7",
-            Value::from(dh.public.clone()),
+            Variant::from(dh.public.clone()),
         ),
     ) {
         Ok((out, session)) => {
@@ -1251,8 +1244,8 @@ pub fn read_other(conn: &Connection, wait: Duration) -> Result<Read, String> {
             (Cipher::Aes(dh.agree(&theirs)?), session)
         }
         Err(_) => {
-            let (_, session): (OwnedValue, OwnedObjectPath) = service
-                .call("OpenSession", &("plain", Value::from("")))
+            let (_, session): (OwnedVariant, OwnedObjectPath) = service
+                .call("OpenSession", &("plain", Variant::from("")))
                 .map_err(|e| format!("no Secret Service is running ({e})"))?;
             (Cipher::Plain, session)
         }
@@ -1298,8 +1291,8 @@ pub fn read_other(conn: &Connection, wait: Duration) -> Result<Read, String> {
             });
         }
     }
-    let _: zbus::Result<()> = zbus::blocking::Proxy::new(conn, NAME, session.as_str(), I_SESSION)
-        .and_then(|p| p.call("Close", &()));
+    let _: zbus::Result<()> =
+        Proxy::new(conn, NAME, session.as_str(), I_SESSION).and_then(|p| p.call("Close", &()));
     Ok(out)
 }
 
@@ -1496,22 +1489,14 @@ mod tests {
 
     #[test]
     fn dh_sessions_agree_and_encrypt() {
-        use crypto_bigint::modular::runtime_mod::{DynResidue, DynResidueParams};
-        use crypto_bigint::{Encoding, U1024};
+        use crypto_bigint::U1024;
         // A client with private value 12345.
-        let p = U1024::from_be_hex(MODP1024);
-        let params = DynResidueParams::new(&p);
         let x = U1024::from_u32(12345);
-        let client = DynResidue::new(&U1024::from_u8(2), params)
-            .pow(&x)
-            .retrieve();
-        let (server, key) = dh_exchange(&client.to_be_bytes()).unwrap();
-        let shared = DynResidue::new(&U1024::from_be_slice(&server), params)
-            .pow(&x)
-            .retrieve()
-            .to_be_bytes();
+        let client = modp_pow(&U1024::from_u8(2), &x);
+        let (server, key) = dh_exchange(&client[..]).unwrap();
+        let shared = modp_pow(&U1024::from_be_slice(&server), &x);
         let mut ckey = [0u8; 16];
-        hkdf::Hkdf::<sha2::Sha256>::new(None, &shared)
+        hkdf::Hkdf::<sha2::Sha256>::new(None, &shared[..])
             .expand(&[], &mut ckey)
             .unwrap();
         assert_eq!(ckey, *key);
@@ -1523,7 +1508,7 @@ mod tests {
         assert!(c.open(&iv[..8], &ct).is_err());
 
         assert!(dh_exchange(&[1]).is_err());
-        assert!(dh_exchange(&p.to_be_bytes()).is_err());
+        assert!(dh_exchange(U1024::from_be_hex(MODP1024).to_be_bytes().as_ref()).is_err());
         assert!(dh_exchange(&[]).is_err());
     }
 

@@ -3,7 +3,7 @@
 use eframe::egui::Key;
 use eframe::egui::accesskit::Role;
 use egui_kittest::Harness;
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 use vault_gui::prompt::{Ask, Prompt, Request};
 
 fn window(autofill: bool) -> Harness<'static, Prompt> {
@@ -58,6 +58,8 @@ fn deny_has_the_focus_and_enter_does_not_allow() {
 #[test]
 fn allow_and_escape() {
     let mut h = window(false);
+    h.state_mut().skip_allow_delay();
+    h.step();
     h.get_by_role_and_label(Role::Button, "Allow").click();
     h.step();
     assert_eq!(h.state().answer, Some(true));
@@ -77,6 +79,8 @@ fn a_card_fill_names_the_card_and_the_site() {
     assert!(h.query_by_label_contains("Fill Travel (Visa").is_some());
     assert!(h.query_by_label("https://shop.example").is_some());
     assert!(h.get_by_role_and_label(Role::Button, "Deny").is_focused());
+    h.state_mut().skip_allow_delay();
+    h.step();
     h.get_by_role_and_label(Role::Button, "Allow").click();
     h.step();
     assert_eq!(h.state().answer, Some(true));
@@ -120,7 +124,26 @@ fn an_app_asking_for_its_passwords_shows_its_command_line() {
             .is_some()
     );
     assert!(h.get_by_role_and_label(Role::Button, "Deny").is_focused());
+    h.state_mut().skip_allow_delay();
+    h.step();
     h.get_by_role_and_label(Role::Button, "Allow").click();
     h.step();
     assert_eq!(h.state().answer, Some(true));
+}
+
+#[test]
+fn allow_is_grey_until_the_window_has_had_the_focus_a_while() {
+    let mut h = window(false);
+    let allow = h.get_by_role_and_label(Role::Button, "Allow");
+    assert!(allow.accesskit_node().is_disabled());
+    allow.click();
+    h.step();
+    assert_ne!(h.state().answer, Some(true));
+    h.state_mut().skip_allow_delay();
+    h.step();
+    assert!(
+        !h.get_by_role_and_label(Role::Button, "Allow")
+            .accesskit_node()
+            .is_disabled()
+    );
 }

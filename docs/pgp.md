@@ -29,7 +29,7 @@ Both post-quantum algorithms are hybrids: they stay secure if either half does. 
 
 Encrypting to only v6 keys uses SEIPDv2 (AES-256-OCB); any v4 recipient makes it SEIPDv1 (AES-256 with MDC) so that recipient can read it.
 
-RSA, DSA and ElGamal secret keys are refused (the `rsa` crate has no constant-time fix for the Marvin attack). Encrypting to RSA certificates and verifying RSA signatures are public operations and work.
+Only secret keys on Curve25519 are stored: Ed25519, X25519 (also in their v4 "legacy" encodings) and the ML-DSA-65+Ed25519 / ML-KEM-768+X25519 hybrids. Everything else is refused on import, because pgp 0.21 handles it with code that is not constant-time: RSA (the `rsa` 0.9 Marvin attack, RUSTSEC-2023-0071), NIST P-256/P-384/P-521, brainpool and secp256k1 (crypto-bigint 0.5, RUSTSEC-2026-0387), Ed448/X448 (`cx448`, also on crypto-bigint 0.5), and DSA and ElGamal. Encrypting to such certificates and verifying their signatures are public operations and work. Keys imported before this check keep working. Loosen the list when pgp moves to rsa 0.10 and p256 0.14 (rpgp/rpgp#573).
 
 ## Tested with GnuPG 2.4
 

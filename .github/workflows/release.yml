@@ -18,6 +18,8 @@ permissions:
 jobs:
   packages:
     uses: ./.github/workflows/package.yml
+    # The macOS job signs and notarizes when the Apple secrets are set.
+    secrets: inherit
 
   # The Android APK, signed with the release key. Skipped, with a warning on
   # the run, when the secrets are not set.
@@ -38,9 +40,10 @@ jobs:
           fi
       - uses: actions/checkout@v7
         if: env.HAVE_KEY == 'true'
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch
         if: env.HAVE_KEY == 'true'
         with:
+          toolchain: stable
           targets: aarch64-linux-android,x86_64-linux-android
       - uses: actions/setup-java@v5
         if: env.HAVE_KEY == 'true'

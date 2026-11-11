@@ -33,13 +33,15 @@ cd "$(dirname "$0")/../.."
 
 ver=${1:?usage: package.sh VERSION}
 num=${ver%%-*}
-bins=(vaultd vault vault-gui vault-prompt vault-native-host vault-gpg)
+bins=(vaultd vault vault-gui vault-prompt vault-native-host vault-gpg vault-se)
 bin_dir=${BIN_DIR:-target/release}
 arch=${ARCH:-$(uname -m)}
 out=target/packages
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$out"
+# vault-se (the Secure Enclave helper) is Swift, not built by cargo.
+[ -x "$bin_dir/vault-se" ] || contrib/macos/build-se.sh "$bin_dir"
 
 # The app bundle, once, then copied into each package.
 bundle="$work/Secret Vault.app"
