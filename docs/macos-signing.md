@@ -85,6 +85,19 @@ this with `contrib/macos/ci-signing.sh`:
 | `APPLE_API_KEY_P8` | The App Store Connect API key (`.p8`), base64 |
 | `APPLE_API_KEY_ID`, `APPLE_API_ISSUER_ID` | Its key ID and issuer ID |
 
+**Pull requests never get these secrets.** A pull request builds the code,
+which runs every dependency's build script, so the workflows pass the
+secrets only to pushes, tags and manual runs: on a pull request the Mac
+packages are signed ad hoc and the iPhone app is archived without signing.
+Third-party actions in the workflows are pinned to commit SHAs, which
+Dependabot (`.github/dependabot.yml`) keeps up to date.
+
+For a second lock, make the secrets *environment* secrets: in the repository's
+Settings, Environments, create `release`, allow only the `main` branch and
+`v*` tags to deploy to it, tick "Required reviewers" with yourself, and move
+the five secrets there; then add `environment: release` to the signing jobs.
+That needs repository settings, so it is left to the owner.
+
 The same API key uploads the iPhone app to TestFlight
 ([mobile.md](mobile.md#testflight)). Without the certificates the job warns
 "macOS build not signed"; with them but without the API key it warns

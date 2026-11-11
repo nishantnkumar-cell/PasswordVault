@@ -40,9 +40,10 @@ jobs:
           fi
       - uses: actions/checkout@v7
         if: env.HAVE_KEY == 'true'
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch
         if: env.HAVE_KEY == 'true'
         with:
+          toolchain: stable
           targets: aarch64-linux-android,x86_64-linux-android
       - uses: actions/setup-java@v5
         if: env.HAVE_KEY == 'true'

@@ -1,0 +1,17 @@
+# Weekly update pull requests, so a library or action with a fixed
+# vulnerability (or a changed pin) is noticed, not forgotten. Third-party
+# actions in .github/workflows are pinned to commit SHAs; Dependabot updates
+# the SHA and the version comment together.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      rust-minor-and-patch:
+        update-types: [minor, patch]
