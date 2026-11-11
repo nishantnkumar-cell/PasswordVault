@@ -27,7 +27,7 @@ Build without hardware support with `cargo build -p vaultd --no-default-features
 
 CI builds both targets, joins them with `contrib/macos/universal.sh` (`lipo`) and packages with `BIN_DIR=target/universal ARCH=universal`; the job installs the `.pkg` on the runner, checks it, upgrades in place and uninstalls. Signing with a Developer ID and notarizing: [macos-signing.md](macos-signing.md). User steps: [user-guide/13-macos.md](user-guide/13-macos.md).
 
-- **Peer check:** `getpeereid` for the UID and `LOCAL_PEERPID` for the PID shown in the approval window (Linux uses `SO_PEERCRED`). The window names the program through `proc_pidpath` and its command line through `ps`.
+- **Peer check:** `getpeereid` for the UID and `LOCAL_PEERPID` for the PID shown in the approval window (Linux uses `SO_PEERCRED` for the UID, and on kernel 6.5 or later `SO_PEERPIDFD` for the PID: the pidfd is held for the whole connection, so the PID cannot be reused by another process and the program path is read for the real peer). The window names the program through `proc_pidpath` and its command line through `ps`.
 - **Hardening:** `RLIMIT_CORE` 0 and `ptrace(PT_DENY_ATTACH)`. There is no `mlockall` on macOS; swap is always encrypted with a key the kernel holds.
 - **Quick unlock:** `vault_hw::touchid` asks LocalAuthentication with `LAPolicyDeviceOwnerAuthentication` (Touch ID, Apple Watch, or the login password), in the same `Presence` role as Windows Hello: it releases the parked vault key and never opens a vault alone. It needs vaultd in the user's GUI session; from an SSH login it fails with `LAErrorNotInteractive`.
 - **FIDO2:** direct USB HID through `ctap-hid-fido2`, as on Linux; FIDO usage-page devices need no TCC permission.
@@ -56,7 +56,7 @@ A client asks with no factor. vaultd runs `vault-prompt` (found next to `vaultd`
 
 - One prompt at a time; a second request is refused while one is open.
 - After a decline or a timeout, new requests are refused for 10 seconds, so a client cannot keep the window popping up.
-- The program path is informational: on Linux the PID could be reused between connecting and the lookup (pidfd-based identification is still open), and a same-user program can always pose as another one.
+- The program path is informational: on Linux before kernel 6.5 the PID could be reused between connecting and the lookup (6.5 and later hold a pidfd, so it cannot), and a same-user program can always pose as another one.
 - `--no-prompt` turns it off, and a daemon running as its own system user (`vaultd@.service`) never shows it, since it has no desktop: pairing there needs an unlock method.
 
 The same window confirms each card the browser asks to fill (docs/browser.md, Cards and addresses), with the same one-at-a-time rule and cooldown.
@@ -138,7 +138,6 @@ It creates throwaway credentials, asks for hmac-secret twice in touch-only mode 
 
 ## Not done yet
 
-- Identifying the pairing client by pidfd (`SO_PEERPIDFD`) instead of its PID.
 - macOS: Secure Enclave slots and locking on screen lock or sleep (see [macOS](#macos)). Windows: see windows.md.
 - Secret Service: approvals are not saved across restarts, and import cannot read GNOME Keyring or KWallet files without their service running.
 - The desktop app (docs/desktop.md) has no file picker for imports and no revoke; use the CLI for revoke.

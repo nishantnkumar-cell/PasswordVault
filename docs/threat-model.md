@@ -136,5 +136,5 @@ The attacker copies the vault file today (for example from a sync folder or a ba
 
 ## 8. Open items
 
-- Verify `tss-esapi` session encryption API, `SO_PEERPIDFD` kernel availability, and clipboard hint conventions (brief section 9 and 12).
+- Verify `tss-esapi` session encryption API and clipboard hint conventions (brief section 9 and 12).
 - Decide whether the rollback counter moves into TPM NV storage once the TPM slot exists.

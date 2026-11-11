@@ -181,23 +181,78 @@ mod unix {
 
     use super::*;
 
-    /// The peer's UID and, where the OS says, its PID.
+    /// What keeps a peer's PID from being reused while it is in use: its
+    /// pidfd (Linux 6.5 and later), held until the connection ends.
     #[cfg(target_os = "linux")]
-    fn peer(conn: &UnixStream) -> Option<(u32, Option<u32>)> {
-        use nix::sys::socket::{getsockopt, sockopt::PeerCredentials};
+    type PeerGuard = Option<std::os::fd::OwnedFd>;
+    #[cfg(not(target_os = "linux"))]
+    type PeerGuard = ();
+
+    /// The peer's UID and, where the OS says, its PID.
+    ///
+    /// On Linux 6.5 and later the PID comes from the peer's pidfd
+    /// (`SO_PEERPIDFD`), which is kept open for the whole connection: the PID
+    /// cannot be given to another process meanwhile, so `/proc/<pid>/exe` read
+    /// for the approval window names the program that is really connected.
+    /// Older kernels fall back to `SO_PEERCRED`, whose PID could in theory be
+    /// reused after the peer exits.
+    #[cfg(target_os = "linux")]
+    fn peer(conn: &UnixStream) -> Option<(u32, Option<u32>, PeerGuard)> {
+        use nix::sys::socket::{getsockopt, sockopt::PeerCredentials, sockopt::PeerPidfd};
         let cred = getsockopt(conn, PeerCredentials).ok()?;
-        Some((cred.uid(), cred.pid().try_into().ok()))
+        let cred_pid: Option<u32> = cred.pid().try_into().ok();
+        match getsockopt(conn, PeerPidfd) {
+            Ok(fd) => {
+                let pid = std::fs::read_to_string(format!(
+                    "/proc/self/fdinfo/{}",
+                    std::os::fd::AsRawFd::as_raw_fd(&fd)
+                ))
+                .ok()
+                .and_then(|t| pid_from_fdinfo(&t));
+                // A pidfd whose process is gone has no PID: say none, not a stale one.
+                Some((cred.uid(), pid, Some(fd)))
+            }
+            Err(_) => Some((cred.uid(), cred_pid, None)),
+        }
+    }
+
+    /// The `Pid:` line of `/proc/self/fdinfo/<pidfd>`: -1 once the process has exited.
+    #[cfg(target_os = "linux")]
+    pub(super) fn pid_from_fdinfo(text: &str) -> Option<u32> {
+        let pid: i64 = text
+            .lines()
+            .find_map(|l| l.strip_prefix("Pid:"))?
+            .trim()
+            .parse()
+            .ok()?;
+        u32::try_from(pid).ok().filter(|p| *p > 0)
     }
 
     /// The peer's UID and, where the OS says, its PID.
     #[cfg(target_os = "macos")]
-    fn peer(conn: &UnixStream) -> Option<(u32, Option<u32>)> {
+    fn peer(conn: &UnixStream) -> Option<(u32, Option<u32>, PeerGuard)> {
         use nix::sys::socket::{getsockopt, sockopt::LocalPeerPid};
         let (uid, _) = nix::unistd::getpeereid(conn).ok()?;
         let pid = getsockopt(conn, LocalPeerPid)
             .ok()
             .and_then(|p| p.try_into().ok());
-        Some((uid.as_raw(), pid))
+        Some((uid.as_raw(), pid, ()))
+    }
+
+    #[cfg(all(test, target_os = "linux"))]
+    #[test]
+    fn peer_pid_is_this_process_with_or_without_a_pidfd() {
+        let dir = std::env::temp_dir().join(format!("peer-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("s");
+        let l = UnixListener::bind(&path).unwrap();
+        let _client = UnixStream::connect(&path).unwrap();
+        let (conn, _) = l.accept().unwrap();
+        let (uid, pid, guard) = peer(&conn).unwrap();
+        assert_eq!(uid, nix::unistd::getuid().as_raw());
+        // Kernels before 6.5 give no pidfd and the PID comes from SO_PEERCRED.
+        assert_eq!(pid, Some(std::process::id()), "pidfd: {}", guard.is_some());
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     /// Who may connect: a UID.
@@ -250,7 +305,7 @@ mod unix {
             let Ok(mut conn) = conn else { continue };
             let f = f.clone();
             std::thread::spawn(move || {
-                let Some((uid, pid)) = peer(&conn) else {
+                let Some((uid, pid, _guard)) = peer(&conn) else {
                     return;
                 };
                 if uid != owner {
@@ -429,5 +484,17 @@ mod windows {
                 f(conn, pid);
             });
         }
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod pidfd_tests {
+    #[test]
+    fn reads_the_pid_from_fdinfo() {
+        let text = "pos:\t0\nflags:\t02000000\nmnt_id:\t16\nino:\t1031\nPid:\t4242\nNSpid:\t4242\n";
+        assert_eq!(super::unix::pid_from_fdinfo(text), Some(4242));
+        // A process that has exited shows -1.
+        assert_eq!(super::unix::pid_from_fdinfo("Pid:\t-1\n"), None);
+        assert_eq!(super::unix::pid_from_fdinfo("nothing here"), None);
     }
 }
