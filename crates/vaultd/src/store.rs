@@ -15,6 +15,24 @@ pub struct Store {
     _lock: File,
 }
 
+/// Most snapshots kept.
+pub const KEEP_SNAPSHOTS: usize = 20;
+/// Least time between two automatic snapshots.
+pub const AUTO_SNAPSHOT_GAP: std::time::Duration = std::time::Duration::from_secs(600);
+
+/// A kept copy of the vault file.
+pub struct SnapshotFile {
+    pub name: String,
+    pub taken: u64,
+    pub size: u64,
+}
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
+}
+
 #[derive(Serialize, Deserialize, Default)]
 struct Generations(Vec<([u8; 16], u64)>);
 
@@ -59,9 +77,96 @@ impl Store {
         fs::read(&self.vault)
     }
 
-    /// Write atomically: temp file, fsync, rename, fsync directory.
+    /// Write atomically: temp file, fsync, rename, fsync directory. The
+    /// file being replaced is kept as a snapshot first (at most one every
+    /// [`AUTO_SNAPSHOT_GAP`]).
     pub fn write(&self, bytes: &[u8]) -> io::Result<()> {
+        let _ = self.snapshot("auto");
         write_atomic(&self.vault, bytes)
+    }
+
+    fn snapshot_dir(&self) -> PathBuf {
+        self.state_dir.join("snapshots")
+    }
+
+    /// Keep a copy of the vault file as it is now, before something changes
+    /// it. `reason` is a short word (`auto`, `merge`, `revoke`, `import`,
+    /// `remove-slot`). The reasons `auto` and `merge` are rate limited;
+    /// the others are always kept. A copy identical to the newest one is not
+    /// kept again, and only the newest [`KEEP_SNAPSHOTS`] stay.
+    pub fn snapshot(&self, reason: &str) -> io::Result<()> {
+        let bytes = match fs::read(&self.vault) {
+            Ok(b) => b,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => return Err(e),
+        };
+        let dir = self.snapshot_dir();
+        fs::create_dir_all(&dir)?;
+        let list = self.snapshots();
+        if let Some(newest) = list.last() {
+            let rate_limited = matches!(reason, "auto" | "merge");
+            if rate_limited && unix_now().saturating_sub(newest.taken) < AUTO_SNAPSHOT_GAP.as_secs()
+            {
+                return Ok(());
+            }
+            if fs::read(dir.join(&newest.name)).is_ok_and(|b| b == bytes) {
+                return Ok(());
+            }
+        }
+        let reason: String = reason
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+            .take(16)
+            .collect();
+        let mut taken = unix_now();
+        // Two snapshots in one second must still sort in order.
+        if let Some(newest) = list.last() {
+            taken = taken.max(newest.taken + 1);
+        }
+        write_atomic(&dir.join(format!("{taken:012}-{reason}.svault")), &bytes)?;
+        let mut all = self.snapshots();
+        while all.len() > KEEP_SNAPSHOTS {
+            let old = all.remove(0);
+            let _ = fs::remove_file(dir.join(old.name));
+        }
+        Ok(())
+    }
+
+    /// The snapshots, oldest first.
+    pub fn snapshots(&self) -> Vec<SnapshotFile> {
+        let mut out: Vec<SnapshotFile> = fs::read_dir(self.snapshot_dir())
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter_map(|e| {
+                let name = e.file_name().to_string_lossy().into_owned();
+                let taken = name.split('-').next()?.parse::<u64>().ok()?;
+                name.ends_with(".svault").then_some(())?;
+                Some(SnapshotFile {
+                    taken,
+                    size: e.metadata().ok()?.len(),
+                    name,
+                })
+            })
+            .collect();
+        out.sort_by(|a, b| a.name.cmp(&b.name));
+        out
+    }
+
+    /// A snapshot's bytes, by the name `snapshots` gave (or the newest when
+    /// `name` is `None`). Nothing outside the snapshot folder can be named.
+    pub fn read_snapshot(&self, name: &str) -> io::Result<Vec<u8>> {
+        let found = self
+            .snapshots()
+            .into_iter()
+            .find(|s| s.name == name || s.name.trim_end_matches(".svault") == name)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no such snapshot"))?;
+        fs::read(self.snapshot_dir().join(found.name))
+    }
+
+    /// The vault file as it is on disk now.
+    pub fn read_vault_file(&self) -> io::Result<Vec<u8>> {
+        fs::read(&self.vault)
     }
 
     /// Last generation seen for this vault.

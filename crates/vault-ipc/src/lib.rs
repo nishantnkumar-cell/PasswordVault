@@ -403,6 +403,22 @@ pub enum Request {
     /// inside the encryption, signatures and all (gpg's `--unwrap`), so the
     /// caller can check them.
     PgpUnwrap { message: Vec<u8> },
+    /// List the automatic snapshots of the vault file, oldest first.
+    Snapshots,
+    /// The encrypted vault file (as it is now, or a snapshot by name) so a
+    /// client can save it somewhere. Answers with `VaultFile`.
+    ExportVault { snapshot: Option<String> },
+}
+
+/// A kept copy of the vault file (`Request::Snapshots`).
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SnapshotInfo {
+    /// Its name, for `ExportVault`.
+    pub name: String,
+    /// When it was taken, seconds since the Unix epoch.
+    pub taken: u64,
+    /// Size in bytes.
+    pub size: u64,
 }
 
 /// A program allowed to use the Secret Service.
@@ -559,6 +575,8 @@ pub enum Response {
         already: usize,
         skipped: Vec<String>,
     },
+    /// The snapshots of the vault file, oldest first.
+    Snapshots(Vec<SnapshotInfo>),
 }
 
 /// Write one frame: u32 little-endian length, then postcard bytes.

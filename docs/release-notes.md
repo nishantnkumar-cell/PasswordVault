@@ -1188,6 +1188,24 @@ the vault unlocked.
 
 How to use it: [Programs that call gpg](user-guide/09-gpg-programs.md).
 
+### Automatic snapshots and `vault backup`
+
+- **A safety net for merges, imports and revokes.** Before `vaultd` writes
+  a merged, imported, re-keyed or slot-removed vault, it keeps the file as
+  it was (and one copy every ten minutes for ordinary edits), 20 in all.
+  `vault snapshots` lists them and `vault backup --snapshot NAME FILE`
+  saves one. Putting one back is a manual copy, written up in the
+  troubleshooting chapter.
+- **`vault backup FILE`** saves the encrypted vault file through the
+  daemon, which works when `vaultd` runs as its own Linux system user. It
+  will not replace an existing file without `--force`.
+- Same on Linux, Windows and macOS (the commands and the snapshot folder
+  next to the daemon's state). The desktop app and the phone apps do not
+  show snapshots yet. A snapshot keeps the slots it had when taken, so
+  delete old ones after a revoke.
+
+How to use it: [Back up your vault](user-guide/08-troubleshooting.md#back-up-your-vault).
+
 ### App icon: a keyhole on a red tile
 
 - **Secret Vault has its own icon.** A white keyhole on a signal-red tile
