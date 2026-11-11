@@ -5,6 +5,7 @@
 pub mod app;
 pub mod client;
 pub mod icon;
+pub mod kit;
 pub mod prompt;
 pub mod theme;
 

@@ -101,6 +101,14 @@ methods, so:
 - write it on paper or print it, and keep it away from the computer;
 - do not save it in a file, a screenshot or a photo on this computer.
 
+**Print an emergency kit page** opens a one-page sheet in your browser with
+the code, the steps to use it and where the vault file lives on Linux,
+Windows and macOS, ready to print and put in a drawer or safe. The page is
+written to the temporary folder (readable only by you) and deleted again
+90 seconds later, so print it right away. It exists only here, at setup:
+the code is not shown again. (The screenshot below was taken before this
+button was added.)
+
 Tick **I've written down my recovery code and put it somewhere safe**, then
 press **Continue**. You can't go on until the box is ticked.
 
