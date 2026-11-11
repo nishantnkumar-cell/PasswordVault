@@ -7166,6 +7166,7 @@ dependencies = [
 name = "vault-mobile"
 version = "0.2.0"
 dependencies = [
+ "getrandom 0.4.3",
  "pgp",
  "rand 0.8.8",
  "ssh-key",
