@@ -147,15 +147,20 @@ final class TourTests: XCTestCase {
         tapScrolling(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", label)).firstMatch)
         XCTAssertTrue(app.buttons[expect].waitForExistence(timeout: 10))
         shot(label.lowercased().replacingOccurrences(of: " ", with: "-"))
-        // UIKit names every back button "BackButton". On iPad it shows only a
-        // chevron and its navigation bar has no title to look up, so find it
-        // by that identifier (or by the "Settings" label on iPhone).
+        // On iPhone the page is pushed over Settings and has a back button.
+        // On iPad the split view shows it in the detail column, beside the
+        // Settings list, with no back button: the list stays tappable.
         let back = app.navigationBars.buttons.matching(
             NSPredicate(format: "identifier == 'BackButton' OR label == 'Settings' OR label == 'Back'")
         ).firstMatch
-        XCTAssertTrue(back.waitForExistence(timeout: 10), "no back button on \(title)")
-        back.tap()
-        XCTAssertTrue(app.buttons[expect].waitForNonExistence(timeout: 10))
+        if back.waitForExistence(timeout: 3) {
+            back.tap()
+            XCTAssertTrue(app.buttons[expect].waitForNonExistence(timeout: 10))
+        } else {
+            let list = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", label)).firstMatch
+            if !list.exists { print(app.debugDescription) }
+            XCTAssertTrue(list.exists, "\(title) has no back button and hides the Settings list")
+        }
     }
 
     // MARK: Helpers
