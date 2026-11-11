@@ -4,7 +4,8 @@
 //! Every method here changes the vault in memory only. The app calls
 //! [`VaultSession::to_bytes`] and saves the file afterwards, as for items.
 
-use ssh_key::rand_core::OsRng;
+use getrandom::SysRng;
+use getrandom::rand_core::UnwrapErr;
 use ssh_key::{Algorithm, EcdsaCurve, HashAlg, LineEnding, PrivateKey};
 use vault_core::item::{ItemData, KeyData};
 use vault_core::{Factor, OsRandom, ParsedVault, SlotId, Unlock, Vault};
@@ -316,7 +317,8 @@ impl VaultSession {
                 curve: EcdsaCurve::NistP256,
             },
         };
-        let mut k = PrivateKey::random(&mut OsRng, alg).map_err(|e| invalid(e.to_string()))?;
+        let mut k =
+            PrivateKey::random(&mut UnwrapErr(SysRng), alg).map_err(|e| invalid(e.to_string()))?;
         k.set_comment(title);
         let text = k
             .to_openssh(LineEnding::LF)
