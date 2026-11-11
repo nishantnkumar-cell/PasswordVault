@@ -1311,6 +1311,19 @@ on macOS once the app supports it. TPM unlock is Linux only.
 
 How to use it: [the desktop window and command palette](user-guide/desktop-window-and-palette.md).
 
+### Password health check
+
+- **`vault health`** lists reused, weak and year-old passwords and logins
+  with a website but no one-time code. It prints titles, never passwords.
+- **`vault health --online`** also checks every password against Have I Been
+  Pwned by k-anonymity: only 5 characters of the SHA-1 hash leave your
+  computer, and nothing is sent unless you add `--online`.
+- Command line only for now (the desktop app and phone apps have no health
+  page). It uses the `curl` program for the online check, which Linux, macOS
+  and Windows 10 or later include; the daemon stays offline.
+
+How to use it: [Password health](user-guide/03-items.md#password-health).
+
 ### A revoke can no longer be undone through a synced copy
 
 - **Fixed (security).** Before, someone who kept an old copy of your vault and

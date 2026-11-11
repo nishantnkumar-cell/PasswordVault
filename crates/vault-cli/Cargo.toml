@@ -19,3 +19,5 @@ vault-import = { path = "../vault-import", features = ["qr"] }
 vault-hw = { path = "../vault-hw", default-features = false, features = ["phone"] }
 vault-ipc = { path = "../vault-ipc" }
 zeroize = "1.9.1"
+sha1 = { version = "0.11", default-features = false }
+zxcvbn = { version = "3.1.1", default-features = false }

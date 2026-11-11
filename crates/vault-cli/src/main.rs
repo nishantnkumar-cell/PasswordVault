@@ -2,6 +2,8 @@
 
 #![forbid(unsafe_code)]
 
+mod health;
+
 use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::PathBuf;
 use std::process::exit;
@@ -55,6 +57,9 @@ ITEMS                          ID may be any unique prefix of an item ID
                                N random words, 3 by default (UK NCSC style)
   gen --apple                  Apple style: three groups of six, like abcdef-gh1jkl-Mnopqr
   import bitwarden|csv FILE    import an unencrypted export (delete the file afterwards)
+  health [--online]            reused, weak and old passwords and logins without a one-time
+                               code; --online also checks Have I Been Pwned (sends 5 hash
+                               characters per password, never the password)
 
 ONE-TIME CODES                 two-step sign-in codes, like an authenticator app
   code add [--qr IMAGE] [--to ID] [--title T] [--account A] [--replace]
@@ -960,6 +965,7 @@ fn main() {
             c.call(Request::PutItem { id: Some(id), item });
             println!("Saved {}.", short(&id));
         }
+        "health" => health_report(rest.iter().any(|a| a == "--online")),
         "rm" => {
             let mut c = Client::connect();
             let id = item_id(&mut c, &positional(rest, 0, "ID"));
@@ -1712,4 +1718,78 @@ fn encrypted(pem: &str) -> bool {
         u32::from_be_bytes(b.try_into().unwrap_or_default()) as usize
     });
     rest.get(4..4 + n).is_some_and(|c| c != b"none")
+}
+
+/// `vault health`.
+fn health_report(online: bool) {
+    let mut c = Client::connect();
+    let logins: Vec<ItemSummary> = items(&mut c)
+        .into_iter()
+        .filter(|i| i.kind == ItemKind::Login)
+        .collect();
+    let mut entries = Vec::with_capacity(logins.len());
+    for s in &logins {
+        let item = get(&mut c, s.id);
+        entries.push(health::Entry {
+            title: item.title.clone(),
+            password: Zeroizing::new(item.password.clone()),
+            modified: item.modified,
+            has_totp: item.totp.is_some(),
+            has_url: !item.urls.is_empty(),
+        });
+    }
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    let r = health::analyze(&entries, now);
+    let name = |i: &usize| entries[*i].title.as_str();
+    let list = |v: &[usize]| v.iter().map(name).collect::<Vec<_>>().join(", ");
+    println!("Checked {} logins.", entries.len());
+    println!();
+    if r.reused.is_empty() {
+        println!("Reused: none.");
+    }
+    for g in &r.reused {
+        println!("Reused: one password is shared by {}.", list(g));
+    }
+    println!(
+        "Weak (easy to guess): {}",
+        if r.weak.is_empty() {
+            "none".into()
+        } else {
+            list(&r.weak)
+        }
+    );
+    println!(
+        "Old (not changed in over a year): {}",
+        if r.old.is_empty() {
+            "none".into()
+        } else {
+            list(&r.old)
+        }
+    );
+    println!(
+        "Website but no one-time code: {}",
+        if r.no_code.is_empty() {
+            "none".into()
+        } else {
+            list(&r.no_code)
+        }
+    );
+    if online {
+        match health::breached(&entries, &mut |p| health::fetch_range(p)) {
+            Ok(hits) if hits.is_empty() => println!("Seen in breaches: none."),
+            Ok(hits) => {
+                for (i, n) in hits {
+                    println!("Seen in breaches: {} ({n} times)", entries[i].title);
+                }
+            }
+            Err(e) => die(format!("could not check Have I Been Pwned: {e}")),
+        }
+    } else {
+        println!();
+        println!(
+            "Add --online to also check Have I Been Pwned (5 hash characters per password leave this computer)."
+        );
+    }
 }
