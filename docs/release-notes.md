@@ -244,6 +244,15 @@ users' signatures show as invalid in Thunderbird). Evolution and KMail are
 not connected yet. No vault file change; `vaultd`, `vault-gpg` and the other
 programs must be updated together (two new requests).
 
+### Sync: three devices now always end with the same item
+
+- If three devices edited one item at once and synced in a particular order,
+  two of them could end up with different text under the same version and
+  never agree. They now settle it the same way everywhere. No data is lost:
+  the edit that loses is still kept as a "(conflict)" copy, as before.
+- Found by the automatic test that mixes edits and syncs at random; it failed
+  once on Windows CI. Same on Linux, Windows and macOS and on the phone apps.
+
 ### Safer unlock limits, sync limits and Android AutoFill frames
 
 These fix three findings from a security review (issues #49, #50 and #51).
