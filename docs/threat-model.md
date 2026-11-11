@@ -48,8 +48,8 @@ Status: **M** = mitigated by the design, **P** = partially mitigated, **A** = ac
 
 | Threat | Mitigation | Status |
 | --- | --- | --- |
-| Brute-force the password from the file | Argon2id (≥ 256 MiB desktop default, bounded 64 MiB to 4 GiB), all daily-use KEKs mix in a hardware factor | M |
-| Has the FIDO2 key but not the password | Password is part of every daily-use KEK; FIDO2 key requires PIN with on-device retry limit | M |
+| Brute-force the password from the file | Argon2id (≥ 256 MiB desktop default, bounded 64 MiB to 4 GiB). New password-only slots must pass a strength check (zxcvbn score 3 or more). Every vault starts with a password-only slot, so the hardware factors help only after the user removes it (`vault rm-slot`); `vault slots` warns about it once a key or TPM slot exists | P |
+| Has the FIDO2 key but not the password | Password is part of the FIDO2 and TPM slots' KEKs; the FIDO2 key requires its PIN with an on-device retry limit | M |
 | Has the whole laptop including TPM | TPM secret needs authValue (PIN) with TPM dictionary-attack lockout, and the password is still required. Same on Windows, where the secret is wrapped to a TPM-bound RSA key with the PIN as its usage auth | M |
 | Steals the laptop while quick unlock is available (Windows) | The vault key is in `vaultd` memory, wrapped under a key held with `CryptProtectMemory`; opening it needs Windows Hello (face, fingerprint or Windows PIN, with Windows' own retry limits), and quick unlock ends after its time limit (at most 24 h after a full unlock), on restart, after 3 failed checks and on `vault lock --full`. A thief who can sign in as the user, or read RAM of the running machine, gets what they would get from an unlocked vault | P (opt-in, off by default) |
 | Sniffs the discrete TPM bus | Salted, encrypted HMAC sessions for every unseal (verify `tss-esapi`) | M |

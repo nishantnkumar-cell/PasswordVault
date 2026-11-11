@@ -1034,7 +1034,7 @@ impl Daemon {
         if self.store.exists() {
             return Err("a vault already exists".into());
         }
-        check_password(password)?;
+        check_new_password(password)?;
         let rng = &mut OsRandom;
         let mut v = Vault::new(rng).map_err(e)?;
         let pw_slot = v
@@ -1327,19 +1327,32 @@ impl Daemon {
         match req {
             Request::ListSlots => {
                 let v = self.vault()?;
+                let has_hardware = v.slots().any(|m| {
+                    matches!(
+                        m.factor,
+                        Factor::PasswordFido2 { .. } | Factor::PasswordTpm { .. }
+                    )
+                });
                 Ok(Response::Slots(
                     v.slots()
                         .map(|m| SlotInfo {
                             id: m.id,
                             kind: kind(&m.factor).into(),
                             label: v.slot_label(&m.id).unwrap_or("").into(),
-                            warning: slot_warning(&m.factor),
+                            warning: slot_warning(&m.factor).or_else(|| {
+                                (has_hardware && m.factor == Factor::PasswordOnly).then(|| {
+                                    "opens the vault with the password alone, without your \
+                                     security key or TPM; remove it if you want a device or \
+                                     key to always be needed"
+                                        .into()
+                                })
+                            }),
                         })
                         .collect(),
                 ))
             }
             Request::AddPasswordSlot { password, label } => {
-                check_password(&password)?;
+                check_new_password(&password)?;
                 let cost = self.cost;
                 let id = self
                     .vault()?
@@ -1820,6 +1833,25 @@ fn prf_key(out: &[u8]) -> R<HwKey> {
         .try_into()
         .map_err(|_| "a passkey PRF output is 32 bytes")?;
     Ok(HwKey::new(b))
+}
+
+/// The check for a password that will be the only thing guarding a new slot
+/// (a first password, or an extra password-only slot). Slots that also need a
+/// security key or the TPM can keep the plain length rule, because the
+/// hardware factor carries the strength there.
+fn check_new_password(p: &str) -> R<()> {
+    check_password(p)?;
+    let est = zxcvbn::zxcvbn(p, &[]);
+    if est.score() >= zxcvbn::Score::Three {
+        return Ok(());
+    }
+    let tip = est
+        .feedback()
+        .and_then(|f| f.warning())
+        .map_or_else(String::new, |w| format!(" ({w})"));
+    Err(format!(
+        "that password is too easy to guess{tip}; use a longer one, or a few unrelated words"
+    ))
 }
 
 fn check_password(p: &str) -> R<()> {
