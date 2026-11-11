@@ -62,6 +62,10 @@ const P_ATTRS: &str = "org.freedesktop.Secret.Item.Attributes";
 pub const MARKER: &str = "Secret Service";
 /// Custom field present, with value `base64`, when the secret was not text.
 pub const ENCODING: &str = "Secret Service encoding";
+/// Custom field naming the program that saved an app password. A program
+/// sees the entries it saved and those without this field (made before it
+/// existed, or imported from another keyring), not other programs' entries.
+pub const OWNER: &str = "Secret Service program";
 /// Prefix of the custom fields holding the attributes.
 pub const ATTR_PREFIX: &str = "ss:";
 
@@ -176,6 +180,27 @@ fn field(name: &str, value: &str) -> CustomField {
         name: name.into(),
         value: value.into(),
         kind: FieldKind::Text,
+    }
+}
+
+/// The program that saved `item`, if it was recorded.
+fn owner_of(item: &ItemData) -> Option<&str> {
+    item.fields
+        .iter()
+        .find(|f| f.name == OWNER)
+        .map(|f| f.value.as_str())
+}
+
+/// Whether the program `scope` may see `item`.
+fn visible_to(item: &ItemData, scope: Option<&str>) -> bool {
+    owner_of(item).is_none_or(|o| Some(o) == scope)
+}
+
+/// Record `scope` as the program that saved `item`.
+fn set_owner(item: &mut ItemData, scope: Option<&str>) {
+    item.fields.retain(|f| f.name != OWNER);
+    if let Some(p) = scope {
+        item.fields.push(field(OWNER, p));
     }
 }
 
@@ -648,21 +673,36 @@ impl Service {
 
     // -- data
 
-    fn items(&self, want: &HashMap<String, String>) -> Result<Vec<(ItemId, ItemData)>, Fail> {
+    /// The program behind a bus connection, as the approval records it.
+    fn scope(&self, sender: &str) -> Option<String> {
+        let bus = DBusProxy::new(&self.conn).ok()?;
+        let name = BusName::try_from(sender).ok()?;
+        approve::program_of(bus.get_connection_unix_process_id(name).ok()?)
+    }
+
+    fn items(
+        &self,
+        sender: &str,
+        want: &HashMap<String, String>,
+    ) -> Result<Vec<(ItemId, ItemData)>, Fail> {
+        let scope = self.scope(sender);
         let mut found = self
             .lock()
-            .items_where(|it| is_app_secret(it) && matches(it, want))
+            .items_where(|it| {
+                is_app_secret(it) && visible_to(it, scope.as_deref()) && matches(it, want)
+            })
             .map_err(|_| Fail::Locked)?;
         found.sort_by_key(|(_, it)| std::cmp::Reverse(it.modified));
         Ok(found)
     }
 
-    fn get(&self, id: &ItemId) -> Result<ItemData, Fail> {
+    fn get(&self, sender: &str, id: &ItemId) -> Result<ItemData, Fail> {
+        let scope = self.scope(sender);
         let mut d = self.lock();
         if !d.is_unlocked() {
             return Err(Fail::Locked);
         }
-        d.items_where(is_app_secret)
+        d.items_where(|it| is_app_secret(it) && visible_to(it, scope.as_deref()))
             .map_err(|_| Fail::Locked)?
             .into_iter()
             .find(|(i, _)| i == id)
@@ -775,7 +815,7 @@ impl Service {
                     return self.reply(h, &(none.clone(), none));
                 }
                 self.allow(sender)?;
-                let found = self.items(&want)?;
+                let found = self.items(sender, &want)?;
                 let paths: Vec<_> = found.iter().map(|(id, _)| item_path(id)).collect();
                 self.reply(h, &(paths, none))
             }
@@ -788,7 +828,9 @@ impl Service {
                     let Some(id) = item_id(p.as_str()) else {
                         continue;
                     };
-                    let Ok(item) = self.get(&id) else { continue };
+                    let Ok(item) = self.get(sender, &id) else {
+                        continue;
+                    };
                     out.insert(p, self.secret_struct(session.as_str(), sender, &item)?);
                 }
                 self.reply(h, &out)
@@ -871,7 +913,7 @@ impl Service {
                     return self.reply(h, &Vec::<OwnedObjectPath>::new());
                 }
                 self.allow(sender)?;
-                let found = self.items(&want)?;
+                let found = self.items(sender, &want)?;
                 let paths: Vec<_> = found.iter().map(|(id, _)| item_path(id)).collect();
                 self.reply(h, &paths)
             }
@@ -889,7 +931,7 @@ impl Service {
                 };
                 let (plain, ct) = self.read_secret(sender, &secret)?;
                 let existing = if replace {
-                    self.items(&attrs)?
+                    self.items(sender, &attrs)?
                         .into_iter()
                         .find(|(_, it)| attributes(it) == attrs)
                 } else {
@@ -902,7 +944,11 @@ impl Service {
                         (self.put(Some(id), item)?, false)
                     }
                     None => (
-                        self.put(None, new_app_secret(&label, &attrs, &plain, &ct))?,
+                        {
+                            let mut item = new_app_secret(&label, &attrs, &plain, &ct);
+                            set_owner(&mut item, self.scope(sender).as_deref());
+                            self.put(None, item)?
+                        },
                         true,
                     ),
                 };
@@ -938,7 +984,7 @@ impl Service {
             return Err(Fail::UnknownMethod);
         }
         self.open_for(sender)?;
-        let item = self.get(id)?;
+        let item = self.get(sender, id)?;
         match member {
             "GetSecret" => {
                 let session: OwnedObjectPath = msg.body().deserialize()?;
@@ -1070,7 +1116,7 @@ impl Service {
                     .filter(|_| iface == I_ITEM)
                     .ok_or_else(|| Fail::Denied(format!("{name} cannot be changed")))?;
                 self.open_for(sender)?;
-                let mut item = self.get(&id)?;
+                let mut item = self.get(sender, &id)?;
                 match name.as_str() {
                     "Label" => item.title = label_or_default(&String::try_from(value)?),
                     "Attributes" => set_attributes(&mut item, &HashMap::try_from(value)?),
@@ -1113,7 +1159,7 @@ impl Service {
                     Vec::new()
                 } else {
                     self.allow(sender)?;
-                    self.items(&HashMap::new())?
+                    self.items(sender, &HashMap::new())?
                         .iter()
                         .map(|(id, _)| item_path(id))
                         .collect()
@@ -1129,7 +1175,7 @@ impl Service {
                 return Ok(vec![("Locked", Variant::from(locked))]);
             }
             self.open_for(sender)?;
-            let item = self.get(&id)?;
+            let item = self.get(sender, &id)?;
             return Ok(vec![
                 ("Locked", Variant::from(false)),
                 ("Label", Variant::from(item.title.clone())),
@@ -1426,6 +1472,23 @@ fn introspect(p: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn programs_see_their_own_entries_and_unowned_ones() {
+        let mut mine = new_app_secret("Mail", &HashMap::new(), b"x", "text/plain");
+        set_owner(&mut mine, Some("/usr/bin/geary"));
+        let unowned = new_app_secret("Old", &HashMap::new(), b"y", "text/plain");
+        assert_eq!(owner_of(&mine), Some("/usr/bin/geary"));
+        assert!(visible_to(&mine, Some("/usr/bin/geary")));
+        assert!(!visible_to(&mine, Some("/usr/bin/python3")));
+        assert!(!visible_to(&mine, None));
+        // Entries from before this change, or imported ones, stay shared.
+        assert!(visible_to(&unowned, Some("/usr/bin/python3")));
+        assert!(visible_to(&unowned, None));
+        // The owner is replaced, not duplicated.
+        set_owner(&mut mine, Some("/usr/bin/other"));
+        assert_eq!(mine.fields.iter().filter(|f| f.name == OWNER).count(), 1);
+    }
 
     #[test]
     fn app_secrets_round_trip_through_items() {

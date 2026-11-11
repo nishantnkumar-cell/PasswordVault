@@ -94,6 +94,12 @@ session bus and serves the freedesktop Secret Service API:
   allowed in vault-prompt (`--secret-service [--command LINE] [--program
   PATH]`) before it can list items or read, write or delete them. Allowed
   programs are kept in memory until vaultd exits; a decline holds for 60 s.
+- Each item records the program that saved it in a `Secret Service program`
+  field. A program lists, reads, changes and deletes only the items it saved
+  and the ones with no such field (made earlier, or imported from another
+  keyring). Another approved program cannot see or overwrite them. This is
+  still keyed by executable path, so every script run by one interpreter
+  shares its items.
   Callers whose bus UID differs from the owner are refused. As the brief
   says, the sender's identity is advisory against same-user programs.
 - Locked vault: `SearchItems` returns nothing, item access fails with
