@@ -30,7 +30,9 @@ final class TourTests: XCTestCase {
         addCard()
         addCode()
         addSshKey()
-        open("Generator"); shot("generator")
+        open("Generator")
+        XCTAssertTrue(app.buttons["3 Words"].waitForExistence(timeout: 10), "Generator did not open")
+        shot("generator")
         app.buttons["3 Words"].tap(); sleep(1); shot("generator-words")
         app.buttons["Apple Style"].tap(); sleep(1); shot("generator-apple")
         open("Settings"); shot("settings")
@@ -188,8 +190,14 @@ final class TourTests: XCTestCase {
         case "Items": sidebar = "All Items"
         default: sidebar = name
         }
+        // After an item opens, the iPad can collapse the sidebar: the row is
+        // still in the tree but off screen, so tapping it does nothing.
         let row = app.cells.containing(.staticText, identifier: sidebar).firstMatch
-        if !row.exists, app.buttons["ToggleSidebar"].exists { app.buttons["ToggleSidebar"].tap() }
+        if !(row.exists && row.isHittable), app.buttons["ToggleSidebar"].exists {
+            app.buttons["ToggleSidebar"].tap()
+            _ = row.waitForExistence(timeout: 5)
+            sleep(1)
+        }
         row.tap()
         sleep(1)
     }
