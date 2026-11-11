@@ -210,6 +210,23 @@ Nothing changes in day-to-day use.
 Known limits: the Android frame check has unit tests but hasn't been tried
 on a real phone with a mixed-site page. No vault file change.
 
+### The approval window ignores clicks that come too soon
+
+- **Safer approvals.** In the window that asks to pair, fill a card, use an SSH
+  or PGP key or share app passwords, **Allow** now stays grey until the
+  window has had the focus for about a second, and starts over if the focus
+  is lost. A click meant for another window, or a program that clicks for you
+  the moment the window appears, can no longer approve a request.
+  Reported by the November 2026 security review.
+- **What to do.** Nothing, except wait a moment before pressing **Allow**.
+  Deny, Escape and the one-minute timeout work as before. Linux, Windows and
+  macOS behave the same.
+- **Known limit.** Same-user malware can still wait a second and click; the
+  window narrows the attack but is not a barrier against it (threat model A3).
+  A Windows Hello check for pairing and key export is a possible next step.
+
+How to use it: [Getting started, pairing](user-guide/01-getting-started.md).
+
 ### Security fixes in the libraries the vault uses
 
 Nothing changes in how you use the vault, and the vault file is the same.
