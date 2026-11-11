@@ -47,7 +47,12 @@ ITEMS                          ID may be any unique prefix of an item ID
   add [KIND] [--generate]      add an item interactively; KIND is login (default),
                                note, card or identity
   edit ID                      edit an item interactively (Enter keeps a field)
-  rm ID                        delete an item
+  rm ID                        move an item to the trash for 30 days
+  trash                        list the items in the trash
+  restore ID                   take an item out of the trash
+  purge ID                     delete a trashed item for good
+  empty-trash                  delete everything in the trash for good
+  history ID                   a login's earlier passwords
   find ORIGIN                  items that may be filled on ORIGIN, e.g. https://example.com
   gen [--length N] [--no-symbols] [--no-ambiguous]
                                a random password (24 characters unless --length)
@@ -969,7 +974,59 @@ fn main() {
             let mut c = Client::connect();
             let id = item_id(&mut c, &positional(rest, 0, "ID"));
             c.call(Request::DeleteItem { id });
-            println!("Deleted.");
+            println!("Moved to the trash for 30 days (`vault restore ID` brings it back).");
+        }
+        "trash" => {
+            let Response::Trash(list) = Client::connect().call(Request::ListTrash) else {
+                die("unexpected response")
+            };
+            if list.is_empty() {
+                println!("the trash is empty");
+            }
+            for t in list {
+                println!(
+                    "{}  {:<30} deleted {}, gone {}",
+                    short(&t.id),
+                    t.title,
+                    utc(t.trashed_at),
+                    utc(t.purge_at)
+                );
+            }
+        }
+        "restore" | "purge" => {
+            let mut c = Client::connect();
+            let Response::Trash(list) = c.call(Request::ListTrash) else {
+                die("unexpected response")
+            };
+            let id = resolve(
+                list.into_iter().map(|t| (t.id, ())),
+                &positional(rest, 0, "ID"),
+            )
+            .0;
+            if cmd == "restore" {
+                c.call(Request::RestoreItem { id });
+                println!("Restored.");
+            } else {
+                c.call(Request::PurgeItem { id });
+                println!("Deleted for good.");
+            }
+        }
+        "empty-trash" => {
+            Client::connect().call(Request::EmptyTrash);
+            println!("The trash is empty.");
+        }
+        "history" => {
+            let mut c = Client::connect();
+            let id = item_id(&mut c, &positional(rest, 0, "ID"));
+            let Response::History(list) = c.call(Request::PasswordHistory { id }) else {
+                die("unexpected response")
+            };
+            if list.is_empty() {
+                println!("no earlier passwords");
+            }
+            for (t, p) in list {
+                println!("{}  {}", utc(t), p.as_str());
+            }
         }
         "totp" => {
             let mut c = Client::connect();

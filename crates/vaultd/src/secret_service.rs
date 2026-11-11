@@ -955,7 +955,7 @@ impl Service {
                 self.reply(h, &())
             }
             "Delete" => {
-                self.lock().delete_item(id).map_err(Fail::Failed)?;
+                self.lock().delete_item_for_good(id).map_err(Fail::Failed)?;
                 self.signal_item("ItemDeleted", id);
                 self.reply(h, &path("/")?)
             }

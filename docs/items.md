@@ -81,3 +81,10 @@ Implemented in `vault_core::origin::may_fill` (brief section 12):
 Only logins are bound to sites, and only logins are released by the origin lookups (`FindForOrigin`, `GetForFill`, `TotpForFill`). Cards and identities are filled into any `https` page, top frame only (docs/browser.md); a card is released only after the user confirms in vaultd's own window.
 
 Frame and user-gesture rules are enforced by the browser extension, which is also the only source of the page origin.
+
+## Trash and password history
+
+Both live in custom fields of the item, so the schema and the file format do not change (older versions show them as ordinary fields):
+
+- `Vault trashed`: the Unix time the item was moved to the trash. `vaultd` hides such items from every listing, fill, SSH and Secret Service use, and by-ID read; they are restorable for 30 days and then deleted for good when the list is next read. `DeleteItem` moves an item to the trash; `PurgeItem` deletes a trashed one for good. App passwords made through the Secret Service skip the trash.
+- `Vault old password <unix time>` (hidden): an earlier password, newest 10 kept. `vaultd` adds one whenever an edit changes a login's password and ignores any such fields a client sends, so a client cannot lose or forge the history. `GetItem` leaves both kinds of field out; `PasswordHistory` returns the history.

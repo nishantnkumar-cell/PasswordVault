@@ -163,6 +163,9 @@ enum Op {
     AppApprovals,
     RevokeApp,
     ImportApps,
+    ListTrash,
+    /// Restore, delete for good, or empty (the notice says which).
+    TrashAction(&'static str),
 }
 
 /// Which screen is showing.
@@ -191,6 +194,8 @@ pub enum View {
     Pgp,
     /// Passwords apps keep through the Secret Service (Linux).
     Apps,
+    /// Deleted items, kept 30 days.
+    Trash,
 }
 
 /// Which items the list shows.
@@ -709,6 +714,8 @@ pub struct App {
     sync_path: String,
     /// Programs allowed to use app passwords, from the last listing.
     app_approvals: Vec<vault_ipc::AppApproval>,
+    /// Items in the trash, from the last listing.
+    trash: Vec<vault_ipc::TrashedItem>,
     /// Hours picked on the quick unlock form; `None` until first shown.
     quick_hours: Option<u32>,
 
@@ -777,6 +784,7 @@ impl App {
             confirm_remove: None,
             sync_path: String::new(),
             app_approvals: Vec::new(),
+            trash: Vec::new(),
             quick_hours: None,
             copied: None,
             styled: false,
@@ -1011,7 +1019,8 @@ impl App {
                     self.selected = None;
                     self.open = None;
                 }
-                self.notice = Some("Deleted.".into());
+                self.notice =
+                    Some("Moved to the trash. Restore it from Trash within 30 days.".into());
                 self.send(Op::ListItems, Request::ListItems);
             }
             (Op::Generate, Response::Generated(p)) => self.generated = Some(p),
@@ -1082,6 +1091,12 @@ impl App {
                 self.on_status(s);
             }
             (Op::AppApprovals, Response::AppApprovals(list)) => self.app_approvals = list,
+            (Op::ListTrash, Response::Trash(list)) => self.trash = list,
+            (Op::TrashAction(what), Response::Ok) => {
+                self.notice = Some(what.into());
+                self.send(Op::ListTrash, Request::ListTrash);
+                self.send(Op::ListItems, Request::ListItems);
+            }
             (Op::RevokeApp, Response::Ok) => {
                 self.notice =
                     Some("Approval taken back. That program is asked again next time.".into());
@@ -1439,6 +1454,67 @@ impl App {
 
     /// Programs allowed to use the Secret Service, and importing from GNOME
     /// Keyring or KWallet (Linux).
+    fn trash_page(&mut self, ui: &mut Ui) {
+        page_header(
+            ui,
+            "Trash",
+            "Deleted items stay here for 30 days, then they are deleted for good. They are \
+             not offered for filling and are not seen by other programs.",
+        );
+        let ok = self.busy.is_none();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs());
+        let mut action: Option<(&'static str, Request)> = None;
+        theme::card().show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            if self.trash.is_empty() {
+                ui.label(RichText::new("The trash is empty.").color(theme::MUTED));
+                return;
+            }
+            egui::Grid::new("trash-items")
+                .num_columns(4)
+                .spacing([16.0, 8.0])
+                .show(ui, |ui| {
+                    for t in &self.trash {
+                        ui.vertical(|ui| {
+                            ui.label(RichText::new(&t.title).color(theme::INK));
+                            if !t.subtitle.is_empty() {
+                                ui.label(RichText::new(&t.subtitle).small().color(theme::MUTED));
+                            }
+                        });
+                        ui.label(
+                            RichText::new(format!(
+                                "deleted {}",
+                                ago(now.saturating_sub(t.trashed_at))
+                            ))
+                            .color(theme::MUTED),
+                        );
+                        if ui.add_enabled(ok, egui::Button::new("Restore")).clicked() {
+                            action = Some(("Restored.", Request::RestoreItem { id: t.id }));
+                        }
+                        if ui
+                            .add_enabled(ok, egui::Button::new("Delete for good"))
+                            .clicked()
+                        {
+                            action = Some(("Deleted for good.", Request::PurgeItem { id: t.id }));
+                        }
+                        ui.end_row();
+                    }
+                });
+            ui.add_space(8.0);
+            if ui
+                .add_enabled(ok, egui::Button::new("Empty the trash"))
+                .clicked()
+            {
+                action = Some(("The trash is empty.", Request::EmptyTrash));
+            }
+        });
+        if let Some((what, req)) = action {
+            self.act("Working…", Op::TrashAction(what), req);
+        }
+    }
+
     fn apps_page(&mut self, ui: &mut Ui) {
         page_header(
             ui,
@@ -1937,6 +2013,14 @@ impl App {
                     });
                 });
             }
+            View::Trash => {
+                egui::CentralPanel::default().frame(page).show(ui, |ui| {
+                    self.messages(ui);
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        self.trash_page(ui);
+                    });
+                });
+            }
         }
         if self.palette.is_some() {
             self.palette(ui);
@@ -1956,6 +2040,9 @@ impl App {
         }
         if v == View::Apps {
             self.send(Op::AppApprovals, Request::AppApprovals);
+        }
+        if v == View::Trash {
+            self.send(Op::ListTrash, Request::ListTrash);
         }
     }
 
@@ -2264,6 +2351,7 @@ impl App {
                     (View::Sync, Icon::Sync, "Sync"),
                     (View::Pgp, Icon::Mail, "Encrypt and sign"),
                     (View::Apps, Icon::Key, "App passwords"),
+                    (View::Trash, Icon::Trash, "Trash"),
                 ] {
                     if v == View::Apps && !cfg!(target_os = "linux") {
                         continue;
@@ -2476,7 +2564,7 @@ impl App {
                 {
                     delete = true;
                 }
-                ui.label("Delete this item for good?");
+                ui.label("Move this item to the trash? It can be restored for 30 days.");
             } else {
                 if theme::danger(ui, Icon::Trash, "Delete").clicked() {
                     self.confirm_delete = true;

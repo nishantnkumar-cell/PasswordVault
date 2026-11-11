@@ -1477,3 +1477,87 @@ fn backups_and_snapshots() {
         .contains("no such snapshot")
     );
 }
+
+#[test]
+fn trash_restore_purge_and_password_history() {
+    let dir = tempfile::tempdir().unwrap();
+    let sock = start(dir.path(), server::current_user(), Duration::from_secs(600));
+    let mut c = C::new(&sock);
+    let Response::Initialized { token, .. } = c.ok(Request::Init {
+        password: s(PW),
+        client_name: "cli".into(),
+    }) else {
+        panic!()
+    };
+    c.token = Some(token);
+    let id = put(&mut c, None, "Mail");
+
+    // Deleting moves to the trash: gone from the list and from fill, there to restore.
+    c.ok(Request::DeleteItem { id });
+    let Response::Items(list) = c.ok(Request::ListItems) else {
+        panic!()
+    };
+    assert!(list.is_empty());
+    assert!(c.err(Request::GetItem { id }).contains("in the trash"));
+    let Response::Trash(t) = c.ok(Request::ListTrash) else {
+        panic!()
+    };
+    assert_eq!(t.len(), 1);
+    assert_eq!(t[0].title, "Mail");
+    assert_eq!(t[0].purge_at - t[0].trashed_at, 30 * 86_400);
+    c.ok(Request::RestoreItem { id });
+    let Response::Items(list) = c.ok(Request::ListItems) else {
+        panic!()
+    };
+    assert_eq!(list.len(), 1);
+    assert!(
+        c.err(Request::RestoreItem { id })
+            .contains("not in the trash")
+    );
+
+    // Only what is in the trash can be purged.
+    assert!(
+        c.err(Request::PurgeItem { id })
+            .contains("only an item in the trash")
+    );
+    c.ok(Request::DeleteItem { id });
+    c.ok(Request::PurgeItem { id });
+    let Response::Trash(t) = c.ok(Request::ListTrash) else {
+        panic!()
+    };
+    assert!(t.is_empty());
+
+    // A changed password goes to the history; the history is not in GetItem.
+    let mut bank = login("Bank", "https://bank.example.com");
+    bank.password = "the first one".into();
+    let Response::ItemSaved { id } = c.ok(Request::PutItem {
+        id: None,
+        item: bank,
+    }) else {
+        panic!()
+    };
+    let Response::Item { mut item, .. } = c.ok(Request::GetItem { id }) else {
+        panic!()
+    };
+    let first = item.password.clone();
+    assert_eq!(first, "the first one");
+    item.password = "a different one".into();
+    c.ok(Request::PutItem { id: Some(id), item });
+    let Response::Item { item, .. } = c.ok(Request::GetItem { id }) else {
+        panic!()
+    };
+    assert!(item.fields.iter().all(|f| !f.name.starts_with("Vault ")));
+    let Response::History(h) = c.ok(Request::PasswordHistory { id }) else {
+        panic!()
+    };
+    assert_eq!(h.len(), 1);
+    assert_eq!(h[0].1.as_str(), first);
+
+    // Empty the trash.
+    c.ok(Request::DeleteItem { id });
+    c.ok(Request::EmptyTrash);
+    let Response::Trash(t) = c.ok(Request::ListTrash) else {
+        panic!()
+    };
+    assert!(t.is_empty());
+}
