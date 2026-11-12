@@ -95,7 +95,20 @@ if [ -n "$uninstall" ]; then
         "$home_share/applications/dev.passwordvault.app.desktop" "$HOME/.config/environment.d/50-secret-vault.conf"
     if { [ -f /etc/systemd/system/vaultd@.service ] || [ -e /usr/local/bin/vaultd ]; } &&
         ask "Also remove the system-wide install (vaultd@$me, /usr/local/bin; sudo)?"; then
-        sudo systemctl disable --now "vaultd@$me" 2>/dev/null || true
+        # Every instance, not only yours: their programs are about to go.
+        instances=$({
+            systemctl list-units --all --plain --no-legend 'vaultd@*.service' 2>/dev/null | awk '{ print $1 }'
+            ls /etc/systemd/system/*.wants/ 2>/dev/null | grep '^vaultd@.*\.service$'
+        } | sort -u)
+        others=$(echo "$instances" | grep -vx "vaultd@$me.service" | sed 's/^vaultd@//; s/\.service$//' | grep . || true)
+        if [ -n "$others" ]; then
+            echo "Other people on this computer use it too: $(echo $others)."
+            echo "Their vaultd stops as well; their vaults are kept. They can reinstall with this script."
+            ask "Remove it for everyone?" || die "kept the system-wide install; nothing else was changed for others"
+        fi
+        for u in "vaultd@$me.service" $instances; do
+            sudo systemctl disable --now "$u" 2>/dev/null || true
+        done
         sudo rm -f "${bins[@]/#//usr/local/bin/}" /etc/systemd/system/vaultd@.service \
             /etc/udev/rules.d/70-vault-fido.rules
         sudo find /usr/local/share/icons/hicolor -name 'dev.passwordvault.app.*' -delete 2>/dev/null || true
@@ -105,7 +118,7 @@ if [ -n "$uninstall" ]; then
     say "Secret Vault removed."
     [ ! -f "$home_share/vault/vault.svault" ] || echo "    Your vault is kept in $home_share/vault."
     if [ -n "$system" ]; then
-        echo "    Kept: your vault in /var/lib/vault/$me, the \"vault\" system user and"
+        echo "    Kept: the vaults in /var/lib/vault (yours is $me/), the \"vault\" system user and"
         echo "    /etc/sysusers.d/vault.conf (other people on this computer may use them)."
         echo "    To delete your vault for good: sudo rm -r /var/lib/vault/$me"
     elif [ -d /var/lib/vault ]; then

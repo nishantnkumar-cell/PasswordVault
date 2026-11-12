@@ -195,7 +195,11 @@ How to use it: [Sync, Linux notes](user-guide/10-sync.md#differences-between-sys
   cannot read them. `--user-service` installs into `~/.local` without root
   instead. Running it again upgrades and keeps your vault; `--uninstall`
   removes the programs and the shell lines it added, never a vault. Each
-  person on a shared computer gets their own vault and `vaultd@<name>`. See
+  person on a shared computer gets their own vault and `vaultd@<name>`,
+  which refuses everyone else (tested with two users); uninstalling the
+  system service asks first when other people use it, then stops theirs too.
+- **The ssh-agent refuses another user's request with "agent refused
+  operation"**, instead of a reply `ssh-add` reported as "invalid format". See
   [Getting started](user-guide/01-getting-started.md#the-easiest-way-one-command).
   Windows and macOS keep their installers.
 

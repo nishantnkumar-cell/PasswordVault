@@ -23,11 +23,11 @@ pub use unix::*;
 #[cfg(windows)]
 pub use windows::*;
 
-fn refuse(s: &mut impl Write) -> io::Result<()> {
-    write_frame(
+fn refuse(s: &mut impl Write) {
+    let _ = write_frame(
         s,
         &Response::Error("this vault belongs to another user".into()),
-    )
+    );
 }
 
 /// Ask the user, without holding the daemon lock while the window is open.
@@ -266,6 +266,14 @@ mod unix {
     where
         F: Fn(Conn, Option<u32>) + Send + Sync + Clone + 'static,
     {
+        serve_refusing(listener, owner, |c| super::refuse(c), f)
+    }
+
+    /// Like `serve`, answering other users' connections with `refusal`.
+    pub fn serve_refusing<F>(listener: UnixListener, owner: Owner, refusal: fn(&mut Conn), f: F)
+    where
+        F: Fn(Conn, Option<u32>) + Send + Sync + Clone + 'static,
+    {
         for conn in listener.incoming() {
             let Ok(mut conn) = conn else { continue };
             let f = f.clone();
@@ -274,7 +282,8 @@ mod unix {
                     return;
                 };
                 if uid != owner {
-                    let _ = refuse(&mut conn);
+                    let _ = conn.set_read_timeout(Some(Duration::from_secs(10)));
+                    refusal(&mut conn);
                     return;
                 }
                 let _ = conn.set_read_timeout(Some(Duration::from_secs(600)));
@@ -414,7 +423,15 @@ mod windows {
 
     /// Accept connections forever, handing each one from the owner to `f`
     /// on its own thread.
-    pub fn serve<F>(mut listener: Listener, owner: Owner, f: F)
+    pub fn serve<F>(listener: Listener, owner: Owner, f: F)
+    where
+        F: Fn(Conn, Option<u32>) + Send + Sync + Clone + 'static,
+    {
+        serve_refusing(listener, owner, |c| super::refuse(c), f)
+    }
+
+    /// Like `serve`, answering other users' connections with `refusal`.
+    pub fn serve_refusing<F>(mut listener: Listener, owner: Owner, refusal: fn(&mut Conn), f: F)
     where
         F: Fn(Conn, Option<u32>) + Send + Sync + Clone + 'static,
     {
@@ -443,7 +460,7 @@ mod windows {
                 let pid = win::pipe_client_pid(&conn).ok();
                 let peer = pid.map(win::process_user);
                 if !matches!(peer, Some(Ok(u)) if u == owner) {
-                    let _ = refuse(&mut conn);
+                    refusal(&mut conn);
                     return;
                 }
                 f(conn, pid);

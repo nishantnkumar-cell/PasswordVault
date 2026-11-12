@@ -310,7 +310,7 @@ fn main() {
         let o = owner.clone();
         eprintln!("vaultd: ssh-agent on {}", p.display());
         std::thread::spawn(move || {
-            server::serve(l, o, move |c, pid| {
+            server::serve_refusing(l, o, vaultd::ssh::refuse, move |c, pid| {
                 let _ = vaultd::ssh::connection(c, &d, pid);
             })
         });
