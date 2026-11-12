@@ -169,10 +169,11 @@ How to use it: [Sync, Linux notes](user-guide/10-sync.md#differences-between-sys
 
 - **vaultd locks its memory on more systems.** It used to lock memory only
   when the lock limit was unlimited or at least 5 GiB. Now it first raises
-  its own limit as far as the system allows, and 1 GiB is enough: a vault
-  at the default cost plus plenty of room. WSL's limit (about 1.5 GiB) was
+  its own limit as far as the system allows, and 512 MiB is enough: a
+  vault at the default cost plus as much again (vaultd now uses at most two
+  memory pools, so it locks about 120 MiB besides that). WSL's limit (about 1.5 GiB) was
   below the old bar, so keys could reach swap there; now they are locked.
-  Below 1 GiB, vaultd says so at start, and
+  Below 512 MiB, vaultd says so at start, and
   [Memory locking](vaultd.md#memory-and-session-locking) shows how to raise
   the limit. A vault with a very high cost that does not fit now says "not
   enough memory" instead of stopping vaultd.
@@ -187,10 +188,17 @@ How to use it: [Sync, Linux notes](user-guide/10-sync.md#differences-between-sys
   `[key]` mark. `vault ls keys` lists only them, and `vault ls logins` no
   longer includes them.
 - **`vault … | head` no longer prints a panic** when the pipe closes early.
+- **One-command install on Linux.**
+  `curl -fsSL https://raw.githubusercontent.com/nishantnkumar-cell/PasswordVault/main/contrib/linux/get.sh | bash`
+  downloads the newest release, checks it, and sets up vaultd as its own
+  `vault` system user, so keys stay out of swap and other programs of yours
+  cannot read them. `--user-service` installs into `~/.local` without root
+  instead. See [Getting started](user-guide/01-getting-started.md#the-easiest-way-one-command).
+  Windows and macOS keep their installers.
 
 | | Linux | Windows | macOS |
 | --- | --- | --- | --- |
-| Memory lock needs | 1 GiB lock limit (was 5 GiB) | Nothing (locks per block) | Not used (swap is encrypted) |
+| Memory lock needs | 512 MiB lock limit (was 5 GiB) | Nothing (locks per block) | Not used (swap is encrypted) |
 | `vault ssh agent` with `VAULT_SOCKET` | Fixed | Fixed | Fixed |
 
 No vault file change.

@@ -76,6 +76,10 @@ install -m644 contrib/systemd/vaultd.service "$tar_root/share/vaultd.service"
 install -m644 contrib/desktop/dev.passwordvault.app.desktop "$tar_root/share/applications/"
 cp -r contrib/icons/hicolor "$tar_root/share/hicolor"
 install -m755 contrib/linux/install.sh "$tar_root/install.sh"
+install -m755 contrib/linux/get.sh "$tar_root/get.sh"
+# For get.sh's system service (vaultd as the "vault" user).
+install -m644 contrib/systemd/vaultd@.service contrib/sysusers.d/vault.conf \
+    contrib/udev/70-vault-fido.rules "$tar_root/share/"
 install -m644 LICENSE.md "$tar_root/"
 echo "$ver" >"$tar_root/VERSION"
 tar -C "$work" -czf "$out/$name.tar.gz" "$name"

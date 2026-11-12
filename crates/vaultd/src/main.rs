@@ -96,13 +96,14 @@ fn few_malloc_arenas() {
 fn few_malloc_arenas() {}
 
 /// How much lockable memory vaultd wants before it locks everything: a
-/// vault at the writer's default Argon2id cost (256 MiB) with plenty of room
-/// for the rest. Past the limit an allocation fails instead of swapping:
+/// vault at the writer's default Argon2id cost (256 MiB) plus as much again
+/// for the rest (with two malloc arenas, vaultd locks about 120 MiB besides
+/// Argon2id, measured under load). Past the limit an allocation fails instead of swapping:
 /// Argon2id then reports "not enough memory" for a vault with a much higher
 /// cost (up to 1 GiB) rather than aborting, so a lower bar is safe.
 #[cfg(target_os = "linux")]
 fn memlock_needed() -> u64 {
-    (u64::from(vault_core::KdfCost::DEFAULT.m_kib) << 10) + (768 << 20)
+    (u64::from(vault_core::KdfCost::DEFAULT.m_kib) << 10) + (256 << 20)
 }
 
 /// No core dumps and no debugger attach. macOS has no mlockall, but it
