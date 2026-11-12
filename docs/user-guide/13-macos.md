@@ -11,6 +11,8 @@ Intel Macs.
 - [Build from source instead](#build-from-source-instead)
 - [Create your vault](#create-your-vault)
 - [Quick unlock with Touch ID](#quick-unlock-with-touch-id)
+- [When the vault locks by itself](#when-the-vault-locks-by-itself)
+- [Copying passwords](#copying-passwords)
 - [Security keys](#security-keys)
 - [Unlock with the Secure Enclave](#unlock-with-the-secure-enclave)
 - [Browser autofill](#browser-autofill)
@@ -173,6 +175,53 @@ quick unlock with the login password.
 
 **Turn it off:** pick **Off** in the app, or run `vault quick-unlock off`.
 `vault lock --full` locks and forgets the quick unlock key right away.
+
+## When the vault locks by itself
+
+`vaultd` locks the vault, and wipes its keys from memory, as soon as any
+of these happens:
+
+- **You lock the screen**: Control-Command-Q, **Lock Screen** in the Apple
+  menu, a hot corner, or closing the lid when your Mac asks for the
+  password right away.
+- **The Mac goes to sleep**, from the Apple menu, the lid, or idle sleep.
+  macOS waits for `vaultd` to lock before it sleeps.
+- **You switch to another account** with fast user switching (the user
+  menu in the menu bar or Control Centre). The other account cannot use
+  your vault while yours stays signed in in the background.
+- **15 minutes pass without use** (`vaultd --idle-secs N` changes it), or
+  `vaultd` stops.
+
+The desktop app notices within two seconds and shows the lock screen. If
+quick unlock is on, Touch ID opens it again; otherwise type your password.
+
+Nothing to set up: the launch agent starts `vaultd` in your desktop
+session, which is what it needs to see these. A `vaultd` you start over
+SSH only sees sleep, and says so in its log
+(`not in a desktop session, will not lock on screen lock or account switch`).
+
+To check it: unlock the vault, lock the screen with Control-Command-Q,
+sign back in, and run `vault status`. It says the vault is locked, and
+`~/Library/Logs/vaultd.log` has a line like `vaultd: ScreenLock, locking`.
+
+## Copying passwords
+
+When you copy a password, code or card number in the desktop app, Secret
+Vault does two things a normal copy does not:
+
+- It **keeps the copy on this Mac.** Universal Clipboard normally passes
+  whatever you copy to your iPhone, iPad and other Macs signed in to the
+  same Apple Account. A copied secret is marked "this Mac only", so it
+  never leaves the Mac.
+- It **tells clipboard history apps to skip it** (Maccy, Paste, Raycast,
+  Alfred and others that follow the [nspasteboard.org](http://nspasteboard.org)
+  convention).
+
+The app clears the clipboard 30 seconds later, when the vault locks and
+when the app closes, unless you copied something else in the meantime.
+
+To paste a password on your iPhone, use the iPhone app instead
+([chapter 14](14-phone-apps.md)).
 
 ## Security keys
 
@@ -377,8 +426,8 @@ rm ~/.local/bin/vault ~/.local/bin/vaultd ~/.local/bin/vault-gpg
 | "This device" slot (`add-slot tpm`) | Secure Enclave (Apple silicon or T2), no PIN | TPM, optional PIN and PCR 7 | TPM, optional PIN and PCR 7 |
 | Security key PIN | Typed in the app | Typed in the app | Windows asks in its own window |
 | Browsers | Chrome, Chromium, Edge, Firefox (not Safari) | Chrome, Chromium, Edge, Firefox | Chrome, Edge, Firefox |
-| Copied secrets kept out of clipboard history | Yes (marked so clipboard managers skip them) | No such feature | Yes |
-| Locks on screen lock and sleep | Not yet: it locks after 15 idle minutes | Yes | Yes |
+| Copied secrets kept out of clipboard history | Yes (marked so clipboard managers skip them), and off Universal Clipboard | No such feature | Yes |
+| Locks on screen lock and sleep | Yes, and when you switch to another account | Yes | Yes |
 | Keys kept out of crash dumps | Yes | Yes | Not yet |
 | Keys kept out of swap | Swap is always encrypted by macOS | Yes (memory locked) | Not yet |
 | Debuggers kept out of vaultd | Yes (`PT_DENY_ATTACH`) | Yes | Not yet |

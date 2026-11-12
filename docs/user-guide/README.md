@@ -86,7 +86,7 @@ random program on your computer cannot just ask for your passwords.
 | Thunderbird with a vault key (through GPGME) | Yes (not yet clicked through in Thunderbird itself) | Should work with Gpg4win; untested | Should work with Homebrew's GPGME; untested |
 | Sync through OneDrive, Google Drive, Dropbox | Yes | Yes | Yes, and iCloud Drive |
 | Apps keep passwords in the vault (Secret Service) | Yes, opt-in | Not applicable | Not applicable |
-| Locks on screen lock and suspend | Yes | Yes | Not yet (locks after 15 idle minutes) |
+| Locks on screen lock and suspend | Yes | Yes | Yes, and on a switch to another account |
 | App hidden from screenshots and screen sharing | Not yet | Yes | Not yet |
 | Keys kept out of swap and crash dumps | Yes | Yes (page file and crash dumps; use BitLocker for hibernation and blue-screen dumps) | Yes (core dumps off; macOS always encrypts swap) |
 

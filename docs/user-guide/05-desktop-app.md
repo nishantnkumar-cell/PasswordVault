@@ -8,7 +8,7 @@ like the CLI: it never opens the vault file itself and holds no keys.
 | | Linux | Windows | macOS |
 |---|---|---|---|
 | Desktop app | Yes (X11 or Wayland, OpenGL) | Yes | Yes (macOS 11 or newer) |
-| Copied secrets kept out of clipboard history and cloud clipboard | No such feature on Linux desktops | Yes | Yes (marked so clipboard managers skip them) |
+| Copied secrets kept out of clipboard history and cloud clipboard | No such feature on Linux desktops | Yes | Yes (clipboard managers skip them, and they stay off Universal Clipboard) |
 
 The app makes, imports and exports SSH and OpenPGP keys, and encrypts,
 decrypts, signs and verifies with OpenPGP keys
@@ -513,7 +513,11 @@ don't need.
 A copied value (username, password, code, card number and so on) is cleared from the clipboard after
 30 seconds, when the vault locks and when the app closes, unless you have
 copied something else since. On Windows it is also kept out of the
-clipboard history (Win+V) and cloud clipboard sync.
+clipboard history (Win+V) and cloud clipboard sync. On a Mac it is marked
+so clipboard history apps (Maccy, Paste, Raycast and others) skip it, and
+it stays on this Mac: Universal Clipboard does not pass it to your iPhone,
+iPad or other Macs. Ordinary text you copy elsewhere still goes to them as
+usual.
 
 ### Screenshots and screen sharing (Windows)
 

@@ -90,6 +90,26 @@ can't remove its own last master password, because that is how it
 unlocks. Android gets these screens later; its app is unchanged. No vault
 file change: a vault changed on the phone opens everywhere as before.
 
+### macOS: locks with the screen, and copied passwords stay on the Mac
+
+- **The vault locks when your Mac does.** Locking the screen, putting the
+  Mac to sleep, or switching to another account now locks the vault right
+  away and wipes its keys from memory, as on Linux and Windows. Before, a
+  Mac only locked after 15 idle minutes. With quick unlock on, Touch ID
+  opens it again.
+- **Copied secrets no longer reach your other Apple devices.** A password,
+  code or card number copied in the desktop app is marked "this Mac only",
+  so Universal Clipboard does not pass it to your iPhone, iPad or other
+  Macs. Clipboard history apps still skip it, and it is still cleared after
+  30 seconds.
+- How to start: nothing to set up, install this version. Details in
+  [When the vault locks by itself](user-guide/13-macos.md#when-the-vault-locks-by-itself)
+  and [Copying passwords](user-guide/13-macos.md#copying-passwords).
+- Linux and Windows: no change.
+- Known limits: a `vaultd` started over SSH, outside your desktop session,
+  only locks on sleep. Universal Clipboard is a macOS feature; Windows
+  already kept copies off its cloud clipboard.
+
 ### Add a one-time code on the desktop and from the command line
 
 - **Add Code on the desktop.** Open **One-time codes** in the sidebar and
@@ -224,6 +244,7 @@ users' signatures show as invalid in Thunderbird). Evolution and KMail are
 not connected yet. No vault file change; `vaultd`, `vault-gpg` and the other
 programs must be updated together (two new requests).
 
+<<<<<<< HEAD
 ### Windows keeps your keys out of the page file, crash reports and screen shares
 
 - **The last "Not yet" for Windows memory safety is closed.** vaultd now
@@ -276,6 +297,16 @@ permission change off for debugging. No vault file change.
 Known limits: built and tested in CI on GitHub's Windows 11 Arm runners;
 not yet tried on a real Arm PC (no TPM, security key or Windows Hello there).
 Windows 10 on Arm is untested.
+=======
+### Sync: three devices now always end with the same item
+
+- If three devices edited one item at once and synced in a particular order,
+  two of them could end up with different text under the same version and
+  never agree. They now settle it the same way everywhere. No data is lost:
+  the edit that loses is still kept as a "(conflict)" copy, as before.
+- Found by the automatic test that mixes edits and syncs at random; it failed
+  once on Windows CI. Same on Linux, Windows and macOS and on the phone apps.
+>>>>>>> origin/main
 
 ### Safer unlock limits, sync limits and Android AutoFill frames
 
