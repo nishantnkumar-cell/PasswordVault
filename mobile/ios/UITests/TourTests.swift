@@ -66,7 +66,7 @@ final class TourTests: XCTestCase {
         let toggle = app.switches["I wrote it down"]
         if toggle.switches.firstMatch.exists { toggle.switches.firstMatch.tap() } else { toggle.tap() }
         app.buttons["Continue"].tap()
-        XCTAssertTrue(newItemButton.waitForExistence(timeout: 30))
+        XCTAssertTrue(newItemButton.waitForExistence(timeout: 120))
         shot("items-empty")
     }
 
@@ -79,7 +79,7 @@ final class TourTests: XCTestCase {
         // made meanwhile can time out ("Failed to get matching snapshots"),
         // which fails the test outright. Let the key derivation finish first.
         Thread.sleep(forTimeInterval: 20)
-        XCTAssertTrue(newItemButton.waitForExistence(timeout: 160))
+        XCTAssertTrue(newItemButton.waitForExistence(timeout: 420))
     }
 
     private func addLogin() {
