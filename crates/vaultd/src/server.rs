@@ -99,7 +99,9 @@ fn confirm_use(
     };
     match approver.confirm_use(&prompt) {
         Ok(true) => resp,
-        Ok(false) => Response::Error("declined in the approval window".into()),
+        Ok(false) => Response::Error(
+            "declined in the approval window, or not answered within a minute".into(),
+        ),
         Err(m) => Response::Error(format!("could not show the approval window: {m}")),
     }
 }
