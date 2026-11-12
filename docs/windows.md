@@ -67,9 +67,9 @@ terminal stops it. To stop a background vaultd:
 
     taskkill /im vaultd.exe
 
-This asks vaultd to close, and it does. `taskkill /f` and Windows
-PowerShell 5.1's `Stop-Process` are refused with "Access is denied": they
-ask for more access to the process than its ACL (below) gives. Pass
+This asks vaultd to close: it locks and exits. `taskkill /f` works too.
+Windows PowerShell 5.1's `Stop-Process` is refused with "Access is denied":
+it asks for full access to the process, which its ACL (below) does not give. Pass
 `VAULT_HARDEN=off` to vaultd if a script of yours needs it.
 
 The keys go with the process; the vault file is unaffected.

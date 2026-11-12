@@ -280,8 +280,8 @@ what is on screen). An administrator, or malware that first changes the
 process permissions, can still read memory. `VAULT_HARDEN=off` turns the
 permission change off for debugging. Because of it, PowerShell's
 `Stop-Process -Name vaultd` now says "Access is denied": stop vaultd with
-`taskkill /im vaultd.exe` (without `/f`, which is refused too): vaultd now
-exits when asked to close. The installer and uninstaller stop it that way.
+`taskkill /im vaultd.exe` instead: vaultd now locks and exits when asked
+to close. The installer and uninstaller stop it that way.
 No vault file change.
 
 - **An open Windows Hello prompt no longer holds up everything else.**
