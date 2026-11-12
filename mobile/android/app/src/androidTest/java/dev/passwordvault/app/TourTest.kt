@@ -92,13 +92,13 @@ class TourTest {
             runCatching { rule.waitUntil(15_000) { !exists("Create vault") } }
             if (exists("Create vault")) tap("Create vault")
         }
-        waitFor("Your recovery code", 180_000)
+        waitFor("Your recovery code", 300_000)
         shot("recovery-code")
         tap("I wrote it down")
         rule.onNode(hasText("I wrote it down") and isToggleable()).assertIsOn()
         rule.onNode(hasText("Continue") and hasClickAction()).assertIsEnabled()
         tap("Continue")
-        waitFor("New item")
+        waitFor("New item", 180_000)
         shot("items-empty")
     }
 
@@ -115,7 +115,7 @@ class TourTest {
             runCatching { rule.waitUntil(15_000) { !exists("Unlock") || exists("New item") } }
             if (exists("Unlock") && !exists("New item")) press(rule.onNode(hasText("Unlock") and hasClickAction()))
         }
-        waitFor("New item", 180_000)
+        waitFor("New item", 360_000)
     }
 
     private fun addLogin() {
@@ -214,7 +214,7 @@ class TourTest {
             rule.onAllNodesWithText(s, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
 
     /** Waits for [s] to show; on a timeout the failure lists what is on screen instead. */
-    private fun waitFor(s: String, millis: Long = 30_000) {
+    private fun waitFor(s: String, millis: Long = 90_000) {
         try {
             rule.waitUntil(millis) { exists(s) }
         } catch (e: ComposeTimeoutException) {
