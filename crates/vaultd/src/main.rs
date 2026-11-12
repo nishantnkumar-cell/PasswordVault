@@ -35,7 +35,8 @@ OPTIONS:
   -h, --help         this text";
 
 /// No core dumps, no ptrace attach from same-UID processes, and keys kept
-/// out of swap (threat model A3 and section 6). Not yet on Windows.
+/// out of swap (threat model A3 and section 6). Windows: see `harden()` below
+/// and the allocator.
 #[cfg(target_os = "linux")]
 fn harden() {
     use nix::sys::resource::{Resource, getrlimit, setrlimit};
@@ -77,12 +78,32 @@ fn harden() {
     }
 }
 
+/// On Windows every heap block is locked into RAM as it is handed out
+/// (there is no `mlockall`), so keys never reach the page file.
+#[cfg(windows)]
+#[global_allocator]
+static ALLOC: vault_ipc::harden::LockedAlloc = vault_ipc::harden::LockedAlloc;
+
+/// No crash dumps, no memory reads from other processes of this user, no
+/// legacy DLL injection (docs/windows.md, "Memory protection").
+#[cfg(windows)]
+fn harden() {
+    for w in vault_ipc::harden::harden_daemon() {
+        eprintln!("vaultd: warning: {w}");
+    }
+    let n = vault_ipc::harden::unlocked_allocations();
+    if n > 0 {
+        eprintln!(
+            "vaultd: warning: {n} memory blocks could not be locked in RAM; keys may reach the page file"
+        );
+    }
+}
+
 fn main() {
     if matches!(std::env::args().nth(1).as_deref(), Some("-V" | "--version")) {
         println!("vaultd {}", vault_ipc::VERSION);
         return;
     }
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
     harden();
     let mut vault = local::data_dir().join("vault.svault");
     let mut state: PathBuf = local::state_dir();

@@ -20,6 +20,9 @@ vault-hw = { path = "../vault-hw", default-features = false, features = ["phone"
 vault-ipc = { path = "../vault-ipc" }
 zeroize = "1.9.1"
 
+[target.'cfg(windows)'.dependencies]
+raw-window-handle = "0.6"
+
 [build-dependencies]
 embed-resource = "3"
 

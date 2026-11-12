@@ -244,6 +244,70 @@ users' signatures show as invalid in Thunderbird). Evolution and KMail are
 not connected yet. No vault file change; `vaultd`, `vault-gpg` and the other
 programs must be updated together (two new requests).
 
+<<<<<<< HEAD
+### Windows keeps your keys out of the page file, crash reports and screen shares
+
+- **The last "Not yet" for Windows memory safety is closed.** vaultd now
+  locks the memory it holds keys and items in, so Windows never writes it to
+  the page file, the same as on Linux.
+- **No crash reports with secrets.** vaultd, the desktop app and the
+  approval window are excluded from Windows Error Reporting, so a crash does
+  not leave a dump of their memory on disk.
+- **Other programs cannot read their memory.** Their process permissions
+  now let other programs (even ones running as you) only see and end them,
+  not read or change their memory. vaultd also refuses legacy DLL injection
+  and loads system DLLs only from System32.
+- **The app is left out of screenshots and screen sharing.** The desktop
+  app and the approval window no longer show up in screenshots, screen
+  recordings or a shared screen in Teams or Zoom; you still see them as
+  usual. To take a screenshot on purpose, start the app with
+  `VAULT_ALLOW_CAPTURE=1`; see
+  [Screenshots and screen sharing](user-guide/05-desktop-app.md#screenshots-and-screen-sharing-windows).
+- Nothing to set up: it is on after updating. Turn on BitLocker or Device
+  Encryption as well, because hibernation and blue-screen dumps write all of
+  memory to disk. How it works and how to check it:
+  [How vaultd protects its memory](user-guide/windows-install.md#how-vaultd-protects-its-memory).
+
+| | Linux | Windows | macOS |
+| --- | --- | --- | --- |
+| Keys kept out of swap / page file | Yes (`mlockall`) | Yes (new) | Swap is always encrypted |
+| No crash dumps | Yes | Yes (new) | Yes |
+| Other programs of yours can't read the memory | With the system-user unit | Yes, unless they change the permissions back first (new) | Debugger attach refused |
+| App hidden from screenshots and screen sharing | Not yet | Yes (new) | Not yet |
+
+Known limits: the desktop app does not lock its own memory (it holds only
+what is on screen). An administrator, or malware that first changes the
+process permissions, can still read memory. `VAULT_HARDEN=off` turns the
+permission change off for debugging. Because of it, PowerShell's
+`Stop-Process -Name vaultd` now says "Access is denied": stop vaultd with
+`taskkill /im vaultd.exe` instead: vaultd now locks and exits when asked
+to close. The installer and uninstaller stop it that way.
+No vault file change.
+
+- **An open Windows Hello prompt no longer holds up everything else.**
+  While a quick-unlock prompt (Windows Hello or Touch ID) waited for you,
+  every other request to vaultd waited too, even `vault status`, until the
+  prompt was answered. Now the rest keeps working, and you can unlock with
+  your password instead while it is open. Found in testing on a real PC.
+
+### Windows on Arm
+
+- **A native installer for Arm PCs**, such as Snapdragon laptops:
+  `SecretVault-Setup-<version>-arm64.exe` on the Releases page, next to the
+  usual one. Everything runs natively instead of through Windows' x64
+  emulation, so unlocking (Argon2id) is faster and uses less battery.
+- Which one to download: [Before you start](user-guide/windows-install.md#before-you-start).
+  Installing the Arm version over the x64 one (or back) upgrades in place,
+  as the same app.
+
+| | Linux | Windows | macOS |
+| --- | --- | --- | --- |
+| Arm downloads | Not yet (build from source) | Yes (new) | Yes (universal, already) |
+
+Known limits: built and tested in CI on GitHub's Windows 11 Arm runners;
+not yet tried on a real Arm PC (no TPM, security key or Windows Hello there).
+Windows 10 on Arm is untested.
+=======
 ### Sync: three devices now always end with the same item
 
 - If three devices edited one item at once and synced in a particular order,
@@ -252,6 +316,7 @@ programs must be updated together (two new requests).
   the edit that loses is still kept as a "(conflict)" copy, as before.
 - Found by the automatic test that mixes edits and syncs at random; it failed
   once on Windows CI. Same on Linux, Windows and macOS and on the phone apps.
+>>>>>>> origin/main
 
 ### Safer unlock limits, sync limits and Android AutoFill frames
 

@@ -28,7 +28,7 @@ Build without hardware support with `cargo build -p vaultd --no-default-features
 CI builds both targets, joins them with `contrib/macos/universal.sh` (`lipo`) and packages with `BIN_DIR=target/universal ARCH=universal`; the job installs the `.pkg` on the runner, checks it, upgrades in place and uninstalls. Signing with a Developer ID and notarizing: [macos-signing.md](macos-signing.md). User steps: [user-guide/13-macos.md](user-guide/13-macos.md).
 
 - **Peer check:** `getpeereid` for the UID and `LOCAL_PEERPID` for the PID shown in the approval window (Linux uses `SO_PEERCRED`). The window names the program through `proc_pidpath` and its command line through `ps`.
-- **Hardening:** `RLIMIT_CORE` 0 and `ptrace(PT_DENY_ATTACH)`. There is no `mlockall` on macOS; swap is always encrypted with a key the kernel holds.
+- **Hardening:** `RLIMIT_CORE` 0 and `ptrace(PT_DENY_ATTACH)`. (Windows: [windows.md, Memory protection](windows.md#memory-protection).) There is no `mlockall` on macOS; swap is always encrypted with a key the kernel holds.
 - **Quick unlock:** `vault_hw::touchid` asks LocalAuthentication with `LAPolicyDeviceOwnerAuthentication` (Touch ID, Apple Watch, or the login password), in the same `Presence` role as Windows Hello: it releases the parked vault key and never opens a vault alone. It needs vaultd in the user's GUI session; from an SSH login it fails with `LAErrorNotInteractive`.
 - **FIDO2:** direct USB HID through `ctap-hid-fido2`, as on Linux; FIDO usage-page devices need no TCC permission.
 - **Not done:** Secure Enclave slots (they need a signed app with a keychain entitlement, and the Secure Enclave only does P-256, so they need the same post-quantum care as Windows TPM slots), and locking on screen lock or sleep.

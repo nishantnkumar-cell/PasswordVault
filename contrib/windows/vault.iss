@@ -26,6 +26,18 @@
 #ifndef BinDir
   #define BinDir "..\..\target\release"
 #endif
+; x64 (the default; also runs on Windows 11 on Arm, emulated) or arm64
+; (native for Arm PCs such as Snapdragon laptops; file name ends in -arm64).
+#ifndef Arch
+  #define Arch "x64"
+#endif
+#if Arch == "arm64"
+  #define ArchAllowed "arm64"
+  #define ArchSuffix "-arm64"
+#else
+  #define ArchAllowed "x64compatible"
+  #define ArchSuffix ""
+#endif
 #ifndef OutDir
   #define OutDir "..\..\target\installer"
 #endif
@@ -50,13 +62,13 @@ DisableProgramGroupPage=yes
 ; No administrator rights unless the user picks "all users".
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog commandline
-ArchitecturesAllowed=x64compatible
-ArchitecturesInstallIn64BitMode=x64compatible
+ArchitecturesAllowed={#ArchAllowed}
+ArchitecturesInstallIn64BitMode={#ArchAllowed}
 ; Windows 10 1903 is the first with webauthn.dll.
 MinVersion=10.0.18362
 LicenseFile=..\..\LICENSE.md
 OutputDir={#OutDir}
-OutputBaseFilename=SecretVault-Setup-{#AppVersion}
+OutputBaseFilename=SecretVault-Setup-{#AppVersion}{#ArchSuffix}
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -92,9 +104,6 @@ Root: HKA; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: s
 ; As the user who started setup, not the administrator account it may run as.
 Filename: "{app}\vaultw.exe"; Flags: nowait runasoriginaluser; Tasks: autostart
 Filename: "{app}\vault-gui.exe"; Description: "Open Secret Vault"; Flags: postinstall nowait skipifsilent runasoriginaluser
-
-[UninstallRun]
-Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM vaultd.exe /IM vault-gui.exe"; Flags: runhidden; RunOnceId: "StopVaultd"
 
 [Code]
 function EnvRoot: Integer;
@@ -196,14 +205,25 @@ begin
     Result := Result + NewLine + NewLine + MemoTasksInfo;
 end;
 
-// An upgrade replaces the programs, so stop the running ones. The vault locks;
-// its file is saved on every change, so nothing is lost.
-function PrepareToInstall(var NeedsRestart: Boolean): String;
+// Stop the running programs. The vault locks; its file is saved on every
+// change, so nothing is lost. Ask them to close first: since 0.2 their
+// process ACL refuses a forced kill, and they exit when asked. Then force
+// it, for older versions that do not.
+procedure StopVault;
 var
   Code: Integer;
 begin
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/IM vaultd.exe /IM vault-gui.exe /IM vault-prompt.exe',
+    '', SW_HIDE, ewWaitUntilTerminated, Code);
+  Sleep(2000);
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM vaultd.exe /IM vault-gui.exe /IM vault-prompt.exe',
     '', SW_HIDE, ewWaitUntilTerminated, Code);
+end;
+
+// An upgrade replaces the programs, so stop the running ones.
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  StopVault;
   Result := '';
 end;
 
@@ -215,6 +235,8 @@ end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
+  if CurUninstallStep = usUninstall then
+    StopVault;
   if CurUninstallStep = usPostUninstall then
     RemoveFromPath(ExpandConstant('{app}'));
 end;
