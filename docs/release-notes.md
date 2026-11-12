@@ -90,6 +90,22 @@ can't remove its own last master password, because that is how it
 unlocks. Android gets these screens later; its app is unchanged. No vault
 file change: a vault changed on the phone opens everywhere as before.
 
+### Printable emergency kit at setup
+
+- **Print a page for the drawer.** The recovery code step of the desktop
+  app's setup has a **Print an emergency kit page** button. It opens a
+  one-page sheet in your browser with the recovery code, the steps to use it
+  and the vault file's location on Linux, Windows and macOS, and a place to
+  note where your backups are. The page is not kept: it is written to your
+  temporary folder, readable only by you, and deleted 90 seconds after it
+  opens, so print it right away.
+- It is offered only at setup, because the code is not shown again. Use
+  **Unlock methods** to make a new recovery code if you need a new kit.
+  `vault init` on the command line does not make the page. Needs a
+  browser; works the same on Linux, Windows and macOS.
+
+How to use it: [Setting up in the desktop app](user-guide/05-desktop-app.md).
+
 ### macOS: locks with the screen, and copied passwords stay on the Mac
 
 - **The vault locks when your Mac does.** Locking the screen, putting the
@@ -1319,22 +1335,6 @@ Platform notes: Linux and Windows. Ctrl K and Ctrl L become Cmd K and Cmd L
 on macOS once the app supports it. TPM unlock is Linux only.
 
 How to use it: [the desktop window and command palette](user-guide/desktop-window-and-palette.md).
-
-### Printable emergency kit at setup
-
-- **Print a page for the drawer.** The recovery code step of the desktop
-  app's setup has a **Print an emergency kit page** button. It opens a
-  one-page sheet in your browser with the recovery code, the steps to use it
-  and the vault file's location on Linux, Windows and macOS, and a place to
-  note where your backups are. The page is not kept: it is written to your
-  temporary folder, readable only by you, and deleted 90 seconds after it
-  opens, so print it right away.
-- It is offered only at setup, because the code is not shown again. Use
-  **Unlock methods** to make a new recovery code if you need a new kit.
-  `vault init` on the command line does not make the page. Needs a
-  browser; works the same on Linux, Windows and macOS.
-
-How to use it: [Setting up in the desktop app](user-guide/05-desktop-app.md).
 
 ### A revoke can no longer be undone through a synced copy
 
