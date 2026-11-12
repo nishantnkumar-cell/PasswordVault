@@ -3,7 +3,7 @@
 //! user (so another account cannot squat the name and collect passwords).
 
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[cfg(unix)]
 fn home(rel: &str) -> PathBuf {
@@ -85,9 +85,19 @@ pub fn endpoint() -> io::Result<PathBuf> {
 }
 
 /// Where `vaultd` serves the ssh-agent protocol (point `SSH_AUTH_SOCK`
-/// here): a socket next to the daemon's, or on Windows
-/// `\\.\pipe\vaultd-ssh-<user SID>`.
+/// here): `VAULT_SSH_AGENT` if set; else, with `VAULT_SOCKET` set, next to
+/// that socket (`ssh-agent.sock` in its folder, or `<pipe>-ssh` on
+/// Windows), so a second vaultd on its own socket never shares an agent
+/// with the first; else a socket next to the daemon's default one, or on
+/// Windows `\\.\pipe\vaultd-ssh-<user SID>`. vaultd and `vault ssh agent`
+/// both use this, so they agree.
 pub fn ssh_agent_endpoint() -> io::Result<PathBuf> {
+    if let Some(p) = std::env::var_os("VAULT_SSH_AGENT") {
+        return Ok(p.into());
+    }
+    if let Some(p) = std::env::var_os("VAULT_SOCKET") {
+        return Ok(ssh_agent_for(Path::new(&p)));
+    }
     #[cfg(unix)]
     return Ok(match std::env::var_os("XDG_RUNTIME_DIR") {
         Some(d) => PathBuf::from(d).join("vault/ssh-agent.sock"),
@@ -97,6 +107,22 @@ pub fn ssh_agent_endpoint() -> io::Result<PathBuf> {
     {
         let sid = crate::win::sid_string(&crate::win::current_user()?)?;
         Ok(PathBuf::from(format!(r"\\.\pipe\vaultd-ssh-{sid}")))
+    }
+}
+
+/// The agent endpoint that goes with a daemon endpoint other than the
+/// default one.
+pub fn ssh_agent_for(socket: &Path) -> PathBuf {
+    #[cfg(unix)]
+    return socket
+        .parent()
+        .unwrap_or(Path::new("."))
+        .join("ssh-agent.sock");
+    #[cfg(windows)]
+    {
+        let mut s = socket.as_os_str().to_owned();
+        s.push("-ssh");
+        PathBuf::from(s)
     }
 }
 
@@ -157,4 +183,17 @@ pub fn write_private(path: &std::path::Path, bytes: &[u8]) -> io::Result<()> {
     #[cfg(unix)]
     std::os::unix::fs::OpenOptionsExt::mode(&mut o, 0o600);
     o.open(path)?.write_all(bytes)
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn agent_sits_next_to_a_custom_socket() {
+        assert_eq!(
+            ssh_agent_for(Path::new("/tmp/scratch/run/vaultd.sock")),
+            PathBuf::from("/tmp/scratch/run/ssh-agent.sock")
+        );
+    }
 }
