@@ -8,7 +8,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use vault_ipc::{
-    ClientScope, ClientToken, Envelope, ItemId, Request, Response, read_frame, write_frame,
+    ClientScope, ClientToken, Envelope, ItemId, Request, Response, UnlockMethod, read_frame,
+    write_frame,
 };
 
 use crate::approve::{self, CardPrompt, PairPrompt, Prompt};
@@ -103,6 +104,20 @@ fn confirm_use(
     }
 }
 
+/// Quick unlock with Windows Hello or Touch ID, without holding the daemon
+/// lock while the prompt is open: an unanswered prompt must not stall
+/// every other client.
+fn quick_unlock_by_prompt(daemon: &Shared, token: Option<&ClientToken>) -> Response {
+    let lock = || daemon.lock().unwrap_or_else(|p| p.into_inner());
+    let hello = match lock().begin_quick_unlock(token) {
+        Ok(Some(h)) => h,
+        Ok(None) => return Response::Ok,
+        Err(m) => return Response::Error(m),
+    };
+    let verdict = hello.verify("Unlock Secret Vault");
+    lock().end_quick_unlock(verdict)
+}
+
 /// Copy passwords from the running Secret Service (Linux) without holding
 /// the daemon lock: GNOME Keyring may ask for its password first.
 fn import_app_passwords(daemon: &Shared, token: Option<&ClientToken>) -> Response {
@@ -147,6 +162,9 @@ pub fn connection(mut s: impl Read + Write, daemon: &Shared, pid: Option<u32>) -
                 card_by_prompt(daemon, env.token.as_ref(), id, origin, pid)
             }
             Request::ImportAppPasswords => import_app_passwords(daemon, env.token.as_ref()),
+            Request::Unlock {
+                method: UnlockMethod::Hello,
+            } => quick_unlock_by_prompt(daemon, env.token.as_ref()),
             request => {
                 let (resp, pending) = {
                     let mut d = daemon.lock().unwrap_or_else(|p| p.into_inner());

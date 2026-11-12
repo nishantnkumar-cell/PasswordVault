@@ -278,7 +278,15 @@ programs must be updated together (two new requests).
 Known limits: the desktop app does not lock its own memory (it holds only
 what is on screen). An administrator, or malware that first changes the
 process permissions, can still read memory. `VAULT_HARDEN=off` turns the
-permission change off for debugging. No vault file change.
+permission change off for debugging. Because of it, PowerShell's
+`Stop-Process -Name vaultd` now says "Access is denied": stop vaultd with
+`taskkill /im vaultd.exe /f` or Task Manager instead. No vault file change.
+
+- **An open Windows Hello prompt no longer holds up everything else.**
+  While a quick-unlock prompt (Windows Hello or Touch ID) waited for you,
+  every other request to vaultd waited too, even `vault status`, until the
+  prompt was answered. Now the rest keeps working, and you can unlock with
+  your password instead while it is open. Found in testing on a real PC.
 
 ### Windows on Arm
 
