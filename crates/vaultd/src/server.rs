@@ -266,7 +266,7 @@ mod unix {
     where
         F: Fn(Conn, Option<u32>) + Send + Sync + Clone + 'static,
     {
-        serve_refusing(listener, owner, |c| super::refuse(c), f)
+        serve_refusing(listener, owner, super::refuse, f)
     }
 
     /// Like `serve`, answering other users' connections with `refusal`.
@@ -427,7 +427,7 @@ mod windows {
     where
         F: Fn(Conn, Option<u32>) + Send + Sync + Clone + 'static,
     {
-        serve_refusing(listener, owner, |c| super::refuse(c), f)
+        serve_refusing(listener, owner, super::refuse, f)
     }
 
     /// Like `serve`, answering other users' connections with `refusal`.
