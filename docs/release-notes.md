@@ -193,7 +193,10 @@ How to use it: [Sync, Linux notes](user-guide/10-sync.md#differences-between-sys
   downloads the newest release, checks it, and sets up vaultd as its own
   `vault` system user, so keys stay out of swap and other programs of yours
   cannot read them. `--user-service` installs into `~/.local` without root
-  instead. See [Getting started](user-guide/01-getting-started.md#the-easiest-way-one-command).
+  instead. Running it again upgrades and keeps your vault; `--uninstall`
+  removes the programs and the shell lines it added, never a vault. Each
+  person on a shared computer gets their own vault and `vaultd@<name>`. See
+  [Getting started](user-guide/01-getting-started.md#the-easiest-way-one-command).
   Windows and macOS keep their installers.
 
 | | Linux | Windows | macOS |

@@ -36,7 +36,13 @@ never reach swap. It also moves a vault you made earlier with the per-user
 service (it asks first, and keeps the old copy). Afterwards, open a new
 terminal, sign out and back in once, and go to
 [Create your vault](#create-your-vault). To upgrade, run the same command
-again.
+again: it keeps your vault, and restarting vaultd locks it, so unlock it
+once afterwards.
+
+On a computer shared by several people, each person runs the command once
+as themselves. Everyone gets their own vault (`/var/lib/vault/<name>`), their
+own master password and their own `vaultd@<name>`, which answers only its
+owner.
 
 In this mode there is no approval window, because the daemon has no
 desktop: you pair the browser and other programs by proving your password
@@ -45,7 +51,9 @@ desktop: you pair the browser and other programs by proving your password
 `--user-service` instead: it needs no password and puts everything in
 `~/.local`. On some systems it then offers one `sudo` step so that vaultd can
 keep keys out of swap. `--help` lists every option, and `--uninstall`
-removes the programs (never your vault).
+removes the programs and the lines it added to your shell start-up files. It
+never deletes a vault, and it keeps the `vault` system user for the other
+people on the computer.
 
 ### Another easy way: a package
 

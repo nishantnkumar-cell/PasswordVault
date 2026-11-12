@@ -65,11 +65,31 @@ add_line() { # FILE LINE: append once
     [ -f "$1" ] || return 0
     grep -qF "$2" "$1" || printf '\n# Added by the Secret Vault installer\n%s\n' "$2" >>"$1"
 }
+drop_socket_lines() { # take out what add_line added for VAULT_SOCKET
+    local rc
+    for rc in "$HOME/.profile" "$HOME/.bashrc" "$HOME/.zshrc"; do
+        [ -f "$rc" ] && grep -q '^export VAULT_SOCKET=/run/vault/' "$rc" || continue
+        awk '
+            /^export VAULT_SOCKET=\/run\/vault\// {
+                if (n > 0 && line[n] == "# Added by the Secret Vault installer") {
+                    n--
+                    if (n > 0 && line[n] == "") n--
+                }
+                next
+            }
+            { line[++n] = $0 }
+            END { for (i = 1; i <= n; i++) print line[i] }
+        ' "$rc" >"$rc.vault-tmp" && cat "$rc.vault-tmp" >"$rc" && rm -f "$rc.vault-tmp"
+    done
+    rm -f "$HOME/.config/environment.d/50-secret-vault.conf"
+}
 
 [ "$(id -u)" != 0 ] || die "run this as yourself, not as root: it sets vaultd up for the signed-in user"
 
 if [ -n "$uninstall" ]; then
     if user_systemd; then systemctl --user disable --now vaultd 2>/dev/null || true; fi
+    drop_socket_lines
+    system=
     find "$home_share/icons/hicolor" -name 'dev.passwordvault.app.*' -delete 2>/dev/null || true
     rm -f "${bins[@]/#/$HOME/.local/bin/}" "$units/vaultd.service" \
         "$home_share/applications/dev.passwordvault.app.desktop" "$HOME/.config/environment.d/50-secret-vault.conf"
@@ -80,8 +100,17 @@ if [ -n "$uninstall" ]; then
             /etc/udev/rules.d/70-vault-fido.rules
         sudo find /usr/local/share/icons/hicolor -name 'dev.passwordvault.app.*' -delete 2>/dev/null || true
         sudo systemctl daemon-reload
+        system=1
     fi
-    say "Secret Vault removed. Your vault is kept (in $home_share/vault or /var/lib/vault/$me)."
+    say "Secret Vault removed."
+    [ ! -f "$home_share/vault/vault.svault" ] || echo "    Your vault is kept in $home_share/vault."
+    if [ -n "$system" ]; then
+        echo "    Kept: your vault in /var/lib/vault/$me, the \"vault\" system user and"
+        echo "    /etc/sysusers.d/vault.conf (other people on this computer may use them)."
+        echo "    To delete your vault for good: sudo rm -r /var/lib/vault/$me"
+    elif [ -d /var/lib/vault ]; then
+        echo "    The system service is still installed; run again and answer yes to remove it."
+    fi
     exit 0
 fi
 
@@ -154,7 +183,14 @@ system_file() { # NAME (path under contrib/)
     fi
 }
 
+had_vault=
+was_running=
 if [ $mode = user ]; then
+    [ ! -f "$home_share/vault/vault.svault" ] || had_vault=1
+    ! user_systemd || ! systemctl --user -q is-active vaultd 2>/dev/null || was_running=1
+    # A system install left VAULT_SOCKET pointing at vaultd@you; this one uses the default.
+    drop_socket_lines
+    unset VAULT_SOCKET
     # 2u. Into ~/.local, with the archive's own install.sh (it also upgrades).
     if tty_ok; then "$dir/install.sh" </dev/tty; else "$dir/install.sh" </dev/null; fi
     # The service may only write these folders, so they must exist first.
@@ -201,6 +237,8 @@ else
 
     say "Setting up the system service (sudo asks for your password)..."
     sudo -v
+    ! sudo test -f "/var/lib/vault/$me/vault.svault" || had_vault=1
+    ! systemctl -q is-active "vaultd@$me" 2>/dev/null || was_running=1
     # A vault made earlier by the user service moves along, with its paired apps.
     old_vault=$home_share/vault/vault.svault
     move=
@@ -240,6 +278,7 @@ else
             sudo chown -R vault:vault "/var/lib/vault/$me/state"
         fi
         say "Moved your vault to /var/lib/vault/$me (the old copy is still in $home_share/vault)."
+        had_vault=1
     fi
     sudo systemctl enable "vaultd@$me" >/dev/null 2>&1
     sudo systemctl restart "vaultd@$me"
@@ -264,9 +303,14 @@ else
 fi
 
 echo
-say "Secret Vault $version is installed."
-echo "    Open \"Secret Vault\" from your app menu to create your vault, or run: vault init"
-if [ $mode = system ]; then
+if [ -n "$had_vault" ]; then
+    say "Secret Vault $version is installed; your vault and paired apps are kept."
+    [ -z "$was_running" ] || echo "    vaultd was restarted, so the vault is locked: unlock it in the app or with: vault unlock"
+else
+    say "Secret Vault $version is installed."
+    echo "    Open \"Secret Vault\" from your app menu to create your vault, or run: vault init"
+fi
+if [ $mode = system ] && [ -z "$was_running" ]; then
     echo "    Open a new terminal first (it needs VAULT_SOCKET), and sign out and in once"
     echo "    so the app menu entry and other apps see it too."
 fi
