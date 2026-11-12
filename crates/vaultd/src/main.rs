@@ -19,7 +19,7 @@ OPTIONS:
   --vault PATH       vault file      [default: DATA/vault.svault]
   --state-dir PATH   daemon state    [default: STATE]
   --socket PATH      Unix socket or Windows pipe [default: see docs/vaultd.md]
-  --ssh-agent PATH   ssh-agent socket or pipe for SSH_AUTH_SOCK [default: see docs/ssh.md]
+  --ssh-agent PATH   ssh-agent socket or pipe for SSH_AUTH_SOCK [default: next to the socket; see docs/ssh.md]
   --no-ssh-agent     do not serve the ssh-agent protocol
   --secret-service   serve the freedesktop Secret Service on the session bus,
                      for apps that keep passwords through libsecret (Linux;
@@ -44,20 +44,44 @@ fn harden() {
     if let Err(e) = nix::sys::prctl::set_dumpable(false) {
         eprintln!("vaultd: warning: could not clear the dumpable flag: {e}");
     }
-    // Lock all memory, including future Argon2id buffers (up to 4 GiB), but
-    // only when the limit allows it: past the limit, allocations would fail.
-    const NEEDED: u64 = 5 << 30;
+    // Lock all memory, including future Argon2id buffers, but only when the
+    // limit allows it: past the limit, allocations would fail. Raise the soft
+    // limit to the hard one first, since a user unit's LimitMEMLOCK cannot
+    // go above what the user manager was given.
+    let needed = memlock_needed();
     match getrlimit(Resource::RLIMIT_MEMLOCK) {
-        Ok((soft, _)) if soft == nix::sys::resource::RLIM_INFINITY || soft >= NEEDED => {
-            use nix::sys::mman::{MlockAllFlags, mlockall};
-            if let Err(e) = mlockall(MlockAllFlags::MCL_CURRENT | MlockAllFlags::MCL_FUTURE) {
-                eprintln!("vaultd: warning: could not lock memory, keys may reach swap: {e}");
+        Ok((soft, hard)) => {
+            let soft = if soft != hard && setrlimit(Resource::RLIMIT_MEMLOCK, hard, hard).is_ok() {
+                hard
+            } else {
+                soft
+            };
+            if soft == nix::sys::resource::RLIM_INFINITY || soft >= needed {
+                use nix::sys::mman::{MlockAllFlags, mlockall};
+                if let Err(e) = mlockall(MlockAllFlags::MCL_CURRENT | MlockAllFlags::MCL_FUTURE) {
+                    eprintln!("vaultd: warning: could not lock memory, keys may reach swap: {e}");
+                }
+            } else {
+                eprintln!(
+                    "vaultd: warning: the memory lock limit (RLIMIT_MEMLOCK) is {} MiB, below the {} MiB \
+                     needed, so memory is not locked and keys may reach swap; see \
+                     \"Memory locking\" in docs/vaultd.md to raise it",
+                    soft >> 20,
+                    needed >> 20
+                );
             }
         }
-        _ => eprintln!(
-            "vaultd: warning: RLIMIT_MEMLOCK is too low to lock memory, keys may reach swap (set LimitMEMLOCK=infinity)"
-        ),
+        Err(e) => {
+            eprintln!("vaultd: warning: could not read RLIMIT_MEMLOCK, memory not locked: {e}")
+        }
     }
+}
+
+/// How much memory vaultd may lock at most: the largest Argon2id buffer a
+/// vault may ask for, plus room for everything else.
+#[cfg(target_os = "linux")]
+fn memlock_needed() -> u64 {
+    (u64::from(vault_core::KDF_MAX_M_KIB) << 10) + (512 << 20)
 }
 
 /// No core dumps and no debugger attach. macOS has no mlockall, but it
@@ -116,6 +140,7 @@ fn main() {
     #[cfg_attr(not(target_os = "linux"), allow(unused_mut, unused_variables))]
     let mut secret_service = false;
     let mut agent = Some(local::ssh_agent_endpoint().unwrap_or_else(|e| die(&e.to_string())));
+    let (mut socket_set, mut agent_set) = (false, false);
 
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
@@ -126,9 +151,18 @@ fn main() {
         match a.as_str() {
             "--vault" => vault = val().into(),
             "--state-dir" => state = val().into(),
-            "--socket" => socket = val().into(),
-            "--ssh-agent" => agent = Some(val().into()),
-            "--no-ssh-agent" => agent = None,
+            "--socket" => {
+                socket = val().into();
+                socket_set = true;
+            }
+            "--ssh-agent" => {
+                agent = Some(val().into());
+                agent_set = true;
+            }
+            "--no-ssh-agent" => {
+                agent = None;
+                agent_set = true;
+            }
             #[cfg(unix)]
             "--owner-user" => {
                 let name = val();
@@ -158,6 +192,11 @@ fn main() {
             }
             _ => die(&format!("unknown option {a}; see --help")),
         }
+    }
+    // A daemon on its own socket gets its own agent next to it, which is
+    // where `vault ssh agent` looks when VAULT_SOCKET names that socket.
+    if socket_set && !agent_set && std::env::var_os("VAULT_SSH_AGENT").is_none() {
+        agent = Some(local::ssh_agent_for(&socket));
     }
 
     let store = Store::open(vault, state).unwrap_or_else(|e| die(&e.to_string()));
