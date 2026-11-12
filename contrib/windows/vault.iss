@@ -105,9 +105,6 @@ Root: HKA; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: s
 Filename: "{app}\vaultw.exe"; Flags: nowait runasoriginaluser; Tasks: autostart
 Filename: "{app}\vault-gui.exe"; Description: "Open Secret Vault"; Flags: postinstall nowait skipifsilent runasoriginaluser
 
-[UninstallRun]
-Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM vaultd.exe /IM vault-gui.exe"; Flags: runhidden; RunOnceId: "StopVaultd"
-
 [Code]
 function EnvRoot: Integer;
 begin
@@ -208,14 +205,25 @@ begin
     Result := Result + NewLine + NewLine + MemoTasksInfo;
 end;
 
-// An upgrade replaces the programs, so stop the running ones. The vault locks;
-// its file is saved on every change, so nothing is lost.
-function PrepareToInstall(var NeedsRestart: Boolean): String;
+// Stop the running programs. The vault locks; its file is saved on every
+// change, so nothing is lost. Ask them to close first: since 0.2 their
+// process ACL refuses a forced kill, and they exit when asked. Then force
+// it, for older versions that do not.
+procedure StopVault;
 var
   Code: Integer;
 begin
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/IM vaultd.exe /IM vault-gui.exe /IM vault-prompt.exe',
+    '', SW_HIDE, ewWaitUntilTerminated, Code);
+  Sleep(2000);
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM vaultd.exe /IM vault-gui.exe /IM vault-prompt.exe',
     '', SW_HIDE, ewWaitUntilTerminated, Code);
+end;
+
+// An upgrade replaces the programs, so stop the running ones.
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  StopVault;
   Result := '';
 end;
 
@@ -227,6 +235,8 @@ end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
+  if CurUninstallStep = usUninstall then
+    StopVault;
   if CurUninstallStep = usPostUninstall then
     RemoveFromPath(ExpandConstant('{app}'));
 end;

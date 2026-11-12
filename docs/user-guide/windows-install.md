@@ -128,10 +128,10 @@ Manager > Startup apps**, select **vaultw**, and click **Disable**.
 
 - **Start it:** run *vaultw* (in the install folder), or sign out and back
   in.
-- **Stop it:** in PowerShell or Command Prompt, `taskkill /im vaultd.exe /f`,
-  or *End task* in Task Manager. The vault locks and its keys leave memory;
-  nothing in the vault file is lost. (PowerShell's `Stop-Process` says
-  "Access is denied": vaultd blocks the full access it asks for.)
+- **Stop it:** in PowerShell or Command Prompt, `taskkill /im vaultd.exe`.
+  The vault locks and its keys leave memory;
+  nothing in the vault file is lost. (`Stop-Process` and `taskkill /f` say
+  "Access is denied": vaultd blocks the access they ask for.)
 - **See its messages live:** stop it, then run `vaultd.exe` in a PowerShell
   window. It keeps running until you close that window.
 

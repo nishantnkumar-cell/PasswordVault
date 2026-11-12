@@ -65,11 +65,11 @@ for an all-users install), value `Secret Vault daemon`.
 To watch the messages instead, run `vaultd.exe` in a terminal; closing the
 terminal stops it. To stop a background vaultd:
 
-    taskkill /im vaultd.exe /f
+    taskkill /im vaultd.exe
 
-Task Manager's *End task* works too. Windows PowerShell 5.1's
-`Stop-Process` does not: it asks for full access to the process before
-ending it, and vaultd's process ACL (below) refuses that. Pass
+This asks vaultd to close, and it does. `taskkill /f` and Windows
+PowerShell 5.1's `Stop-Process` are refused with "Access is denied": they
+ask for more access to the process than its ACL (below) gives. Pass
 `VAULT_HARDEN=off` to vaultd if a script of yours needs it.
 
 The keys go with the process; the vault file is unaffected.
