@@ -200,7 +200,7 @@ macOS (threat model A3). Nothing here needs administrator rights.
 | Step | vaultd | vault-gui, vault-prompt |
 |---|---|---|
 | No Windows Error Reporting dump: `WerAddExcludedApplication` for the program's name (this user, kept under `HKCU\Software\Microsoft\Windows\Windows Error Reporting\ExcludedApplications`), and `SetErrorMode` without the crash box | Yes | Yes |
-| Process ACL: our own user may only wait on, query and end the process (`SYNCHRONIZE`, `PROCESS_QUERY_LIMITED_INFORMATION`, `PROCESS_TERMINATE`); SYSTEM keeps full access. No `PROCESS_VM_READ`, `PROCESS_VM_WRITE`, `PROCESS_CREATE_THREAD` or `PROCESS_DUP_HANDLE` | Yes | Yes |
+| Process ACL: our own user may only wait on, query and end the process (`SYNCHRONIZE`, `PROCESS_QUERY_INFORMATION`, `PROCESS_QUERY_LIMITED_INFORMATION`, `PROCESS_TERMINATE`); SYSTEM keeps full access. No `PROCESS_VM_READ`, `PROCESS_VM_WRITE`, `PROCESS_CREATE_THREAD` or `PROCESS_DUP_HANDLE` | Yes | Yes |
 | Heap locked in RAM: the global allocator calls `VirtualLock` on every block, raising the minimum working set when the quota is full (up to 2 GiB, enough for the largest Argon2id cost the format allows, 1 GiB) | Yes | No |
 | Mitigation policies: extension points off (no AppInit DLLs or global hooks), images only from System32 first and never from a network share | Yes | No (input methods need extension points) |
 

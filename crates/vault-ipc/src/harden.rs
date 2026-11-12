@@ -39,11 +39,12 @@ use windows_sys::Win32::System::Threading::{
     SetProcessMitigationPolicy,
 };
 
-/// What a process may do to us: wait on it, read its name and user, and end
-/// it (the installer and Task Manager stop vaultd). No memory reads or
-/// writes, no thread injection, no handle duplication.
-/// SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE.
-const OTHERS_MAY: u32 = 0x0010_0000 | 0x1000 | 0x0001;
+/// What a process may do to us: wait on it, read its name, user and exit
+/// code, and end it (`taskkill /f` asks for full query rights as well as
+/// terminate). No memory reads or writes, no thread injection, no handle
+/// duplication. SYNCHRONIZE | PROCESS_QUERY_INFORMATION |
+/// PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE.
+const OTHERS_MAY: u32 = 0x0010_0000 | 0x0400 | 0x1000 | 0x0001;
 
 /// Set `VAULT_HARDEN=off` to skip the process ACL and the mitigation
 /// policies (for a debugger, or to rule them out when something breaks).

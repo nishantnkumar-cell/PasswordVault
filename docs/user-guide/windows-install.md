@@ -182,7 +182,9 @@ To add a security key:
 
        vault add-slot fido2 --label "Blue key"
 
-   Add `--uv` to also require the key's PIN every time you unlock.
+   If your key has a PIN, add `--uv` (`vault add-slot fido2 --uv --label
+   "Blue key"`): on Windows a key with a PIN only works in a slot that asks
+   for it, and without `--uv` the command stops and tells you so.
 3. Windows opens its own **security key window**. Touch the key when it
    blinks. If the slot uses the PIN, Windows asks for it in that same
    window. On Windows, the `vault` command doesn't ask for the PIN itself,
