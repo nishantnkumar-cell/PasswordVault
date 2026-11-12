@@ -77,11 +77,14 @@ fn harden() {
     }
 }
 
-/// How much memory vaultd may lock at most: the largest Argon2id buffer a
-/// vault may ask for, plus room for everything else.
+/// How much lockable memory vaultd wants before it locks everything: a
+/// vault at the writer's default Argon2id cost (256 MiB) with plenty of room
+/// for the rest. Past the limit an allocation fails instead of swapping:
+/// Argon2id then reports "not enough memory" for a vault with a much higher
+/// cost (up to 1 GiB) rather than aborting, so a lower bar is safe.
 #[cfg(target_os = "linux")]
 fn memlock_needed() -> u64 {
-    (u64::from(vault_core::KDF_MAX_M_KIB) << 10) + (512 << 20)
+    (u64::from(vault_core::KdfCost::DEFAULT.m_kib) << 10) + (768 << 20)
 }
 
 /// No core dumps and no debugger attach. macOS has no mlockall, but it

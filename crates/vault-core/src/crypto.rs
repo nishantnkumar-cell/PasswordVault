@@ -49,7 +49,10 @@ pub(crate) fn argon2id(password: &[u8], p: &Argon2Params) -> Result<Key, Error> 
     let mut out = Zeroizing::new([0u8; 32]);
     Argon2::new(Algorithm::Argon2id, Version::V0x13, params)
         .hash_password_into(password, &p.salt, out.as_mut())
-        .map_err(|_| Error::KdfOutOfBounds)?;
+        .map_err(|e| match e {
+            argon2::Error::OutOfMemory => Error::KdfOutOfMemory,
+            _ => Error::KdfOutOfBounds,
+        })?;
     Ok(Key::from_bytes(*out))
 }
 

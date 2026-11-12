@@ -169,12 +169,13 @@ How to use it: [Sync, Linux notes](user-guide/10-sync.md#differences-between-sys
 
 - **vaultd locks its memory on more systems.** It used to lock memory only
   when the lock limit was unlimited or at least 5 GiB. Now it first raises
-  its own limit as far as the system allows, and 1.5 GiB is enough: the
-  largest Argon2id buffer a vault can use (1 GiB) plus room for the rest.
-  On WSL, the limit is set lower than that, so keys could reach swap there.
-  vaultd says so at start, and
+  its own limit as far as the system allows, and 1 GiB is enough: a vault
+  at the default cost plus plenty of room. WSL's limit (about 1.5 GiB) was
+  below the old bar, so keys could reach swap there; now they are locked.
+  Below 1 GiB, vaultd says so at start, and
   [Memory locking](vaultd.md#memory-and-session-locking) shows how to raise
-  the limit.
+  the limit. A vault with a very high cost that does not fit now says "not
+  enough memory" instead of stopping vaultd.
 - **`vault ssh agent` prints the right socket.** With `VAULT_SOCKET` set
   (the system-user service, or a second test vault), it printed the default
   agent socket instead of the one vaultd was serving. A vaultd on its own
@@ -183,11 +184,13 @@ How to use it: [Sync, Linux notes](user-guide/10-sync.md#differences-between-sys
   `/run/vault/<you>/ssh-agent.sock`: run `vault ssh agent` again and update
   `SSH_AUTH_SOCK` in your shell profile if you set it by hand.
 - **`vault ls` shows SSH and OpenPGP keys as keys**, not as logins with a
-  `[key]` mark, and `vault ls keys` lists only them.
+  `[key]` mark. `vault ls keys` lists only them, and `vault ls logins` no
+  longer includes them.
+- **`vault … | head` no longer prints a panic** when the pipe closes early.
 
 | | Linux | Windows | macOS |
 | --- | --- | --- | --- |
-| Memory lock needs | 1.5 GiB lock limit (was 5 GiB) | Nothing (locks per block) | Not used (swap is encrypted) |
+| Memory lock needs | 1 GiB lock limit (was 5 GiB) | Nothing (locks per block) | Not used (swap is encrypted) |
 | `vault ssh agent` with `VAULT_SOCKET` | Fixed | Fixed | Fixed |
 
 No vault file change.
