@@ -58,6 +58,7 @@ fn harden() {
             };
             if soft == nix::sys::resource::RLIM_INFINITY || soft >= needed {
                 use nix::sys::mman::{MlockAllFlags, mlockall};
+                few_malloc_arenas();
                 if let Err(e) = mlockall(MlockAllFlags::MCL_CURRENT | MlockAllFlags::MCL_FUTURE) {
                     eprintln!("vaultd: warning: could not lock memory, keys may reach swap: {e}");
                 }
@@ -76,6 +77,23 @@ fn harden() {
         }
     }
 }
+
+/// glibc gives each new thread its own 64 MiB malloc arena, and with
+/// `mlockall(MCL_FUTURE)` every reserved arena counts against the lock
+/// limit: one per client thread soon eats it. Two arenas are plenty for
+/// vaultd. Must run before any thread starts.
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+#[allow(unsafe_code)]
+fn few_malloc_arenas() {
+    // SAFETY: mallopt only changes an allocator setting; called while the
+    // process is still single-threaded.
+    if unsafe { nix::libc::mallopt(nix::libc::M_ARENA_MAX, 2) } == 0 {
+        eprintln!("vaultd: warning: could not limit malloc arenas");
+    }
+}
+
+#[cfg(all(target_os = "linux", not(target_env = "gnu")))]
+fn few_malloc_arenas() {}
 
 /// How much lockable memory vaultd wants before it locks everything: a
 /// vault at the writer's default Argon2id cost (256 MiB) with plenty of room
