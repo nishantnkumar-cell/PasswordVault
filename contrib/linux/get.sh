@@ -70,12 +70,15 @@ add_line() { # FILE LINE: append once
 
 if [ -n "$uninstall" ]; then
     if user_systemd; then systemctl --user disable --now vaultd 2>/dev/null || true; fi
+    find "$home_share/icons/hicolor" -name 'dev.passwordvault.app.*' -delete 2>/dev/null || true
     rm -f "${bins[@]/#/$HOME/.local/bin/}" "$units/vaultd.service" \
         "$home_share/applications/dev.passwordvault.app.desktop" "$HOME/.config/environment.d/50-secret-vault.conf"
-    if [ -f /etc/systemd/system/vaultd@.service ] && ask "Also remove the system service vaultd@$me (sudo)?"; then
+    if { [ -f /etc/systemd/system/vaultd@.service ] || [ -e /usr/local/bin/vaultd ]; } &&
+        ask "Also remove the system-wide install (vaultd@$me, /usr/local/bin; sudo)?"; then
         sudo systemctl disable --now "vaultd@$me" 2>/dev/null || true
         sudo rm -f "${bins[@]/#//usr/local/bin/}" /etc/systemd/system/vaultd@.service \
-            /usr/local/share/applications/dev.passwordvault.app.desktop
+            /etc/udev/rules.d/70-vault-fido.rules
+        sudo find /usr/local/share/icons/hicolor -name 'dev.passwordvault.app.*' -delete 2>/dev/null || true
         sudo systemctl daemon-reload
     fi
     say "Secret Vault removed. Your vault is kept (in $home_share/vault or /var/lib/vault/$me)."
@@ -206,7 +209,7 @@ else
         ask "Move it there (a copy stays where it is, as a backup)?" && move=1
     fi
 
-    sudo install -d /usr/local/bin /usr/local/share/applications /usr/local/share/icons
+    sudo install -d /usr/local/bin /usr/local/share/icons /etc/sysusers.d /etc/udev/rules.d /etc/systemd/system
     for b in "${bins[@]}"; do
         # Replace, not overwrite in place: a running vaultd keeps its old file.
         sudo install -m755 "$dir/bin/$b" "/usr/local/bin/.$b.new"
