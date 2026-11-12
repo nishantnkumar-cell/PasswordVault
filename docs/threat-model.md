@@ -77,7 +77,6 @@ Status: **M** = mitigated by the design, **P** = partially mitigated, **A** = ac
 | --- | --- | --- |
 | Read `vaultd` memory while quick unlock is available (Windows) | The parked vault key and its protected wrap key are in the process, as the vault key is while unlocked. `CryptProtectMemory` keeps it out of crash dumps and the page file, not away from code running in or debugging the process | A (opt-in) |
 | Read `vaultd` memory or attach ptrace | Separate system user (`vaultd@.service`; the per-user unit does not give this), `PR_SET_DUMPABLE=0`, Yama ptrace scope, no core dumps | M with the system unit, P with the user unit |
-| A program on a server reached with `ssh -A` uses a forwarded SSH key | Connections that announce forwarding (`session-bind@openssh.com`, OpenSSH 8.9+) always ask in the approval window, even for a key with confirmation off, and the window shows the server's host key fingerprint. Clients that do not send the message are not recognised | P |
 | Connect to the socket and request secrets | One-time client pairing, by proving an unlock method or approved in `vaultd`'s own prompt (one at a time, 10 s cooldown after a decline); fresh user presence for non-allowlisted release; rate limit. The prompt names the peer by PID-derived path, not yet by pidfd. Allow in the prompt works only after the window has had the focus for 1.2 s, so a stray or scripted click at the moment it appears does not approve | P |
 | Impersonate a paired client binary | Pairing key stored in the client's own storage, readable by the same user | A on Linux (no per-app isolation) |
 | Keylog the master password | Wayland: partially mitigated by compositor isolation. X11: any client can keylog | A on X11, P on Wayland |
@@ -87,6 +86,7 @@ Status: **M** = mitigated by the design, **P** = partially mitigated, **A** = ac
 | Modify the browser extension or profile | Out of scope: same-user code owns the browser profile | A |
 | Capture a phone passkey's PRF output | The desktop app or `vault` runs the phone passkey (QR code, Bluetooth, the phone maker's relay) and sends the 32-byte PRF output to `vaultd` with the password, so `vaultd` keeps its network sandbox. Same-user code that can see the password can see this output too; it opens only that slot, still with the password, and wrong guesses are rate limited as for any method | A |
 | Answer a phone QR code from far away (relay or phishing over a screen share) | The hybrid transport requires Bluetooth proximity between phone and computer before the phone talks; the relay sees only encrypted traffic | M |
+| A program on a server reached with `ssh -A` uses a forwarded SSH key | Connections that announce forwarding (`session-bind@openssh.com`, OpenSSH 8.9+) always ask in the approval window, even for a key with confirmation off, and the window shows the server's host key fingerprint. Clients that do not send the message are not recognised | P |
 | Take over the Apple or Google account that syncs the passkey | The phone factor never opens the vault alone: the password stays in the KEK | P |
 
 ### A4, root or kernel attacker

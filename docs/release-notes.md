@@ -287,6 +287,24 @@ Nothing changes in day-to-day use.
 Known limits: the Android frame check has unit tests but hasn't been tried
 on a real phone with a mixed-site page. No vault file change.
 
+### SSH agent: which server, and forwarded agents always ask
+
+- **The approval window names the server.** With OpenSSH 8.9 or later, a
+  login's approval window now shows `for the server SHA256:...`, the server's
+  host key fingerprint, because the agent checks OpenSSH's
+  `session-bind@openssh.com` message.
+- **Forwarded use always asks.** If a program on a server you connected to
+  with `ssh -A` asks for your key, the window opens even for a key with
+  *Ask before each use* turned off, and says it is forwarded from another
+  computer. Deny it if you did not expect it.
+- Same on Linux, macOS and Windows (OpenSSH for Windows included). `ssh`
+  clients that do not send the message (older versions, git signing) are
+  served as before, and a forwarded connection from them is not recognised.
+  Needs a second computer to try: `ssh -A` into it and run `ssh-add -L` or
+  `git fetch` there.
+
+How to use it: [Agent forwarding](user-guide/06-ssh-and-git.md#agent-forwarding-ssh--a).
+
 ### The approval window ignores clicks that come too soon
 
 - **Safer approvals.** In the window that asks to pair, fill a card, use an SSH
@@ -1319,24 +1337,6 @@ Platform notes: Linux and Windows. Ctrl K and Ctrl L become Cmd K and Cmd L
 on macOS once the app supports it. TPM unlock is Linux only.
 
 How to use it: [the desktop window and command palette](user-guide/desktop-window-and-palette.md).
-
-### SSH agent: which server, and forwarded agents always ask
-
-- **The approval window names the server.** With OpenSSH 8.9 or later, a
-  login's approval window now shows `for the server SHA256:...`, the server's
-  host key fingerprint, because the agent checks OpenSSH's
-  `session-bind@openssh.com` message.
-- **Forwarded use always asks.** If a program on a server you connected to
-  with `ssh -A` asks for your key, the window opens even for a key with
-  *Ask before each use* turned off, and says it is forwarded from another
-  computer. Deny it if you did not expect it.
-- Same on Linux, macOS and Windows (OpenSSH for Windows included). `ssh`
-  clients that do not send the message (older versions, git signing) are
-  served as before, and a forwarded connection from them is not recognised.
-  Needs a second computer to try: `ssh -A` into it and run `ssh-add -L` or
-  `git fetch` there.
-
-How to use it: [Agent forwarding](user-guide/06-ssh-and-git.md#agent-forwarding-ssh--a).
 
 ### A revoke can no longer be undone through a synced copy
 
