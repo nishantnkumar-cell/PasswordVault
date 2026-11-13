@@ -42,7 +42,7 @@ UNLOCKING                      METHOD is one of --password (default), --fido2, -
                                Touch ID (macOS)
 
 ITEMS                          ID may be any unique prefix of an item ID
-  ls [KIND]                    list items, or only logins, notes, cards or identities
+  ls [KIND]                    list items, or only logins, notes, cards, identities or keys
   show ID [--reveal]           show an item (secrets hidden unless --reveal)
   add [KIND] [--generate]      add an item interactively; KIND is login (default),
                                note, card or identity
@@ -672,7 +672,7 @@ fn kind_arg(rest: &[String]) -> Option<ItemKind> {
     };
     Some(ItemKind::from_name(singular).unwrap_or_else(|| {
         die(format!(
-            "unknown item kind {k}; use login, note, card or identity"
+            "unknown item kind {k}; use login, note, card, identity or key"
         ))
     }))
 }
@@ -855,17 +855,27 @@ fn main() {
             print_quick(&s.quick_unlock);
         }
         "ls" => {
-            let only = kind_arg(rest);
+            // SSH and OpenPGP keys are stored as logins that carry a key;
+            // list them as keys, and let `vault ls keys` pick them out.
+            let keys_only = rest
+                .iter()
+                .find(|a| !a.starts_with("--"))
+                .is_some_and(|k| k == "key" || k == "keys");
+            let only = if keys_only { None } else { kind_arg(rest) };
             for i in items(&mut Client::connect()) {
-                if only.is_some_and(|k| k != i.kind) {
+                if only.is_some_and(|k| k != i.kind) || (keys_only && i.key.is_none()) {
                     continue;
                 }
                 let totp = if i.has_totp { "  [totp]" } else { "" };
-                let key = if i.key.is_some() { "  [key]" } else { "" };
+                let kind = if i.key.is_some() {
+                    "key"
+                } else {
+                    i.kind.name()
+                };
                 println!(
-                    "{}  {:<8} {:<28} {:<24} {}{totp}{key}",
+                    "{}  {:<8} {:<28} {:<24} {}{totp}",
                     short(&i.id),
-                    i.kind.name(),
+                    kind,
                     i.title,
                     i.subtitle,
                     i.urls.join(" ")

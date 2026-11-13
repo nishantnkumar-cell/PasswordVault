@@ -90,8 +90,8 @@ vault ls
 e5a0c912  identity Home                         Alex Example
 ```
 
-`vault ls cards` lists only cards; `logins`, `notes` and `identities` work
-the same way. The first column is the item's ID. Any unique beginning of it works, so
+`vault ls cards` lists only cards; `logins`, `notes`, `identities` and
+`keys` (your SSH and OpenPGP keys) work the same way. The first column is the item's ID. Any unique beginning of it works, so
 `vault show 1c9` is enough.
 
 To see which items the browser would offer on a site:
