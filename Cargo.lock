@@ -7171,6 +7171,7 @@ dependencies = [
  "embed-resource",
  "image",
  "qrcode",
+ "raw-window-handle",
  "vault-core",
  "vault-hw",
  "vault-import",

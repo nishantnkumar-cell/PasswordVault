@@ -1220,7 +1220,7 @@ fn quick_unlock_with_windows_hello() {
     let allow = Arc::new(AtomicBool::new(true));
     let asked = Arc::new(AtomicU32::new(0));
     let mut hw = soft_hw();
-    hw.presence = Some(Box::new(SoftPresence {
+    hw.presence = Some(Arc::new(SoftPresence {
         allow: allow.clone(),
         asked: asked.clone(),
     }));
@@ -1438,4 +1438,75 @@ fn phone_passkey_slots() {
     }) else {
         panic!()
     };
+}
+
+/// A presence check that waits while `hold` is set, like a Windows Hello
+/// prompt nobody has answered yet.
+struct HeldPresence {
+    hold: Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl vaultd::hw::Presence for HeldPresence {
+    fn check_available(&self) -> vaultd::hw::HwResult<()> {
+        Ok(())
+    }
+
+    fn verify(&self, _message: &str) -> vaultd::hw::HwResult<()> {
+        while self.hold.load(std::sync::atomic::Ordering::SeqCst) {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        Ok(())
+    }
+}
+
+#[test]
+fn open_hello_prompt_does_not_block_other_clients() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let dir = tempfile::tempdir().unwrap();
+    let hold = Arc::new(AtomicBool::new(false));
+    let mut hw = soft_hw();
+    hw.presence = Some(Arc::new(HeldPresence { hold: hold.clone() }));
+    let (sock, _d) = start_daemon_with(
+        dir.path(),
+        server::current_user(),
+        Duration::from_secs(600),
+        hw,
+    );
+    let mut c = C::new(&sock);
+    let Response::Initialized { token, .. } = c.ok(Request::Init {
+        password: s(PW),
+        client_name: "cli".into(),
+    }) else {
+        panic!()
+    };
+    c.token = Some(token.clone());
+    c.ok(Request::SetQuickUnlock { hours: 8 });
+    c.ok(Request::Lock);
+
+    // The prompt is up and unanswered.
+    hold.store(true, Ordering::SeqCst);
+    let waiting = {
+        let sock = sock.clone();
+        let token = token.clone();
+        std::thread::spawn(move || {
+            let mut c = C::new(&sock);
+            c.token = Some(token);
+            c.ok(Request::Unlock {
+                method: UnlockMethod::Hello,
+            })
+        })
+    };
+    std::thread::sleep(Duration::from_millis(200));
+
+    // Another client is still answered, and can unlock another way.
+    let mut other = C::new(&sock);
+    other.token = Some(token);
+    assert!(!status(&mut other).unlocked);
+    other.ok(Request::Unlock { method: pw() });
+    assert!(status(&mut other).unlocked);
+
+    // Answering the prompt late is harmless.
+    hold.store(false, Ordering::SeqCst);
+    assert!(matches!(waiting.join().unwrap(), Response::Ok));
+    assert!(status(&mut other).unlocked);
 }
