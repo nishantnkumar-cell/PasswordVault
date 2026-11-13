@@ -173,6 +173,14 @@ fn full_lifecycle() {
         })
         .contains("8 characters")
     );
+    // Long enough but easy to guess: refused for a password-only slot.
+    assert!(
+        c.err(Request::Init {
+            password: s("password123"),
+            client_name: "t".into()
+        })
+        .contains("too easy to guess")
+    );
     let Response::Initialized {
         recovery_code,
         token,
@@ -267,7 +275,15 @@ fn full_lifecycle() {
     let kinds: Vec<_> = slots.iter().map(|s| s.kind.as_str()).collect();
     assert_eq!(kinds, ["password", "recovery", "fido2", "tpm"]);
     assert_eq!(slots[2].label, "blue key");
-    assert!(slots.iter().all(|s| s.warning.is_none()));
+    // Only the password-only slot is flagged: it opens the vault without the
+    // key or the TPM, now that hardware slots exist.
+    assert!(
+        slots[0]
+            .warning
+            .as_deref()
+            .is_some_and(|w| w.contains("without your security key"))
+    );
+    assert!(slots[1..].iter().all(|s| s.warning.is_none()));
 
     // Lock, then unlock with each factor.
     c.ok(Request::Lock);

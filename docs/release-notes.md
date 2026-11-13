@@ -1449,6 +1449,24 @@ How to use it: [the desktop window and command palette](user-guide/desktop-windo
 
 How to use it: [Removing an unlock method](user-guide/10-sync.md#removing-an-unlock-method).
 
+### Weak passwords refused, and a warning for password-only slots
+
+- **A password that is easy to guess is refused** when it will be the only
+  thing guarding a slot: your first password and `vault add-slot password`.
+  The check is zxcvbn, which spots common words, keyboard runs, dates and
+  leaked-password patterns. Passwords used together with a security key or
+  the TPM keep the 8-character rule. Existing vaults are not affected.
+- **The password-only slot is flagged once you add a key or the TPM.**
+  `vault slots` and the desktop slot list say that this slot opens the
+  vault without your key or TPM, and how to remove it if you want a device
+  to always be needed.
+- **Threat model corrected.** It no longer claims that every daily-use
+  slot mixes in a hardware factor: the first password slot never does.
+- Linux, Windows, macOS and the phone apps behave the same. The phone apps
+  do not have the strength check yet.
+
+How to use it: [Make a device or key always needed](user-guide/02-unlocking.md#make-a-device-or-key-always-needed).
+
 ---
 
 ## 0.1.0: first feature-complete version (2026-10-20)
