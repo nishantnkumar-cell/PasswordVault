@@ -119,6 +119,9 @@ const PROMPT_COOLDOWN: Duration = Duration::from_secs(10);
 
 type R<T> = Result<T, String>;
 
+const QUICK_NOT_NOW: &str = "quick unlock is not available now: unlock with your password \
+                             (or another method) first";
+
 /// `pgp::decrypt` or `pgp::unwrap`.
 type PgpOpen = fn(&[u8], &[u8]) -> R<Zeroizing<Vec<u8>>>;
 
@@ -430,16 +433,63 @@ impl Daemon {
         self.quick_hours > 0 && self.quick_until.is_some_and(|t| SystemTime::now() < t)
     }
 
-    /// Re-open the parked vault after Windows Hello or Touch ID confirms the user.
-    fn quick_unlock(&mut self) -> R<Vault> {
-        const NOT_NOW: &str = "quick unlock is not available now: unlock with your password \
-                               (or another method) first";
+    /// Start a quick unlock: check it may happen now and hand back the
+    /// presence check to run. The caller runs it without holding the daemon
+    /// lock, so other requests are served while the Windows Hello or Touch ID
+    /// prompt is open, then passes the verdict to [`Daemon::end_quick_unlock`].
+    /// `None`: the vault is already open, nothing to ask.
+    pub fn begin_quick_unlock(
+        &mut self,
+        token: Option<&ClientToken>,
+    ) -> R<Option<Arc<dyn vault_hw::Presence>>> {
+        let t = token.ok_or("this client is not paired; run `vault pair`")?;
+        self.store
+            .client_scope(t)
+            .ok_or("unknown client token; pair again")?;
+        self.last_activity = Instant::now();
+        if self.vault.is_some() {
+            return Ok(None);
+        }
+        if self.parked.is_none() || !self.quick_open() {
+            self.parked = None;
+            return Err(QUICK_NOT_NOW.into());
+        }
+        self.hw
+            .presence
+            .clone()
+            .map(Some)
+            .ok_or(QUICK_NOT_NOW.into())
+    }
+
+    /// Finish a quick unlock with the presence check's verdict.
+    pub fn end_quick_unlock(&mut self, verdict: Result<(), String>) -> Response {
+        match self.finish_quick_unlock(verdict) {
+            Ok(r) => r,
+            Err(m) => Response::Error(m),
+        }
+    }
+
+    fn finish_quick_unlock(&mut self, verdict: Result<(), String>) -> R<Response> {
+        if self.vault.is_some() {
+            // Opened another way while the prompt was up.
+            return Ok(Response::Ok);
+        }
+        let mut v = self.quick_unlock(verdict)?;
+        v.set_device(self.device);
+        self.vault = Some(v);
+        self.sync_now(None, true);
+        Ok(Response::Ok)
+    }
+
+    /// Re-open the parked vault after Windows Hello or Touch ID confirmed
+    /// the user (`verdict`).
+    fn quick_unlock(&mut self, verdict: Result<(), String>) -> R<Vault> {
+        const NOT_NOW: &str = QUICK_NOT_NOW;
         if self.parked.is_none() || !self.quick_open() {
             self.parked = None;
             return Err(NOT_NOW.into());
         }
-        let hello = self.hw.presence.as_ref().ok_or(NOT_NOW)?;
-        if let Err(m) = hello.verify("Unlock Secret Vault") {
+        if let Err(m) = verdict {
             let p = self.parked.as_mut().ok_or(NOT_NOW)?;
             p.failures += 1;
             if p.failures >= QUICK_ATTEMPTS {
@@ -870,13 +920,18 @@ impl Daemon {
             Request::Unlock {
                 method: UnlockMethod::Hello,
             } => {
-                if self.vault.is_none() {
-                    let mut v = self.quick_unlock()?;
-                    v.set_device(self.device);
-                    self.vault = Some(v);
-                    self.sync_now(None, true);
+                // The socket server asks without the daemon lock (see
+                // `begin_quick_unlock`); this path is for direct callers.
+                if self.vault.is_some() {
+                    return Ok(Response::Ok);
                 }
-                Ok(Response::Ok)
+                if self.parked.is_none() || !self.quick_open() {
+                    self.parked = None;
+                    return Err(QUICK_NOT_NOW.into());
+                }
+                let hello = self.hw.presence.clone().ok_or(QUICK_NOT_NOW)?;
+                let verdict = hello.verify("Unlock Secret Vault");
+                self.finish_quick_unlock(verdict)
             }
             Request::Unlock { method } => {
                 let v = self.prove(&method)?;
