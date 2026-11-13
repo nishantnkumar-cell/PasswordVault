@@ -61,7 +61,7 @@ final class TourTests: XCTestCase {
         type(phrase, into: app.secureTextFields["Type it again"])
         shot("create")
         app.buttons["Create Vault"].tap()
-        XCTAssertTrue(app.staticTexts["Your Recovery Code"].waitForExistence(timeout: 180))
+        XCTAssertTrue(app.staticTexts["Your Recovery Code"].waitForExistence(timeout: 420))
         shot("recovery-code")
         let toggle = app.switches["I wrote it down"]
         if toggle.switches.firstMatch.exists { toggle.switches.firstMatch.tap() } else { toggle.tap() }

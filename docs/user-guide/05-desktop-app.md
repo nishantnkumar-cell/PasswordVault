@@ -527,6 +527,27 @@ it stays on this Mac: Universal Clipboard does not pass it to your iPhone,
 iPad or other Macs. Ordinary text you copy elsewhere still goes to them as
 usual.
 
+### Screenshots and screen sharing (Windows)
+
+On Windows the app and its approval window are left out of screenshots,
+screen recordings and screen sharing (Teams, Zoom, Snipping Tool, Win +
+Shift + S, the Xbox Game Bar). People watching your shared screen see an
+empty space, or a black box on Windows 10 older than version 2004, where
+the window is, so a password you show by mistake does not reach them.
+You see the window as usual.
+
+To take a screenshot of the app on purpose, for example to report a
+problem, start it with screen capture allowed: in PowerShell,
+
+    $env:VAULT_ALLOW_CAPTURE = '1'; & "$env:LOCALAPPDATA\Programs\Secret Vault\vault-gui.exe"
+
+(use `C:\Program Files\Secret Vault\` for an all-users install). Close
+the app afterwards and start it again from the Start menu to protect it
+again. The approval window follows the setting that vaultd was started
+with.
+
+On Linux and macOS the app can be captured like any other window for now.
+
 ## Generator
 
 ![The Generator page with three random words picked](images/desktop-generator-styles.png)
