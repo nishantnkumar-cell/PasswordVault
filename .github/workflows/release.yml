@@ -128,7 +128,7 @@ jobs:
             echo "::warning title=No Android APK::this release has no Android app"
           fi
           # Every download a release promises (docs/user-guide/11-versions-and-upgrades.md).
-          for f in "SecretVault-Setup-$version.exe" "secret-vault_${version}_amd64.deb" \
+          for f in "SecretVault-Setup-$version.exe" "SecretVault-Setup-$version-arm64.exe" "secret-vault_${version}_amd64.deb" \
               "secret-vault-$version-linux-x86_64.tar.gz" "SecretVault-$version-macos.pkg" \
               "secret-vault-$version-macos-universal.tar.gz" "secret-vault-extension-$version.zip"; do
             test -f "dist/$f" || { echo "missing dist/$f" >&2; ls -l dist >&2; exit 1; }

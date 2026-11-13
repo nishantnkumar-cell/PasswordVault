@@ -53,7 +53,8 @@ No GitHub account is needed. Each release has:
 
 | File | For |
 |---|---|
-| `SecretVault-Setup-<version>.exe` | Windows 10 (1903 or later) and 11, 64-bit |
+| `SecretVault-Setup-<version>.exe` | Windows 10 (1903 or later) and 11, 64-bit Intel or AMD |
+| `SecretVault-Setup-<version>-arm64.exe` | Windows 11 on Arm (Snapdragon and other Arm PCs) |
 | `secret-vault_<version>_amd64.deb` | Debian 13, Ubuntu 24.04 and newer |
 | `secret-vault-<version>-linux-x86_64.tar.gz` | Other Linux distributions (64-bit) |
 | `SecretVault-<version>-macos.pkg` | macOS 11 and newer, Apple silicon and Intel: the installer ([chapter 13](13-macos.md)) |
@@ -159,8 +160,8 @@ it is released:
 2. Open the project's
    [Actions tab](https://github.com/nishantnkumar-cell/PasswordVault/actions/workflows/ci.yml?query=branch%3Amain)
    and click the newest run with a green tick.
-3. Under **Artifacts** at the bottom, download **windows-installer**,
-   **linux-packages**, **macos-package** or **browser-extension**. Each is a
+3. Under **Artifacts** at the bottom, download **windows-installer**
+   (or **windows-installer-arm64**), **linux-packages**, **macos-package** or **browser-extension**. Each is a
    zip containing the files above, with a `-dev` version.
 
 Development downloads are kept for 90 days.
