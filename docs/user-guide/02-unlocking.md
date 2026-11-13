@@ -396,7 +396,7 @@ vault revoke --keep 3fa9,8be4
 ```
 
 You prove each slot you keep (password, recovery code, touch the key). Every
-other slot is removed and the vault key is replaced. Old copies and backups
+other slot is removed, the vault key is replaced and every item is encrypted again under a new key. Old copies and backups
 of the file can still be opened with the old factors, so delete those
 copies too.
 

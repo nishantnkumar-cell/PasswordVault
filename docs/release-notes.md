@@ -209,6 +209,20 @@ How it works: [`docs/vaultd.md`](vaultd.md).
 
 How to use it: [Sync, Linux notes](user-guide/10-sync.md#differences-between-systems).
 
+### Fresh item keys on every edit and on revoke
+
+- **Revoke now re-keys every item, and every edit uses a new item key.**
+  Before, a revoke replaced the vault key but kept each item's own key, so
+  someone who had saved the old vault file and had been revoked could still
+  read later edits of an item they already had. Now the old item keys open
+  nothing in a file written after the revoke. Old copies stay readable with
+  the old factors, as before, so delete them.
+- No new steps: `vault revoke` just takes a little longer on a large vault.
+  The file format does not change, older files open as they did, and
+  Linux, Windows, macOS and the phone apps behave the same.
+
+How to use it: [Revoke a lost or stolen factor](user-guide/02-unlocking.md#revoke-a-lost-or-stolen-factor).
+
 ### Linux fixes from testing in WSL
 
 - **vaultd locks its memory on more systems.** It used to lock memory only
