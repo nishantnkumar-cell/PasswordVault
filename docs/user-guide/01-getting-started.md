@@ -20,7 +20,42 @@ command works on Linux, Windows and macOS.
 
 ## Linux
 
-### The easy way: a package
+### The easiest way: one command
+
+Open a terminal and run:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/nishantnkumar-cell/PasswordVault/main/contrib/linux/get.sh | bash
+```
+
+It downloads the newest release, checks it against the release's
+fingerprints (`SHA256SUMS.txt`), and sets everything up. It asks for your
+password once (`sudo`), because it runs `vaultd` as its own `vault` user:
+programs running as you then cannot read the daemon's memory, and your keys
+never reach swap. It also moves a vault you made earlier with the per-user
+service (it asks first, and keeps the old copy). Afterwards, open a new
+terminal, sign out and back in once, and go to
+[Create your vault](#create-your-vault). To upgrade, run the same command
+again: it keeps your vault, and restarting vaultd locks it, so unlock it
+once afterwards.
+
+On a computer shared by several people, each person runs the command once
+as themselves. Everyone gets their own vault (`/var/lib/vault/<name>`), their
+own master password and their own `vaultd@<name>`, which answers only its
+owner.
+
+In this mode there is no approval window, because the daemon has no
+desktop: you pair the browser and other programs by proving your password
+(`vault pair`), and keys that ask before each use and Secret Service
+(chapter 12) are not available. If you want those, run the installer with
+`--user-service` instead: it needs no password and puts everything in
+`~/.local`. On some systems it then offers one `sudo` step so that vaultd can
+keep keys out of swap. `--help` lists every option, and `--uninstall`
+removes the programs and the lines it added to your shell start-up files. It
+never deletes a vault, and it keeps the `vault` system user for the other
+people on the computer.
+
+### Another easy way: a package
 
 Download a release from the project's
 [Releases page](https://github.com/nishantnkumar-cell/PasswordVault/releases):

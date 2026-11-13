@@ -13,6 +13,9 @@ pub enum Error {
     NonCanonical,
     /// Argon2id parameters are outside the bounds in section 3.1.
     KdfOutOfBounds,
+    /// Argon2id could not get the memory it needs (for example a memory
+    /// lock limit is too low for this vault's cost).
+    KdfOutOfMemory,
     /// The key-commitment tag did not match: wrong password or hardware factor.
     WrongFactor,
     /// The commitment matched but authenticated decryption failed.
@@ -53,6 +56,10 @@ impl fmt::Display for Error {
             Error::Unsupported => "unsupported format version or algorithm",
             Error::NonCanonical => "non-canonical header encoding",
             Error::KdfOutOfBounds => "KDF parameters out of bounds",
+            Error::KdfOutOfMemory => {
+                "not enough memory for this vault's key derivation (Argon2id); \
+                 close other programs, or raise the memory lock limit"
+            }
             Error::WrongFactor => "wrong password or factor",
             Error::CorruptSlot => "corrupt keyslot",
             Error::HeaderTampered => "header MAC mismatch",

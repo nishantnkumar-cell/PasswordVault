@@ -287,6 +287,14 @@ pub fn connection(mut s: impl Read + Write, daemon: &Shared, pid: Option<u32>) -
     }
 }
 
+/// Answer another user's agent connection: their first request gets
+/// SSH_AGENT_FAILURE ("agent refused operation"), then the connection closes.
+pub fn refuse(s: &mut (impl Read + Write)) {
+    if read_message(s).is_ok() {
+        let _ = write_message(s, &[SSH_AGENT_FAILURE]);
+    }
+}
+
 /// One request to one reply. `Err` becomes `SSH_AGENT_FAILURE`.
 fn handle(
     msg: &[u8],
@@ -361,6 +369,16 @@ fn handle(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn another_users_request_gets_agent_failure() {
+        let (mut ours, mut theirs) = std::os::unix::net::UnixStream::pair().unwrap();
+        write_message(&mut theirs, &[SSH_AGENTC_REQUEST_IDENTITIES]).unwrap();
+        refuse(&mut ours);
+        drop(ours);
+        assert_eq!(read_message(&mut theirs).unwrap(), [SSH_AGENT_FAILURE]);
+    }
 
     #[test]
     fn keys_generate_import_and_sign() {

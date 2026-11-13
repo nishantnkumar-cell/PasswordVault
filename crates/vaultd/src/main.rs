@@ -58,6 +58,7 @@ fn harden() {
             };
             if soft == nix::sys::resource::RLIM_INFINITY || soft >= needed {
                 use nix::sys::mman::{MlockAllFlags, mlockall};
+                few_malloc_arenas();
                 if let Err(e) = mlockall(MlockAllFlags::MCL_CURRENT | MlockAllFlags::MCL_FUTURE) {
                     eprintln!("vaultd: warning: could not lock memory, keys may reach swap: {e}");
                 }
@@ -77,11 +78,32 @@ fn harden() {
     }
 }
 
-/// How much memory vaultd may lock at most: the largest Argon2id buffer a
-/// vault may ask for, plus room for everything else.
+/// glibc gives each new thread its own 64 MiB malloc arena, and with
+/// `mlockall(MCL_FUTURE)` every reserved arena counts against the lock
+/// limit: one per client thread soon eats it. Two arenas are plenty for
+/// vaultd. Must run before any thread starts.
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+#[allow(unsafe_code)]
+fn few_malloc_arenas() {
+    // SAFETY: mallopt only changes an allocator setting; called while the
+    // process is still single-threaded.
+    if unsafe { nix::libc::mallopt(nix::libc::M_ARENA_MAX, 2) } == 0 {
+        eprintln!("vaultd: warning: could not limit malloc arenas");
+    }
+}
+
+#[cfg(all(target_os = "linux", not(target_env = "gnu")))]
+fn few_malloc_arenas() {}
+
+/// How much lockable memory vaultd wants before it locks everything: a
+/// vault at the writer's default Argon2id cost (256 MiB) plus as much again
+/// for the rest (with two malloc arenas, vaultd locks about 120 MiB besides
+/// Argon2id, measured under load). Past the limit an allocation fails instead of swapping:
+/// Argon2id then reports "not enough memory" for a vault with a much higher
+/// cost (up to 1 GiB) rather than aborting, so a lower bar is safe.
 #[cfg(target_os = "linux")]
 fn memlock_needed() -> u64 {
-    (u64::from(vault_core::KDF_MAX_M_KIB) << 10) + (512 << 20)
+    (u64::from(vault_core::KdfCost::DEFAULT.m_kib) << 10) + (256 << 20)
 }
 
 /// No core dumps and no debugger attach. macOS has no mlockall, but it
@@ -288,7 +310,7 @@ fn main() {
         let o = owner.clone();
         eprintln!("vaultd: ssh-agent on {}", p.display());
         std::thread::spawn(move || {
-            server::serve(l, o, move |c, pid| {
+            server::serve_refusing(l, o, vaultd::ssh::refuse, move |c, pid| {
                 let _ = vaultd::ssh::connection(c, &d, pid);
             })
         });

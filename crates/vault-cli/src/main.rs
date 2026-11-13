@@ -756,7 +756,26 @@ fn kind_arg(rest: &[String]) -> Option<ItemKind> {
     }))
 }
 
+/// `vault ls | head` closes the pipe early: end quietly, as a program killed
+/// by SIGPIPE would (exit status 141), instead of printing a panic.
+fn quiet_on_broken_pipe() {
+    let default = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let msg = info
+            .payload()
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| info.payload().downcast_ref::<&str>().copied())
+            .unwrap_or("");
+        if msg.contains("failed printing to stdout") && msg.contains("Broken pipe") {
+            std::process::exit(141);
+        }
+        default(info);
+    }));
+}
+
 fn main() {
+    quiet_on_broken_pipe();
     let args: Vec<String> = std::env::args().skip(1).collect();
     let Some(cmd) = args.first().map(String::as_str) else {
         println!("{HELP}");
@@ -942,7 +961,8 @@ fn main() {
                 .is_some_and(|k| k == "key" || k == "keys");
             let only = if keys_only { None } else { kind_arg(rest) };
             for i in items(&mut Client::connect()) {
-                if only.is_some_and(|k| k != i.kind) || (keys_only && i.key.is_none()) {
+                let is_key = i.key.is_some();
+                if only.is_some_and(|k| k != i.kind || is_key) || (keys_only && !is_key) {
                     continue;
                 }
                 let totp = if i.has_totp { "  [totp]" } else { "" };

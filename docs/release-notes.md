@@ -227,12 +227,14 @@ How to use it: [Revoke a lost or stolen factor](user-guide/02-unlocking.md#revok
 
 - **vaultd locks its memory on more systems.** It used to lock memory only
   when the lock limit was unlimited or at least 5 GiB. Now it first raises
-  its own limit as far as the system allows, and 1.5 GiB is enough: the
-  largest Argon2id buffer a vault can use (1 GiB) plus room for the rest.
-  On WSL, the limit is set lower than that, so keys could reach swap there.
-  vaultd says so at start, and
+  its own limit as far as the system allows, and 512 MiB is enough: a
+  vault at the default cost plus as much again (vaultd now uses at most two
+  memory pools, so it locks about 120 MiB besides that). WSL's limit (about 1.5 GiB) was
+  below the old bar, so keys could reach swap there; now they are locked.
+  Below 512 MiB, vaultd says so at start, and
   [Memory locking](vaultd.md#memory-and-session-locking) shows how to raise
-  the limit.
+  the limit. A vault with a very high cost that does not fit now says "not
+  enough memory" instead of stopping vaultd.
 - **`vault ssh agent` prints the right socket.** With `VAULT_SOCKET` set
   (the system-user service, or a second test vault), it printed the default
   agent socket instead of the one vaultd was serving. A vaultd on its own
@@ -241,11 +243,27 @@ How to use it: [Revoke a lost or stolen factor](user-guide/02-unlocking.md#revok
   `/run/vault/<you>/ssh-agent.sock`: run `vault ssh agent` again and update
   `SSH_AUTH_SOCK` in your shell profile if you set it by hand.
 - **`vault ls` shows SSH and OpenPGP keys as keys**, not as logins with a
-  `[key]` mark, and `vault ls keys` lists only them.
+  `[key]` mark. `vault ls keys` lists only them, and `vault ls logins` no
+  longer includes them.
+- **`vault … | head` no longer prints a panic** when the pipe closes early.
+- **One-command install on Linux.**
+  `curl -fsSL https://raw.githubusercontent.com/nishantnkumar-cell/PasswordVault/main/contrib/linux/get.sh | bash`
+  downloads the newest release, checks it, and sets up vaultd as its own
+  `vault` system user, so keys stay out of swap and other programs of yours
+  cannot read them. `--user-service` installs into `~/.local` without root
+  instead. Running it again upgrades and keeps your vault; `--uninstall`
+  removes the programs and the shell lines it added, never a vault. Each
+  person on a shared computer gets their own vault and `vaultd@<name>`,
+  which refuses everyone else (tested with two users); uninstalling the
+  system service asks first when other people use it, then stops theirs too.
+- **The ssh-agent refuses another user's request with "agent refused
+  operation"**, instead of a reply `ssh-add` reported as "invalid format". See
+  [Getting started](user-guide/01-getting-started.md#the-easiest-way-one-command).
+  Windows and macOS keep their installers.
 
 | | Linux | Windows | macOS |
 | --- | --- | --- | --- |
-| Memory lock needs | 1.5 GiB lock limit (was 5 GiB) | Nothing (locks per block) | Not used (swap is encrypted) |
+| Memory lock needs | 512 MiB lock limit (was 5 GiB) | Nothing (locks per block) | Not used (swap is encrypted) |
 | `vault ssh agent` with `VAULT_SOCKET` | Fixed | Fixed | Fixed |
 
 No vault file change.

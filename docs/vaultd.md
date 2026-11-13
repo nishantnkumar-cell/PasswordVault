@@ -129,7 +129,7 @@ session bus and serves the freedesktop Secret Service API:
 
 ## Memory and session locking
 
-- **Memory locking.** When `RLIMIT_MEMLOCK` is unlimited or at least 1.5 GiB (the largest Argon2id buffer a vault may use, 1 GiB, plus room for the rest), all daemon memory is locked with `mlockall`, so keys never reach swap. vaultd first raises its soft limit to the hard one. Below that it warns ("the memory lock limit … is below the … needed") and runs unlocked, because locking would make large Argon2id allocations fail. Both units set `LimitMEMLOCK=infinity`, but a user unit cannot go above the limit the user manager itself was started with. Some systems, WSL among them, start it lower. To raise it, once, as root:
+- **Memory locking.** When `RLIMIT_MEMLOCK` is unlimited or at least 512 MiB (a vault at the default Argon2id cost of 256 MiB, plus as much again for the rest), all daemon memory is locked with `mlockall`, so keys never reach swap. vaultd first raises its soft limit to the hard one. Below that it warns ("the memory lock limit … is below the … needed") and runs unlocked. A vault made with a much higher cost (up to 1 GiB) may then fail to unlock with "not enough memory for this vault's key derivation" instead of swapping; raise the limit as below. Both units set `LimitMEMLOCK=infinity`, but a user unit cannot go above the limit the user manager itself was started with. Some systems, WSL among them, start it lower. To raise it, once, as root:
 
   ```sh
   sudo mkdir -p /etc/systemd/system/user@.service.d
