@@ -25,8 +25,8 @@ mod vault;
 pub use clock::DeviceId;
 pub use error::Error;
 pub use format::{
-    Argon2Params, FORMAT_VERSION, Factor, KdfCost, KeyslotMeta, MAGIC, ParsedVault, PcrPolicy,
-    SlotId,
+    Argon2Params, FORMAT_VERSION, Factor, KDF_MAX_M_KIB, KdfCost, KeyslotMeta, MAGIC, ParsedVault,
+    PcrPolicy, SlotId,
 };
 pub use merge::{MergeReport, Resolve};
 pub use recovery::RecoveryCode;

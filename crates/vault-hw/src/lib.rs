@@ -106,7 +106,7 @@ pub trait Tpm: Send {
 /// The operating system's own check that the user is at the computer
 /// (Windows Hello, or Touch ID on macOS). It yields no secret, so it only approves a quick unlock
 /// of a key the daemon still holds; it never opens a vault on its own.
-pub trait Presence: Send {
+pub trait Presence: Send + Sync {
     /// Whether the check is set up and usable for this user.
     fn check_available(&self) -> HwResult<()>;
     /// Ask the user, showing `message`. Ok only if the OS verified them.
@@ -117,7 +117,7 @@ pub trait Presence: Send {
 pub struct Hardware {
     pub fido2: Option<Box<dyn Fido2>>,
     pub tpm: Option<Box<dyn Tpm>>,
-    pub presence: Option<Box<dyn Presence>>,
+    pub presence: Option<std::sync::Arc<dyn Presence>>,
 }
 
 impl Hardware {
@@ -140,9 +140,9 @@ impl Hardware {
             )))]
             tpm: None,
             #[cfg(windows)]
-            presence: Some(Box::new(hello::WinHello)),
+            presence: Some(std::sync::Arc::new(hello::WinHello)),
             #[cfg(target_os = "macos")]
-            presence: Some(Box::new(touchid::TouchId)),
+            presence: Some(std::sync::Arc::new(touchid::TouchId)),
             #[cfg(not(any(windows, target_os = "macos")))]
             presence: None,
         }

@@ -257,8 +257,10 @@ the daemon would still accept a copy of that token.
 - **Unlock outside the browser** when you can. Typing the master password in
   the extension's popup works, but it passes through the browser.
 - **Delete import files** right after importing.
-- **Windows:** the daemon's memory is not yet protected from the page file
-  and crash dumps. Do not leave the vault unlocked longer than you need to.
+- **Windows:** turn on BitLocker or Device Encryption (Settings > Privacy &
+  security > Device encryption). vaultd keeps keys out of the page file and
+  crash reports itself, but hibernation and a blue screen write all of memory
+  to disk, and only disk encryption protects those files.
 - **Linux, stronger setup:** run `vaultd` as its own system user
   (`contrib/systemd/vaultd@.service`) so programs running as you cannot read
   its memory.
