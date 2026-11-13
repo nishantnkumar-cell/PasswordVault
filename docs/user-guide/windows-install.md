@@ -27,11 +27,17 @@ from the programs, so updating or removing the app never touches it.
 - **Windows 10 version 1903 or later, 64-bit.** Windows 11 is best: on
   Windows 11 (and Windows 10 with current updates) security keys work
   without administrator rights.
-- **The installer file**, `SecretVault-Setup-<version>.exe`, from the
-  project's [Releases page](https://github.com/nishantnkumar-cell/PasswordVault/releases).
+- **The installer file** from the project's [Releases page](https://github.com/nishantnkumar-cell/PasswordVault/releases).
   Development builds (versions ending in `-dev.<commit>`) are under each CI
   run's *Artifacts* instead; see
   [Versions, downloads and upgrading](11-versions-and-upgrades.md#where-to-download).
+  There are two:
+  - `SecretVault-Setup-<version>.exe` for most PCs (Intel or AMD).
+  - `SecretVault-Setup-<version>-arm64.exe` for PCs with an Arm processor,
+    such as Snapdragon laptops and Copilot+ PCs on Arm. Not sure? Open
+    **Settings > System > About** and look at *System type*: "ARM-based
+    processor" means the `-arm64` file. The other one also works on Arm,
+    more slowly, through Windows' emulation.
 
 ## Which install to choose
 
@@ -57,6 +63,19 @@ account cannot open another account's vault.
 2. **SmartScreen.** The installer is not code-signed yet, so Windows may say
    "Windows protected your PC". Click **More info**, check that the file is
    the one you downloaded, then click **Run anyway**.
+
+   **Smart App Control blocks it?** On a PC where Windows 11's *Smart App
+   Control* is on (new PCs and fresh Windows installs often have it on),
+   Windows refuses unsigned programs outright, with no **Run anyway**
+   button: "Smart App Control blocked an app that may be unsafe". Secret
+   Vault's programs are not code-signed yet (a signing certificate costs
+   money every year), so they cannot run on such a PC. Check under
+   **Windows Security > App & browser control > Smart App Control**. The
+   only way round it is to turn Smart App Control **Off** there, and note
+   that Windows does not let you turn it back on without resetting the PC.
+   If you would rather keep it on, wait for signed releases. The same
+   applies to building from source: Smart App Control also blocks the
+   programs `cargo` builds.
 3. **Install mode.** Choose **Install for me only** or **Install for all
    users** (see above). Only the second asks for an administrator.
 4. **Licence.** Read it and click **I accept the agreement**, then **Next**.
@@ -109,10 +128,37 @@ Manager > Startup apps**, select **vaultw**, and click **Disable**.
 
 - **Start it:** run *vaultw* (in the install folder), or sign out and back
   in.
-- **Stop it:** in PowerShell, `Stop-Process -Name vaultd`. The vault locks
-  and its keys leave memory; nothing in the vault file is lost.
+- **Stop it:** in PowerShell or Command Prompt, `taskkill /im vaultd.exe`.
+  The vault locks and its keys leave memory;
+  nothing in the vault file is lost. (PowerShell's `Stop-Process` says
+  "Access is denied": vaultd blocks the full access it asks for.)
 - **See its messages live:** stop it, then run `vaultd.exe` in a PowerShell
   window. It keeps running until you close that window.
+
+### How vaultd protects its memory
+
+You do not need to set anything up; this happens every time vaultd, the app
+and the approval window start.
+
+- **No crash reports with your keys.** If one of them crashes, Windows does
+  not save a crash report (a "dump") of its memory. The first start adds the
+  three programs to Windows Error Reporting's list of excluded programs for
+  your account.
+- **Other programs cannot read their memory.** Even programs running as you
+  are refused when they try to read vaultd's or the app's memory. Task
+  Manager still shows them and can still end them.
+- **Keys never reach the page file.** vaultd keeps everything it holds in
+  RAM, so Windows never writes it to `pagefile.sys` when memory runs short.
+
+What this cannot do on its own: when the PC hibernates or shows a blue
+screen, Windows writes all of memory to disk. Turn on **BitLocker** or
+**Device Encryption** (Settings > Privacy & security > Device encryption)
+so those files are encrypted too. Most PCs that came with Windows 11 have
+it on already.
+
+If a developer tool needs to attach to vaultd, start it with the
+environment variable `VAULT_HARDEN=off`; see
+[windows.md](../windows.md#memory-protection).
 
 ### Why vaultd is not a Windows service
 
@@ -136,7 +182,9 @@ To add a security key:
 
        vault add-slot fido2 --label "Blue key"
 
-   Add `--uv` to also require the key's PIN every time you unlock.
+   If your key has a PIN, add `--uv` (`vault add-slot fido2 --uv --label
+   "Blue key"`): on Windows a key with a PIN only works in a slot that asks
+   for it, and without `--uv` the command stops and tells you so.
 3. Windows opens its own **security key window**. Touch the key when it
    blinks. If the slot uses the PIN, Windows asks for it in that same
    window. On Windows, the `vault` command doesn't ask for the PIN itself,
@@ -212,3 +260,6 @@ you no longer need the vault or have a copy of it.
 | Security keys need admin | No (Windows 11 or current Windows 10) | No (needs the udev rule in `contrib/udev`) | No |
 | TPM unlock | Yes, no administrator rights needed | Yes | No (Macs have no TPM) |
 | Quick unlock (Windows Hello) | Yes | Not yet | Touch ID |
+| Arm processors | Yes, its own installer (`-arm64`), Windows 11 | Build it yourself (packages are x86-64 only) | Yes (universal) |
+| App hidden from screenshots and screen sharing | Yes (`VAULT_ALLOW_CAPTURE=1` allows them) | Not yet | Not yet |
+| Keys kept out of the page file / swap and crash dumps | Yes (use BitLocker for hibernation) | Yes (`mlockall`; the system-user unit also hides memory from your own programs) | Yes (core dumps off; swap always encrypted) |

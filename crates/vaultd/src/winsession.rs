@@ -1,6 +1,8 @@
 //! Windows: lock the vault when the session locks or the machine suspends,
 //! the counterpart of `logind` on Linux. A hidden window receives the
-//! session-change and power notifications.
+//! session-change and power notifications. Closing that window (what
+//! `taskkill /im vaultd.exe` without `/f` does) ends vaultd: the hardened
+//! process ACL refuses a forced kill, so this is the way to stop it.
 
 #![allow(unsafe_code)]
 
@@ -15,8 +17,8 @@ use windows_sys::Win32::System::RemoteDesktop::{
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DEVICE_NOTIFY_WINDOW_HANDLE, DefWindowProcW, DispatchMessageW, GetMessageW,
-    MSG, PBT_APMSUSPEND, RegisterClassW, WM_POWERBROADCAST, WM_WTSSESSION_CHANGE, WNDCLASSW,
-    WS_OVERLAPPED,
+    MSG, PBT_APMSUSPEND, RegisterClassW, WM_CLOSE, WM_POWERBROADCAST, WM_WTSSESSION_CHANGE,
+    WNDCLASSW, WS_OVERLAPPED,
 };
 
 use crate::server::Shared;
@@ -45,6 +47,15 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
     if let (Some(e), Some(d)) = (event(msg, wparam), DAEMON.get()) {
         eprintln!("vaultd: {e:?}, locking");
         d.lock().unwrap_or_else(|p| p.into_inner()).lock();
+    }
+    if msg == WM_CLOSE {
+        // Asked to close (taskkill without /f): drop the keys and exit, rather
+        // than lose the window and keep running without lock notifications.
+        eprintln!("vaultd: asked to close, exiting");
+        if let Some(d) = DAEMON.get() {
+            d.lock().unwrap_or_else(|p| p.into_inner()).lock_fully();
+        }
+        std::process::exit(0);
     }
     // SAFETY: forwarding the message we were given.
     unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
