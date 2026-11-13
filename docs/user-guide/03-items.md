@@ -130,6 +130,31 @@ vault rm 1c9
 
 There is no undo.
 
+## Password health
+
+```sh
+vault health
+vault health --online
+```
+
+`vault health` looks over your logins and lists
+
+- passwords **reused** on several logins,
+- **weak** passwords that are easy to guess (the same strength check used for
+  new master passwords),
+- passwords **not changed in over a year**, and
+- logins with a website but **no one-time code**, where the site may offer
+  two-step sign-in.
+
+It prints titles only, never passwords. With `--online` it also checks each
+password against the **Have I Been Pwned** list of passwords seen in
+breaches. This is private by design: only the first 5 characters of the
+password's SHA-1 hash are sent (from `api.pwnedpasswords.com`, through the
+`curl` program that comes with Linux, macOS and Windows 10 or later), and the
+comparison happens on your computer. A hit means the password is public
+knowledge: change it. The check runs in the command line, so `vaultd` still
+needs no network access. The desktop app does not have a health page yet.
+
 ## Websites and matching
 
 The vault fills a login only on the website it belongs to. This protects
