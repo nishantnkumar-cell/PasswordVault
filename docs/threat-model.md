@@ -89,6 +89,7 @@ Status: **M** = mitigated by the design, **P** = partially mitigated, **A** = ac
 | Modify the browser extension or profile | Out of scope: same-user code owns the browser profile | A |
 | Capture a phone passkey's PRF output | The desktop app or `vault` runs the phone passkey (QR code, Bluetooth, the phone maker's relay) and sends the 32-byte PRF output to `vaultd` with the password, so `vaultd` keeps its network sandbox. Same-user code that can see the password can see this output too; it opens only that slot, still with the password, and wrong guesses are rate limited as for any method | A |
 | Answer a phone QR code from far away (relay or phishing over a screen share) | The hybrid transport requires Bluetooth proximity between phone and computer before the phone talks; the relay sees only encrypted traffic | M |
+| A program on a server reached with `ssh -A` uses a forwarded SSH key | Connections that announce forwarding (`session-bind@openssh.com`, OpenSSH 8.9+) always ask in the approval window, even for a key with confirmation off, and the window shows the server's host key fingerprint. Clients that do not send the message are not recognised | P |
 | Take over the Apple or Google account that syncs the passkey | The phone factor never opens the vault alone: the password stays in the KEK | P |
 
 ### A4, root or kernel attacker
