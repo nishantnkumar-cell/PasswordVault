@@ -374,6 +374,10 @@ impl Daemon {
                 }
                 Err(err) => return Err(e(err)),
             };
+            if r.changed() {
+                // The file on disk is still the state before this merge.
+                let _ = self.store.snapshot("merge");
+            }
             st.conflicts += r.conflicts as u64;
             write |= r.changed() || (main && r.other_behind);
             if !main {
@@ -1554,12 +1558,33 @@ impl Daemon {
                     recovery_code: Some(Zeroizing::new(code.as_str().to_owned())),
                 })
             }
+            Request::Snapshots => Ok(Response::Snapshots(
+                self.store
+                    .snapshots()
+                    .into_iter()
+                    .map(|f| vault_ipc::SnapshotInfo {
+                        name: f.name,
+                        taken: f.taken,
+                        size: f.size,
+                    })
+                    .collect(),
+            )),
+            Request::ExportVault { snapshot } => {
+                self.vault()?;
+                let bytes = match snapshot {
+                    Some(name) => self.store.read_snapshot(&name),
+                    None => self.store.read_vault_file(),
+                };
+                Ok(Response::Bytes(bytes.map_err(|e| e.to_string())?))
+            }
             Request::RemoveSlot { slot } => {
+                let _ = self.store.snapshot("remove-slot");
                 self.vault()?.remove_slot(&slot).map_err(e)?;
                 self.save()?;
                 Ok(Response::Ok)
             }
             Request::Revoke { keep } => {
+                let _ = self.store.snapshot("revoke");
                 let metas: Vec<KeyslotMeta> = self.vault()?.slots().cloned().collect();
                 let mut creds = Vec::with_capacity(keep.len());
                 for (id, method) in &keep {
@@ -1618,6 +1643,7 @@ impl Daemon {
             Request::Totp { id } => totp(&self.item(&id)?),
             Request::TotpForFill { id, origin } => totp(&self.fillable(&id, &origin)?),
             Request::Import { format, data } => {
+                let _ = self.store.snapshot("import");
                 let t = now();
                 let items = match format {
                     ImportFormat::BitwardenJson => {

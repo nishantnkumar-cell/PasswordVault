@@ -97,6 +97,11 @@ KEYSLOTS
   rm-slot SLOT                 remove a slot (no key rotation)
   revoke --keep SLOT[,SLOT..]  rotate the vault key, keeping only these slots
 
+BACKUPS
+  backup FILE [--snapshot NAME] [--force]
+                               save the encrypted vault file (or a snapshot) to FILE
+  snapshots                    list the copies vaultd keeps before merges, imports and revokes
+
 SYNC                           through a folder that OneDrive, Google Drive or Dropbox syncs
   sync                         show sync state
   sync on FILE                 keep the vault merged with FILE, e.g. ~/OneDrive/vault.svault;
@@ -1049,6 +1054,53 @@ fn main() {
                 "Imported {n} items. Delete {path} now: it holds your passwords in plain text."
             );
         }
+        "snapshots" => {
+            let Response::Snapshots(list) = Client::connect().call(Request::Snapshots) else {
+                die("unexpected response")
+            };
+            if list.is_empty() {
+                println!("no snapshots yet");
+            }
+            for s in list {
+                println!(
+                    "{}  {:>9} bytes  {}",
+                    utc(s.taken),
+                    s.size,
+                    s.name.trim_end_matches(".svault")
+                );
+            }
+        }
+        "backup" => {
+            let file = positional(rest, 0, "FILE");
+            let force = rest.iter().any(|a| a == "--force");
+            let snapshot = flag_value(rest, "--snapshot");
+            let Response::Bytes(bytes) = Client::connect().call(Request::ExportVault { snapshot })
+            else {
+                die("unexpected response")
+            };
+            let mut o = std::fs::OpenOptions::new();
+            o.write(true);
+            if force {
+                o.create(true).truncate(true);
+            } else {
+                o.create_new(true);
+            }
+            #[cfg(unix)]
+            std::os::unix::fs::OpenOptionsExt::mode(&mut o, 0o600);
+            let mut f = o.open(&file).unwrap_or_else(|e| {
+                die(format!(
+                    "cannot write {file}: {e} (use --force to replace it)"
+                ))
+            });
+            std::io::Write::write_all(&mut f, &bytes)
+                .and_then(|()| f.sync_all())
+                .unwrap_or_else(|e| die(format!("cannot write {file}: {e}")));
+            println!(
+                "saved {} bytes to {file}. The file is encrypted: it opens with your password, \
+                 key or recovery code as they were when it was saved.",
+                bytes.len()
+            );
+        }
         "slots" => {
             for s in slots(&mut Client::connect()) {
                 println!("{}  {:<9} {}", short(&s.id), s.kind, s.label);
@@ -1722,4 +1774,35 @@ fn encrypted(pem: &str) -> bool {
         u32::from_be_bytes(b.try_into().unwrap_or_default()) as usize
     });
     rest.get(4..4 + n).is_some_and(|c| c != b"none")
+}
+
+/// `YYYY-MM-DD HH:MM:SS` (UTC) for a Unix time.
+fn utc(secs: u64) -> String {
+    let (days, rem) = (secs / 86_400, secs % 86_400);
+    // Civil date from days since 1970-01-01 (Howard Hinnant's algorithm).
+    let z = days as i64 + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!(
+        "{y:04}-{m:02}-{d:02} {:02}:{:02}:{:02}",
+        rem / 3600,
+        rem % 3600 / 60,
+        rem % 60
+    )
+}
+
+#[cfg(test)]
+mod utc_tests {
+    #[test]
+    fn formats_unix_times() {
+        assert_eq!(super::utc(0), "1970-01-01 00:00:00");
+        assert_eq!(super::utc(951_782_400), "2000-02-29 00:00:00");
+        assert_eq!(super::utc(1_794_355_200 + 3_661), "2026-11-11 01:01:01");
+    }
 }

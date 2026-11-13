@@ -150,3 +150,7 @@ It creates throwaway credentials, asks for hmac-secret twice in touch-only mode 
 - macOS: Secure Enclave slots and locking on screen lock or sleep (see [macOS](#macos)). Windows: see windows.md.
 - Secret Service: approvals are not saved across restarts, and import cannot read GNOME Keyring or KWallet files without their service running.
 - The desktop app (docs/desktop.md) has no file picker for imports and no revoke; use the CLI for revoke.
+
+## Snapshots and backups
+
+`Store::write` keeps the file it replaces in `<state>/snapshots/<unix time>-<reason>.svault` (reason `auto`, `merge`, `revoke`, `import` or `remove-slot`). `auto` and `merge` copies are at most one per ten minutes, a copy equal to the newest is skipped, and the newest 20 stay. `Request::Snapshots` lists them; `Request::ExportVault { snapshot }` returns the file or a snapshot (names must be ones the list gave) as `Response::Bytes`, for `vault backup`. Both need an unlocked vault and are refused for autofill clients. The files are encrypted, but carry the slots they had when taken.

@@ -28,9 +28,47 @@ cp ~/.local/share/vault/vault.svault /media/usb/vault-2026-10-20.svault
 Copy-Item "$env:LOCALAPPDATA\vault\vault.svault" E:\vault-2026-10-20.svault
 ```
 
+Or ask `vaultd` to save it, which also works when the daemon runs as its
+own system user and you cannot read the file directly (the vault must be
+unlocked):
+
+```sh
+vault backup /media/usb/vault-2026-11-11.svault
+```
+
+It refuses to replace an existing file unless you add `--force`.
+
 Keep your recovery code separately from the backup. A backup can be opened
 with any slot it had when it was copied, including ones you later removed;
 after `vault revoke`, replace your backups too.
+
+### Automatic snapshots
+
+Before it replaces your vault file with a merged, imported, re-keyed or
+slot-removed version, `vaultd` keeps a copy of the file as it was, in its
+state folder (`snapshots/`, table above). Ordinary edits keep a copy at most
+every ten minutes. The newest 20 copies stay. `vault snapshots` lists them:
+
+```
+2026-11-11 08:14:02      4890 bytes  000001794…-revoke
+```
+
+A bad merge, a wrong import or a revoke you regret can be undone by saving
+the copy from before it and putting it back:
+
+```sh
+vault backup --snapshot 000001794…-revoke ~/before-revoke.svault
+# stop vaultd (systemctl --user stop vaultd, or quit it), then:
+cp ~/before-revoke.svault ~/.local/share/vault/vault.svault
+```
+
+Start `vaultd` again and unlock. If it says the file is older than one it saw
+before, that is the rollback check doing its job: delete `generations` in the
+state folder to accept the older file. A snapshot opens with the slots it had
+when it was taken, so after a revoke it is as sensitive as an old backup:
+delete snapshots from before it (the files in `snapshots/`) once you no
+longer need them. Restoring is manual on purpose; there is no `vault restore`
+command yet, and the desktop app does not show snapshots.
 
 ## Move the vault to another computer
 

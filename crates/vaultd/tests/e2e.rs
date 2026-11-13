@@ -1494,3 +1494,57 @@ fn open_hello_prompt_does_not_block_other_clients() {
     assert!(matches!(waiting.join().unwrap(), Response::Ok));
     assert!(status(&mut other).unlocked);
 }
+
+#[test]
+fn backups_and_snapshots() {
+    let dir = tempfile::tempdir().unwrap();
+    let sock = start(dir.path(), server::current_user(), Duration::from_secs(600));
+    let mut c = C::new(&sock);
+    let Response::Initialized { token, .. } = c.ok(Request::Init {
+        password: s(PW),
+        client_name: "cli".into(),
+    }) else {
+        panic!()
+    };
+    c.token = Some(token);
+
+    // Nothing was replaced yet, so there is nothing to snapshot.
+    let Response::Snapshots(none) = c.ok(Request::Snapshots) else {
+        panic!()
+    };
+    assert!(none.is_empty());
+
+    // The encrypted file can be saved, and parses as a vault file.
+    let Response::Bytes(file) = c.ok(Request::ExportVault { snapshot: None }) else {
+        panic!()
+    };
+    assert!(vault_core::ParsedVault::parse(&file).is_ok());
+
+    // Revoke keeps the file as it was before, whatever the rate limit says.
+    let Response::Slots(slots) = c.ok(Request::ListSlots) else {
+        panic!()
+    };
+    let pw_slot = slots.iter().find(|s| s.kind == "password").unwrap().id;
+    c.ok(Request::Revoke {
+        keep: vec![(pw_slot, UnlockMethod::Password { password: s(PW) })],
+    });
+    let Response::Snapshots(list) = c.ok(Request::Snapshots) else {
+        panic!()
+    };
+    assert_eq!(list.len(), 1);
+    assert!(list[0].name.ends_with("-revoke.svault"));
+    let Response::Bytes(old) = c.ok(Request::ExportVault {
+        snapshot: Some(list[0].name.clone()),
+    }) else {
+        panic!()
+    };
+    assert_eq!(old, file, "the snapshot is the file before the revoke");
+
+    // Only names the daemon listed can be read.
+    assert!(
+        c.err(Request::ExportVault {
+            snapshot: Some("../vault".into())
+        })
+        .contains("no such snapshot")
+    );
+}
