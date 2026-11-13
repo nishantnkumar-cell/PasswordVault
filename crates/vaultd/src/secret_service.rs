@@ -411,8 +411,8 @@ impl From<zbus::fdo::Error> for Stop {
 /// The desktop app, started by an unlock prompt: `VAULT_GUI`, else
 /// `vault-gui` next to this executable.
 pub fn find_unlock_ui() -> Option<PathBuf> {
-    let exe = match std::env::var_os("VAULT_GUI") {
-        Some(p) => PathBuf::from(p),
+    let exe = match vault_hw::helper_override("VAULT_GUI") {
+        Some(p) => p,
         None => std::env::current_exe().ok()?.with_file_name("vault-gui"),
     };
     exe.is_file().then_some(exe)

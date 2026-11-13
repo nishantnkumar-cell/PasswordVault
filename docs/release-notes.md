@@ -497,6 +497,20 @@ which the vault refuses to store, so it does not apply. The desktop app still
 pulls in `zbus` 5 through its screen-reader support (`eframe` 0.37, its
 newest release); it moves when `eframe` does.
 
+### Helper programs from the environment are checked first
+
+- **`VAULT_PROMPT`, `VAULT_GUI` and `VAULT_SE_HELPER` are checked.** `vaultd`
+  runs the program they name only when it is an absolute path to a regular
+  file that group and others cannot write, and that belongs to you (or
+  root). Otherwise it prints `ignoring VAULT_PROMPT=...` and uses the helper
+  next to itself. This closes a way for a planted variable (for example in
+  a shell profile) to swap the approval window.
+- If you use these variables, no change is needed when the file is yours
+  and not writable by others. Windows only checks that the path is absolute
+  and a file. Linux, macOS and Windows otherwise behave the same.
+
+How it works: [`vaultd` approval window](vaultd.md).
+
 ### Library advisories: what is left
 
 Nothing changes in how you use the vault, and the vault file is the same,

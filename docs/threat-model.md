@@ -76,6 +76,7 @@ Status: **M** = mitigated by the design, **P** = partially mitigated, **A** = ac
 
 | Threat | Mitigation | Status |
 | --- | --- | --- |
+| Makes `vaultd` run a look-alike helper through the environment (`VAULT_PROMPT`, `VAULT_GUI`, `VAULT_SE_HELPER`) | These paths are used only when absolute, a regular file, not writable by group or others, and owned by the daemon's user or root; otherwise they are ignored with a message. A running daemon's environment cannot be changed by other processes. Malware that can edit the user's shell profile or service unit can still point `VAULT_SOCKET` at its own socket for the clients, which is why the pairing and approval window exist | P |
 | Read `vaultd` memory while quick unlock is available (Windows) | The parked vault key and its protected wrap key are in the process, as the vault key is while unlocked. `CryptProtectMemory` keeps it out of crash dumps and the page file, not away from code running in or debugging the process | A (opt-in) |
 | Read `vaultd` memory or attach ptrace | Separate system user (`vaultd@.service`; the per-user unit does not give this), `PR_SET_DUMPABLE=0`, Yama ptrace scope, no core dumps | M with the system unit, P with the user unit |
 | Read `vaultd`, `vault-gui` or `vault-prompt` memory (Windows) | Process ACL without `PROCESS_VM_READ` for our own user, no Windows Error Reporting dumps, vaultd heap locked out of the page file (docs/windows.md, Memory protection). The owner can rewrite the ACL first, so this raises the cost only | P |

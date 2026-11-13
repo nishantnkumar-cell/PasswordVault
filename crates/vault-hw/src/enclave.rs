@@ -30,8 +30,8 @@ pub struct SecureEnclave;
 
 /// `VAULT_SE_HELPER`, else `vault-se` next to this program.
 fn helper() -> PathBuf {
-    if let Some(p) = std::env::var_os("VAULT_SE_HELPER") {
-        return p.into();
+    if let Some(p) = crate::helper_override("VAULT_SE_HELPER") {
+        return p;
     }
     std::env::current_exe()
         .unwrap_or_else(|_| PathBuf::from("vaultd"))
