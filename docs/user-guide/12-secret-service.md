@@ -24,6 +24,11 @@ and the Keychain, which Secret Vault does not replace.
   and that program can use app passwords until vaultd restarts or you
   take the approval back ([see below](#see-and-take-back-approvals)).
   Deny it, and it is refused (it won't ask again for a minute).
+- **Each program sees its own entries.** What an app saves is tagged with
+  that program, and other approved programs can't list, read or change it.
+  Entries made before this feature, and ones you imported from GNOME Keyring
+  or KWallet, stay shared by every approved program, because the vault can't
+  tell who they belonged to.
 - **Nothing while locked.** While the vault is locked, apps find nothing
   and can't save. An app that asks to unlock opens the Secret Vault desktop
   app; unlock there (or with `vault unlock`) and the app carries on.

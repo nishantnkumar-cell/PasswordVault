@@ -936,6 +936,23 @@ Platform differences:
   apply when they do.
 - Paths starting with `~/` work on every system, meaning your home folder.
 
+### Apps see only their own saved passwords (Linux)
+
+- **Each approved program sees only what it saved** through the Secret
+  Service. Before, allowing one program once gave it every app password in
+  the vault. Now an entry records the program that made it, and other
+  programs can't list, read, change or delete it. The approval window and
+  the **App passwords** list work as before.
+- Entries made earlier, and ones imported from GNOME Keyring or KWallet,
+  have no recorded program and stay visible to every approved program. To
+  tighten them, delete them in **App passwords** and let each app save its
+  password again.
+- Linux only. Windows and macOS don't use this feature. Needs a desktop to
+  try: save a password with `secret-tool store` from one terminal program
+  and look it up from another program, such as Python's `keyring`.
+
+How to use it: [What apps can and can't do](user-guide/12-secret-service.md#what-apps-can-and-cant-do).
+
 ### Post-quantum Windows TPM slots
 
 - **Windows TPM slots are now sealed inside the TPM.** A TPM slot added on
