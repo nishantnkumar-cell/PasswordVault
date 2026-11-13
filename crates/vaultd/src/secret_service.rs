@@ -654,6 +654,9 @@ impl Service {
         });
         let answer = approver.approve(&prompt);
         self.lock().end_app_prompt(program.as_deref(), &answer);
+        let who = program.as_deref().unwrap_or("an unknown program");
+        self.lock()
+            .note("app-approval", who, matches!(answer, Ok(true)));
         match answer {
             Ok(true) => Ok(()),
             Ok(false) => Err(Fail::Denied("declined in the approval window".into())),

@@ -1648,3 +1648,53 @@ fn trash_restore_purge_and_password_history() {
     };
     assert!(t.is_empty());
 }
+
+#[test]
+fn activity_log_records_what_happened_without_secrets() {
+    let dir = tempfile::tempdir().unwrap();
+    let sock = start(dir.path(), server::current_user(), Duration::from_secs(600));
+    let mut c = C::new(&sock);
+    let Response::Initialized { token, .. } = c.ok(Request::Init {
+        password: s(PW),
+        client_name: "cli".into(),
+    }) else {
+        panic!()
+    };
+    c.token = Some(token);
+    c.ok(Request::Lock);
+    // A wrong password is logged as a failure.
+    let bad = c.call(Request::Unlock {
+        method: UnlockMethod::Password {
+            password: s("not the password"),
+        },
+    });
+    assert!(matches!(bad, Response::Error(_)));
+    c.ok(Request::Unlock {
+        method: UnlockMethod::Password { password: s(PW) },
+    });
+    let Response::Activity(list) = c.ok(Request::Activity { limit: 10 }) else {
+        panic!()
+    };
+    // Newest first.
+    let seen: Vec<(&str, bool)> = list.iter().map(|a| (a.event.as_str(), a.ok)).collect();
+    assert_eq!(
+        seen,
+        [
+            ("unlock", true),
+            ("unlock", false),
+            ("lock", true),
+            ("init", true)
+        ]
+    );
+    assert!(list.iter().all(|a| a.who == "cli" || a.who == "unpaired"));
+    let log = std::fs::read_to_string(dir.path().join("activity.log"))
+        .or_else(|_| {
+            std::fs::read_dir(dir.path())
+                .unwrap()
+                .flatten()
+                .find_map(|e| std::fs::read_to_string(e.path().join("activity.log")).ok())
+                .ok_or(())
+        })
+        .unwrap_or_default();
+    assert!(!log.contains(PW));
+}

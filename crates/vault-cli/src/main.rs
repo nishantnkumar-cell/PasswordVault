@@ -111,6 +111,7 @@ BACKUPS
   backup FILE [--snapshot NAME] [--force]
                                save the encrypted vault file (or a snapshot) to FILE
   snapshots                    list the copies vaultd keeps before merges, imports and revokes
+  activity [--last N]          what unlocked, read, exported or signed lately (no secrets)
 
 SYNC                           through a folder that OneDrive, Google Drive or Dropbox syncs
   sync                         show sync state
@@ -1224,6 +1225,27 @@ fn main() {
                     utc(s.taken),
                     s.size,
                     s.name.trim_end_matches(".svault")
+                );
+            }
+        }
+        "activity" => {
+            let limit = flag_value(rest, "--last")
+                .and_then(|n| n.parse().ok())
+                .unwrap_or(30);
+            let Response::Activity(list) = Client::connect().call(Request::Activity { limit })
+            else {
+                die("unexpected response")
+            };
+            if list.is_empty() {
+                println!("nothing logged yet");
+            }
+            for a in list {
+                println!(
+                    "{}  {:<14} {}{}",
+                    utc(a.time),
+                    a.event,
+                    a.who,
+                    if a.ok { "" } else { "  (failed)" }
                 );
             }
         }
