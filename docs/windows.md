@@ -19,7 +19,10 @@ Inno Setup 6.x if that is what you have):
     cargo build --release --locked
     iscc contrib\windows\vault.iss /DAppVersion=0.2.0
 
-It lands in `target\installer\`. CI and the release workflow
+It lands in `target\installer\`. On an Arm PC, build there and add
+`/DArch=arm64`: the installer is then `SecretVault-Setup-<version>-arm64.exe`
+and installs only on Arm64 Windows. CI builds both, the Arm one natively on
+GitHub's `windows-11-arm` runner, where the full test suite runs too. CI and the release workflow
 (`.github/workflows/package.yml`) pass `/DAppVersion` from
 `contrib/release/version.sh --build` and `/DNumVersion` (its numeric part,
 for the file's version resource).
@@ -32,6 +35,12 @@ The script reads the installed version from the uninstall key
 installing an older version over a newer one.
 
 ## Build
+
+Smart App Control (Windows 11, enforce mode) blocks every unsigned
+executable by reputation, including cargo's build scripts (`os error 4551`,
+"An Application Control policy has blocked this file") and the installer.
+Building or installing needs it off, or Authenticode-signed binaries, which
+the project does not have yet (no free certificate for a non-OSI licence).
 
 Install Git, and Rust from rustup.rs with the "Desktop development with C++"
 build tools, then in PowerShell:
@@ -56,7 +65,12 @@ for an all-users install), value `Secret Vault daemon`.
 To watch the messages instead, run `vaultd.exe` in a terminal; closing the
 terminal stops it. To stop a background vaultd:
 
-    Stop-Process -Name vaultd
+    taskkill /im vaultd.exe
+
+This asks vaultd to close: it locks and exits. `taskkill /f` works too.
+Windows PowerShell 5.1's `Stop-Process` is refused with "Access is denied":
+it asks for full access to the process, which its ACL (below) does not give. Pass
+`VAULT_HARDEN=off` to vaultd if a script of yours needs it.
 
 The keys go with the process; the vault file is unaffected.
 
@@ -182,7 +196,51 @@ The vault locks when idle, when you lock the screen (Win+L) and when the
 machine goes to sleep, through session and power notifications to a hidden
 window.
 
-## Not on Windows yet
+## Memory protection
 
-- **Memory hardening.** On Linux the daemon locks its memory and disables core
-  dumps. On Windows keys can reach the page file and crash dumps for now.
+`vault-ipc/src/harden.rs` does on Windows what `harden()` does on Linux and
+macOS (threat model A3). Nothing here needs administrator rights.
+
+| Step | vaultd | vault-gui, vault-prompt |
+|---|---|---|
+| No Windows Error Reporting dump: `WerAddExcludedApplication` for the program's name (this user, kept under `HKCU\Software\Microsoft\Windows\Windows Error Reporting\ExcludedApplications`), and `SetErrorMode` without the crash box | Yes | Yes |
+| Process ACL: our own user may only wait on, query and end the process (`SYNCHRONIZE`, `PROCESS_QUERY_INFORMATION`, `PROCESS_QUERY_LIMITED_INFORMATION`, `PROCESS_TERMINATE`); SYSTEM keeps full access. No `PROCESS_VM_READ`, `PROCESS_VM_WRITE`, `PROCESS_CREATE_THREAD` or `PROCESS_DUP_HANDLE` | Yes | Yes |
+| Heap locked in RAM: the global allocator calls `VirtualLock` on every block, raising the minimum working set when the quota is full (up to 2 GiB, enough for the largest Argon2id cost the format allows, 1 GiB) | Yes | No |
+| Mitigation policies: extension points off (no AppInit DLLs or global hooks), images only from System32 first and never from a network share | Yes | No (input methods need extension points) |
+
+Windows has no `mlockall`, so the allocator is the closest match: every heap
+block is locked as it is handed out. Pages are shared between blocks, so
+nothing is unlocked on free; large blocks go back to the system with their
+lock, small ones are reused. Thread stacks are not locked; keys pass through
+them only briefly. If a block cannot be locked, vaultd's log says how many
+at start-up. The desktop app and the approval window do not lock their heap:
+egui allocates on every frame, and they hold only what is on screen.
+
+What it does not cover:
+
+- **The owner can undo the ACL.** The process owner keeps `WRITE_DAC`, and
+  an administrator with `SeDebugPrivilege` ignores the ACL. It stops
+  programs that open the process and read it, not malware that first
+  rewrites the ACL. The Linux system-user unit has no Windows equivalent
+  that keeps the approval window and the screen-lock events.
+- **Kernel crash dumps** (a blue screen) hold all of RAM, and hibernation
+  writes it to `hiberfil.sys`. BitLocker (or Device Encryption) encrypts
+  both, and the page file.
+- **An administrator's `LocalDumps` policy** for all programs may still
+  collect a dump.
+
+**Screen capture.** vault-gui and vault-prompt call
+`SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)` on their window as soon
+as it exists (`WDA_MONITOR`, a black box, before Windows 10 2004), so
+screenshots, recordings and screen sharing leave them out.
+`VAULT_ALLOW_CAPTURE=1` skips it; vault-prompt inherits vaultd's
+environment.
+
+`VAULT_HARDEN=off` in vaultd's or the app's environment skips the ACL and
+the mitigation policies, for attaching a debugger or ruling them out when
+something misbehaves. The dump exclusion and memory locking stay on.
+
+To check a running vaultd from PowerShell as the same user:
+
+    (Get-Process vaultd).Modules   # fails: access denied
+    Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\Windows Error Reporting\ExcludedApplications'

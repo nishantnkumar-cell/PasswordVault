@@ -28,7 +28,7 @@ Build without hardware support with `cargo build -p vaultd --no-default-features
 CI builds both targets, joins them with `contrib/macos/universal.sh` (`lipo`) and packages with `BIN_DIR=target/universal ARCH=universal`; the job installs the `.pkg` on the runner, checks it, upgrades in place and uninstalls. Signing with a Developer ID and notarizing: [macos-signing.md](macos-signing.md). User steps: [user-guide/13-macos.md](user-guide/13-macos.md).
 
 - **Peer check:** `getpeereid` for the UID and `LOCAL_PEERPID` for the PID shown in the approval window (Linux uses `SO_PEERCRED`). The window names the program through `proc_pidpath` and its command line through `ps`.
-- **Hardening:** `RLIMIT_CORE` 0 and `ptrace(PT_DENY_ATTACH)`. There is no `mlockall` on macOS; swap is always encrypted with a key the kernel holds.
+- **Hardening:** `RLIMIT_CORE` 0 and `ptrace(PT_DENY_ATTACH)`. (Windows: [windows.md, Memory protection](windows.md#memory-protection).) There is no `mlockall` on macOS; swap is always encrypted with a key the kernel holds.
 - **Quick unlock:** `vault_hw::touchid` asks LocalAuthentication with `LAPolicyDeviceOwnerAuthentication` (Touch ID, Apple Watch, or the login password), in the same `Presence` role as Windows Hello: it releases the parked vault key and never opens a vault alone. It needs vaultd in the user's GUI session; from an SSH login it fails with `LAErrorNotInteractive`.
 - **FIDO2:** direct USB HID through `ctap-hid-fido2`, as on Linux; FIDO usage-page devices need no TCC permission.
 - **Not done:** Secure Enclave slots (they need a signed app with a keychain entitlement, and the Secure Enclave only does P-256, so they need the same post-quantum care as Windows TPM slots), and locking on screen lock or sleep.
@@ -123,7 +123,15 @@ session bus and serves the freedesktop Secret Service API:
 
 ## Memory and session locking
 
-- With `RLIMIT_MEMLOCK` unlimited (both units set `LimitMEMLOCK=infinity`), all daemon memory is locked with `mlockall`, so keys never reach swap. With a lower limit it warns and continues unlocked, because locking would make large Argon2id allocations fail.
+- **Memory locking.** When `RLIMIT_MEMLOCK` is unlimited or at least 1.5 GiB (the largest Argon2id buffer a vault may use, 1 GiB, plus room for the rest), all daemon memory is locked with `mlockall`, so keys never reach swap. vaultd first raises its soft limit to the hard one. Below that it warns ("the memory lock limit … is below the … needed") and runs unlocked, because locking would make large Argon2id allocations fail. Both units set `LimitMEMLOCK=infinity`, but a user unit cannot go above the limit the user manager itself was started with. Some systems, WSL among them, start it lower. To raise it, once, as root:
+
+  ```sh
+  sudo mkdir -p /etc/systemd/system/user@.service.d
+  printf '[Service]\nLimitMEMLOCK=infinity\n' | sudo tee /etc/systemd/system/user@.service.d/memlock.conf
+  sudo systemctl daemon-reload
+  ```
+
+  Then sign out and back in (on WSL: `wsl --shutdown` from Windows, then start it again). `grep VmLck /proc/$(pidof vaultd)/status` shows how much is locked; 0 kB means it is not.
 - With the default `logind` feature, the daemon listens on the system bus and locks when logind announces suspend (`PrepareForSleep`) or any session `Lock`. Signals from anything other than logind's bus name are ignored.
 
 ## Checking a FIDO2 key
