@@ -180,6 +180,21 @@ already has, edit the login (desktop) or use `vault code add --to ID
 --replace`. Delete the screenshot afterwards: anyone with it can make your
 codes. No vault file change.
 
+### The approval window names the right program (Linux)
+
+- **No more PID mix-ups.** On Linux with kernel 6.5 or later (Ubuntu 24.04,
+  Fedora 38 and newer), `vaultd` now identifies a connecting program through
+  a pidfd held for the whole connection. Before, a program could connect,
+  exit, and have another program take its process number before `vaultd`
+  looked it up, so the approval window might have named the wrong program.
+  Now it cannot.
+- Older Linux kernels keep the old lookup (and the old, small, race). Windows
+  and macOS are unchanged: they have their own process identifiers. There is
+  nothing to turn on. It is checked by a unit test on a real socket, and by
+  seeing the same program name in the approval window as before.
+
+How it works: [`docs/vaultd.md`](vaultd.md).
+
 ### Sync with the Linux systemd service
 
 - **Fixed in the docs, with an example file.** The shipped `vaultd.service`
