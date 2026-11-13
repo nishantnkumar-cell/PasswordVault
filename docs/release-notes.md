@@ -271,7 +271,6 @@ users' signatures show as invalid in Thunderbird). Evolution and KMail are
 not connected yet. No vault file change; `vaultd`, `vault-gpg` and the other
 programs must be updated together (two new requests).
 
-<<<<<<< HEAD
 ### Windows keeps your keys out of the page file, crash reports and screen shares
 
 - **The last "Not yet" for Windows memory safety is closed.** vaultd now
@@ -334,7 +333,7 @@ No vault file change.
 Known limits: built and tested in CI on GitHub's Windows 11 Arm runners;
 not yet tried on a real Arm PC (no TPM, security key or Windows Hello there).
 Windows 10 on Arm is untested.
-=======
+
 ### Sync: three devices now always end with the same item
 
 - If three devices edited one item at once and synced in a particular order,
@@ -343,7 +342,6 @@ Windows 10 on Arm is untested.
   the edit that loses is still kept as a "(conflict)" copy, as before.
 - Found by the automatic test that mixes edits and syncs at random; it failed
   once on Windows CI. Same on Linux, Windows and macOS and on the phone apps.
->>>>>>> origin/main
 
 ### Safer unlock limits, sync limits and Android AutoFill frames
 
