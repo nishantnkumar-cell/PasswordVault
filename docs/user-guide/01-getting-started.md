@@ -208,6 +208,9 @@ digits in groups of six, like `4K7QZD-M2XH9A-...`. It can unlock the vault on it
 - Anyone who has it can read your vault. If you lose both the password and
   the recovery code, nobody can open the vault, including the developers.
 
+The desktop app's setup can also print a one-page **emergency kit** with the
+code and the recovery steps ([chapter 5](05-desktop-app.md)).
+
 The command that ran `vault init` is now paired automatically, and the vault
 is unlocked.
 

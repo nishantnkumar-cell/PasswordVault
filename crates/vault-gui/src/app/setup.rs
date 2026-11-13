@@ -455,6 +455,26 @@ impl App {
         ] {
             bullet(ui, line);
         }
+        ui.add_space(6.0);
+        let mut print = false;
+        if theme::button(ui, Icon::Note, "Print an emergency kit page").clicked() {
+            print = true;
+        }
+        ui.label(
+            RichText::new(
+                "Opens a page with the code and the recovery steps in your browser, for \
+                 printing. It is deleted from this computer a minute and a half later.",
+            )
+            .small()
+            .color(theme::MUTED),
+        );
+        if print && let Some(code) = &s.recovery_code {
+            match crate::kit::print(code) {
+                Ok(()) => self.notice = Some("The emergency kit page is open.".into()),
+                Err(e) => self.error = Some(e),
+            }
+        }
+        let Some(s) = &mut self.setup else { return };
         ui.add_space(10.0);
         ui.checkbox(
             &mut s.recovery_saved,
