@@ -73,12 +73,22 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      # Signed build provenance for every download (GitHub artifact attestations).
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v7
         with:
           path: dist
           merge-multiple: true
+      # Signs a statement, with the workflow's identity, that each file was
+      # built by this workflow from this tag. Check a download with
+      # `gh attestation verify FILE --repo OWNER/REPO` (docs/user-guide/11-versions-and-upgrades.md).
+      - name: Attest the downloads
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: "dist/*"
       - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}

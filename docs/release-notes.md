@@ -1083,6 +1083,23 @@ yet because the daemon does not run there.
 
 How to use it: [Versions, downloads and upgrading](user-guide/11-versions-and-upgrades.md).
 
+### Build attestations for every download
+
+- **Check who built a download.** Each file on the Releases page now gets a
+  signed build attestation from GitHub (free for public repositories). With
+  the GitHub CLI, `gh attestation verify FILE --repo nishantnkumar-cell/PasswordVault`
+  confirms the file was built by this project's release workflow from the
+  release tag. The checksums file only showed that a download arrived
+  intact.
+- Works the same for the Windows, Linux, macOS and extension downloads. It
+  does not replace Windows or Apple code signing (the Mac downloads are
+  already signed and notarized). It starts with the next release, and it
+  can only be tried by pushing a release tag. A hybrid post-quantum
+  signature on the checksums file is not added: it needs a long-lived
+  signing key kept as a secret, which is a decision for the owner.
+
+How to use it: [Proving where a download came from](user-guide/11-versions-and-upgrades.md#proving-where-a-download-came-from-optional).
+
 ### A cleaner, more polished desktop app
 
 - **New look throughout.** The app now ships its own fonts (Inter for text,

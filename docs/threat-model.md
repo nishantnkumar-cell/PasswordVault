@@ -125,7 +125,7 @@ The attacker copies the vault file today (for example from a sync folder or a ba
 | OpenPGP keys | `vault pgp new --pq`: ML-DSA-65 + Ed25519, ML-KEM-768 + X25519 (RFC 9980). Classic keys, and messages encrypted to them, are not post-quantum | M with `--pq` |
 | SSH keys | Ed25519, ECDSA P-256 signatures. A signature cannot be harvested; a quantum attacker with your public key could later forge logins. Key exchange is the ssh client's (OpenSSH 10 uses ML-KEM hybrid by default) | Accepted until OpenSSH has a post-quantum key type |
 | Pairing, browser host, IPC | Random tokens over local sockets, no public keys | M |
-| Sharing, device enrollment, phone pairing, release signing | Not built. Must use hybrid PQ when built: X-Wing (ML-KEM-768 + X25519) for the reserved `RecipientHybrid` slot, ML-DSA-65 + Ed25519 for signatures (brief section 11) | Open |
+| Sharing, device enrollment, phone pairing, hybrid post-quantum release signing (release downloads already carry GitHub build attestations) | Not built. Must use hybrid PQ when built: X-Wing (ML-KEM-768 + X25519) for the reserved `RecipientHybrid` slot, ML-DSA-65 + Ed25519 for signatures (brief section 11) | Open |
 
 ## 6. Memory and process hygiene
 
