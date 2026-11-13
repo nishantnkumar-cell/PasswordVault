@@ -102,6 +102,7 @@ Out of scope for v1. Root can read `vaultd` memory while unlocked. The vault is 
 
 | Threat | Mitigation | Status |
 | --- | --- | --- |
+| Feeds a crafted file or message to a parser (vault file in a sync folder, IPC frame, import file, QR picture) | Parsers bound sizes and parameters before using them, and are fuzzed with cargo-fuzz (`fuzz/`): one run per target in CI on every change to it and weekly for 5 minutes. A short fuzz run is not proof; the SSH agent, native-host and OpenPGP parsers are not fuzzed yet | P |
 | Swap or replay individual records | Item AAD binds vault ID, item ID, item version, format version | M |
 | Add, remove or edit keyslots | Header MAC under a key derived from the vault key, verified on every unlock | M |
 | Set enormous KDF parameters (DoS) | Parameters bounded before Argon2id runs | M |

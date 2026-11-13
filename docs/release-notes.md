@@ -1230,6 +1230,20 @@ How to use it: [Proving where a download came from](user-guide/11-versions-and-u
   encrypting, decrypting or signing with OpenPGP still use `vault ssh` and
   `vault pgp`.
 
+### Fuzz testing for the file, message and import parsers
+
+- **Developer-facing safety net.** Five fuzz targets (`fuzz/`) throw
+  random and mutated input at the vault file parser, the daemon's message
+  reader, the Bitwarden and CSV importers and the QR picture reader. A
+  weekly GitHub run (and one on request) fuzzes each for five minutes and
+  keeps any crashing input. A first 20-second run of each found nothing.
+- Nothing changes for users, and nothing is installed with the app. Linux,
+  Windows, macOS and phones are covered the same way, because the parsers
+  are shared. The SSH agent, native-host and OpenPGP parsers are not
+  fuzzed yet.
+
+How to run it yourself: [`fuzz/README.md`](../fuzz/README.md).
+
 ### Desktop app: key details, Unlock methods and Sync pages
 
 - **SSH and PGP keys show what you need.** Selecting a key now shows its
