@@ -128,7 +128,36 @@ cleared with `-`. An item keeps its kind; to change it, make a new item.
 vault rm 1c9
 ```
 
-There is no undo.
+The item goes to the **trash** for 30 days. It no longer shows in lists, in
+autofill, to the SSH agent or to other programs, but you can bring it back:
+
+```sh
+vault trash            # what is there, and when each item will be gone
+vault restore 1c9
+vault purge 1c9        # delete one for good
+vault empty-trash      # delete everything in the trash for good
+```
+
+After 30 days `vaultd` deletes a trashed item for good the next time the
+list is read. In the desktop app, **Trash** is in the sidebar under Tools.
+A delete on one computer reaches your other computers through sync as a move
+to the trash, so a mistake there can still be undone. Older versions of
+Secret Vault, on a computer you have not updated, show a trashed item as a
+normal one.
+
+### Earlier passwords
+
+When you change a login's password, the old one is kept (the last 10) so
+you can get back in if a site did not take the new one:
+
+```sh
+vault history 1c9
+```
+
+It prints each earlier password and when it was replaced. The history lives
+inside the encrypted item and is not shown with the item; there is no way to
+see it in the desktop app yet. Deleting the item for good deletes its
+history. Passwords that apps save through the Secret Service keep no history.
 
 ## Password health
 

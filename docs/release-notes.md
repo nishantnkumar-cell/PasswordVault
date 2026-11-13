@@ -1566,6 +1566,26 @@ on macOS once the app supports it. TPM unlock is Linux only.
 
 How to use it: [the desktop window and command palette](user-guide/desktop-window-and-palette.md).
 
+### Trash with 30-day restore, and earlier passwords
+
+- **Delete is no longer final.** Deleting an item (`vault rm`, or
+  **Delete** in the desktop app) moves it to the trash for 30 days. Trashed
+  items are hidden everywhere: lists, search, autofill, the SSH agent and
+  app passwords. Bring one back with `vault restore ID` or **Restore** on the
+  new **Trash** page in the desktop app; `vault purge`, `vault empty-trash`
+  and **Delete for good** remove items at once.
+- **Earlier passwords are kept.** Changing a login's password keeps the old
+  one (the last 10). `vault history ID` shows them. The desktop app does not
+  show history yet.
+- A delete on one computer now reaches the others as a move to the trash,
+  so it can be undone. Computers still on an older version show a trashed
+  item as normal until they are updated, so update them all. No file format
+  change. Linux, Windows, macOS and the desktop app work the same. The phone
+  apps hide trashed items and delete into the trash too, and keep the
+  history, but have no Trash page yet: restore on a computer.
+
+How to use it: [Delete](user-guide/03-items.md#delete) and [Earlier passwords](user-guide/03-items.md#earlier-passwords).
+
 ### A revoke can no longer be undone through a synced copy
 
 - **Fixed (security).** Before, someone who kept an old copy of your vault and

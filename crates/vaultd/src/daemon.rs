@@ -687,11 +687,19 @@ impl Daemon {
                 let old = self.item(&id)?;
                 item.created = old.created;
                 item.key = old.key.clone();
+                item.carry_over(&old, t);
+                if item.fields.iter().any(|f| f.name == "Secret Service") {
+                    // Apps change their secrets often; no history for those.
+                    item.fields
+                        .retain(|f| !f.name.starts_with(vault_core::item::HISTORY_PREFIX));
+                }
                 id
             }
             None => {
                 item.created = t;
                 item.key = None;
+                // A new item starts with no trash mark or history of its own.
+                item.fields.retain(|f| !ItemData::is_reserved_field(f));
                 self.vault()?.new_item_id(&mut OsRandom).map_err(e)?
             }
         };
@@ -704,10 +712,23 @@ impl Daemon {
         Ok(id)
     }
 
-    /// Delete item `id` and write the vault.
-    pub fn delete_item(&mut self, id: &ItemId) -> R<()> {
+    /// Delete item `id` for good, with no stop in the trash. For items that
+    /// are not the user's own, such as app passwords.
+    pub fn delete_item_for_good(&mut self, id: &ItemId) -> R<()> {
         self.vault()?.remove_item(id).map_err(e)?;
         self.save()
+    }
+
+    /// Delete item `id`: into the trash for 30 days first, and for good if
+    /// it is already there. Writes the vault.
+    pub fn delete_item(&mut self, id: &ItemId) -> R<()> {
+        let mut item = self.raw_item(id)?;
+        if item.trashed_at().is_some() {
+            self.vault()?.remove_item(id).map_err(e)?;
+            return self.save();
+        }
+        item.set_trashed(Some(now()));
+        self.write_item(id, &item)
     }
 
     /// Claim the prompt to ask about an application using the Secret
@@ -1345,9 +1366,60 @@ impl Daemon {
             .map_err(|err| format!("new slot failed its test unlock: {err}"))
     }
 
+    /// An item that is not in the trash. Everything that lists, fills or
+    /// uses items goes through here, so a trashed item is never offered.
     fn item(&mut self, id: &ItemId) -> R<ItemData> {
+        let it = self.raw_item(id)?;
+        if it.trashed_at().is_some() {
+            return Err("that item is in the trash".into());
+        }
+        Ok(it)
+    }
+
+    /// An item, trashed or not.
+    fn raw_item(&mut self, id: &ItemId) -> R<ItemData> {
         let bytes = self.vault()?.get_item(id).map_err(e)?;
         ItemData::from_bytes(&bytes).map_err(e)
+    }
+
+    fn write_item(&mut self, id: &ItemId, item: &ItemData) -> R<()> {
+        self.vault()?
+            .put_item(&mut OsRandom, id, &item.to_bytes())
+            .map_err(e)?;
+        self.save()
+    }
+
+    /// Items in the trash, newest first.
+    fn trash(&mut self) -> R<Vec<(ItemId, ItemData, u64)>> {
+        let ids: Vec<ItemId> = self.vault()?.item_ids().copied().collect();
+        let mut out = Vec::new();
+        for id in ids {
+            let Ok(it) = self.raw_item(&id) else { continue };
+            if let Some(t) = it.trashed_at() {
+                out.push((id, it, t));
+            }
+        }
+        out.sort_by_key(|(_, _, t)| std::cmp::Reverse(*t));
+        Ok(out)
+    }
+
+    /// Delete for good what has been in the trash for more than
+    /// [`vault_core::item::TRASH_DAYS`] days.
+    fn purge_old_trash(&mut self) -> R<()> {
+        let limit = now().saturating_sub(vault_core::item::TRASH_DAYS * 86_400);
+        let old: Vec<ItemId> = self
+            .trash()?
+            .into_iter()
+            .filter(|(_, _, t)| *t < limit)
+            .map(|(id, _, _)| id)
+            .collect();
+        if old.is_empty() {
+            return Ok(());
+        }
+        for id in &old {
+            self.vault()?.remove_item(id).map_err(e)?;
+        }
+        self.save()
     }
 
     fn fillable(&mut self, id: &ItemId, origin: &str) -> R<ItemData> {
@@ -1363,7 +1435,7 @@ impl Daemon {
         let ids: Vec<ItemId> = self.vault()?.item_ids().copied().collect();
         let mut out = Vec::new();
         for id in ids {
-            let it = self.item(&id)?;
+            let Ok(it) = self.item(&id) else { continue };
             if keep(&it) {
                 out.push(ItemSummary {
                     id,
@@ -1612,7 +1684,63 @@ impl Daemon {
                 self.save()?;
                 Ok(Response::Revoked { removed })
             }
-            Request::ListItems => Ok(Response::Items(self.summaries(|_| true)?)),
+            Request::ListItems => {
+                let _ = self.purge_old_trash();
+                Ok(Response::Items(self.summaries(|_| true)?))
+            }
+            Request::ListTrash => {
+                let _ = self.purge_old_trash();
+                let keep = vault_core::item::TRASH_DAYS * 86_400;
+                Ok(Response::Trash(
+                    self.trash()?
+                        .into_iter()
+                        .map(|(id, it, t)| vault_ipc::TrashedItem {
+                            id,
+                            kind: it.kind,
+                            title: it.title.clone(),
+                            subtitle: it.subtitle(),
+                            trashed_at: t,
+                            purge_at: t + keep,
+                        })
+                        .collect(),
+                ))
+            }
+            Request::RestoreItem { id } => {
+                let mut item = self.raw_item(&id)?;
+                if item.trashed_at().is_none() {
+                    return Err("that item is not in the trash".into());
+                }
+                item.set_trashed(None);
+                self.write_item(&id, &item)?;
+                Ok(Response::Ok)
+            }
+            Request::PurgeItem { id } => {
+                if self.raw_item(&id)?.trashed_at().is_none() {
+                    return Err("only an item in the trash can be deleted for good".into());
+                }
+                self.vault()?.remove_item(&id).map_err(e)?;
+                self.save()?;
+                Ok(Response::Ok)
+            }
+            Request::EmptyTrash => {
+                let ids: Vec<ItemId> = self.trash()?.into_iter().map(|(id, _, _)| id).collect();
+                for id in &ids {
+                    self.vault()?.remove_item(id).map_err(e)?;
+                }
+                if !ids.is_empty() {
+                    self.save()?;
+                }
+                Ok(Response::Ok)
+            }
+            Request::PasswordHistory { id } => {
+                let item = self.item(&id)?;
+                Ok(Response::History(
+                    item.password_history()
+                        .into_iter()
+                        .map(|(t, p)| (t, p.to_owned().into()))
+                        .collect(),
+                ))
+            }
             Request::GetItem { id } => Ok(Response::Item {
                 item: without_key(self.item(&id)?),
                 id,
@@ -1859,6 +1987,9 @@ impl Daemon {
 /// An item as clients see it: private keys stay in the daemon.
 fn without_key(mut item: ItemData) -> ItemData {
     item.key = None;
+    // The trash mark and earlier passwords are the vault's own; clients get
+    // the history through `PasswordHistory`.
+    item.fields.retain(|f| !ItemData::is_reserved_field(f));
     item
 }
 

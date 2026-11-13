@@ -529,6 +529,7 @@ fn detail(id: &ItemId, item: &ItemData) -> ItemDetail {
         fields: item
             .fields
             .iter()
+            .filter(|f| !ItemData::is_reserved_field(f))
             .map(|f| FieldRecord {
                 name: f.name.clone(),
                 value: f.value.clone(),
@@ -885,7 +886,17 @@ impl VaultSession {
         self.vault.lock().unwrap_or_else(|p| p.into_inner())
     }
 
+    /// An item that is not in the trash (deleted on a computer, say: it
+    /// stays hidden here for the 30 days it is kept).
     fn read(v: &Vault, id: &ItemId) -> R<ItemData> {
+        let item = Self::read_any(v, id)?;
+        if item.trashed_at().is_some() {
+            return Err(MobileError::NotFound);
+        }
+        Ok(item)
+    }
+
+    fn read_any(v: &Vault, id: &ItemId) -> R<ItemData> {
         let bytes = v.get_item(id)?;
         Ok(ItemData::from_bytes(&bytes)?)
     }
@@ -939,7 +950,11 @@ impl VaultSession {
             }
             None => (v.new_item_id(&mut OsRandom)?, ItemData::default()),
         };
+        let before = item.clone();
         apply(&mut item, edit, now())?;
+        // Keep the vault's own fields (trash mark, earlier passwords) and add
+        // the old password to the history when it changed.
+        item.carry_over(&before, now());
         v.put_item(&mut OsRandom, &id, &item.to_bytes())?;
         Ok(hex(&id))
     }
@@ -983,10 +998,18 @@ impl VaultSession {
         Ok(hex(&id))
     }
 
-    /// Delete an item. Synced devices delete it too at their next merge.
+    /// Delete an item: it goes to the trash for 30 days (it is hidden here;
+    /// restore it on a computer). Synced devices get the same move.
     pub fn delete_item(&self, id: String) -> R<()> {
         let id = item_id(&id)?;
-        self.lock().remove_item(&id)?;
+        let mut v = self.lock();
+        let mut item = Self::read_any(&v, &id)?;
+        if item.trashed_at().is_some() {
+            v.remove_item(&id)?;
+        } else {
+            item.set_trashed(Some(now()));
+            v.put_item(&mut OsRandom, &id, &item.to_bytes())?;
+        }
         Ok(())
     }
 

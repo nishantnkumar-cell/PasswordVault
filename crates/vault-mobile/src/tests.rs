@@ -511,3 +511,22 @@ fn openpgp_public_half() {
     assert_eq!(p.fingerprint.len(), 40);
     assert!(!p.public_text.contains("PRIVATE"));
 }
+
+#[test]
+fn deleting_moves_to_the_trash_and_edits_keep_history() {
+    let nv = new_vault();
+    let s = &nv.session;
+    let id = s
+        .save_item(None, login("Mail", "mail.example.com"))
+        .unwrap();
+    let mut change = login("Mail", "mail.example.com");
+    change.password = "a new password".into();
+    s.save_item(Some(id.clone()), change).unwrap();
+    // The history is not shown in the form.
+    let detail = s.item(id.clone()).unwrap();
+    assert!(detail.fields.iter().all(|f| !f.name.starts_with("Vault ")));
+
+    s.delete_item(id.clone()).unwrap();
+    assert!(s.items().is_empty());
+    assert!(s.item(id).is_err());
+}

@@ -443,7 +443,98 @@ impl Drop for ItemDataV2 {
     }
 }
 
+/// Custom field holding the time (Unix seconds) an item was moved to the trash.
+pub const TRASHED_FIELD: &str = "Vault trashed";
+/// Prefix of the custom fields holding earlier passwords; the rest of the name is
+/// the Unix time the password was replaced.
+pub const HISTORY_PREFIX: &str = "Vault old password ";
+/// Most earlier passwords kept on a login.
+pub const HISTORY_KEEP: usize = 10;
+/// How long a trashed item is kept before it is deleted for good.
+pub const TRASH_DAYS: u64 = 30;
+
 impl ItemData {
+    /// When the item was moved to the trash, if it is in the trash.
+    pub fn trashed_at(&self) -> Option<u64> {
+        self.fields
+            .iter()
+            .find(|f| f.name == TRASHED_FIELD)
+            .and_then(|f| f.value.parse().ok())
+    }
+
+    /// Move the item to the trash (`Some(time)`) or take it out (`None`).
+    pub fn set_trashed(&mut self, at: Option<u64>) {
+        self.fields.retain(|f| f.name != TRASHED_FIELD);
+        if let Some(t) = at {
+            self.fields.push(CustomField {
+                name: TRASHED_FIELD.into(),
+                value: t.to_string(),
+                kind: FieldKind::Text,
+            });
+        }
+    }
+
+    /// The earlier passwords of a login, newest first: (time replaced, password).
+    pub fn password_history(&self) -> Vec<(u64, &str)> {
+        let mut out: Vec<(u64, &str)> = self
+            .fields
+            .iter()
+            .filter_map(|f| {
+                let t = f.name.strip_prefix(HISTORY_PREFIX)?.parse().ok()?;
+                Some((t, f.value.as_str()))
+            })
+            .collect();
+        out.sort_by_key(|(t, _)| std::cmp::Reverse(*t));
+        out
+    }
+
+    /// Whether a custom field is one the vault keeps itself (the trash mark
+    /// or an earlier password) and not one the user typed.
+    pub fn is_reserved_field(f: &CustomField) -> bool {
+        f.name == TRASHED_FIELD || f.name.starts_with(HISTORY_PREFIX)
+    }
+
+    /// Replace this item's reserved fields with those of `old`, then, if the
+    /// password changed, add the old one to the history (at time `now`).
+    /// The vault calls this on every edit, so a client cannot lose or forge
+    /// the history by sending back an item without it.
+    pub fn carry_over(&mut self, old: &ItemData, now: u64) {
+        self.fields.retain(|f| !Self::is_reserved_field(f));
+        self.fields.extend(
+            old.fields
+                .iter()
+                .filter(|f| Self::is_reserved_field(f))
+                .cloned(),
+        );
+        if self.kind == ItemKind::Login
+            && old.kind == ItemKind::Login
+            && !old.password.is_empty()
+            && old.password != self.password
+        {
+            let mut t = now;
+            // Two changes in one second must not share a name.
+            while self
+                .fields
+                .iter()
+                .any(|f| f.name == format!("{HISTORY_PREFIX}{t}"))
+            {
+                t += 1;
+            }
+            self.fields.push(CustomField {
+                name: format!("{HISTORY_PREFIX}{t}"),
+                value: old.password.clone(),
+                kind: FieldKind::Hidden,
+            });
+            let mut hist: Vec<u64> = self.password_history().iter().map(|(t, _)| *t).collect();
+            hist.sort_unstable();
+            while hist.len() > HISTORY_KEEP {
+                let oldest = hist.remove(0);
+                self.fields
+                    .retain(|f| f.name != format!("{HISTORY_PREFIX}{oldest}"));
+            }
+        }
+    }
+
     /// An empty item of `kind`. (`ItemData` zeroizes on drop, so struct
     /// update syntax is not available; start here and set fields.)
     pub fn new(kind: ItemKind, title: impl Into<String>) -> ItemData {
@@ -561,6 +652,45 @@ mod tests {
             number: number.into(),
             ..Card::default()
         }
+    }
+
+    #[test]
+    fn trash_mark_and_password_history() {
+        let mut old = ItemData::new(ItemKind::Login, "Mail");
+        old.password = "first".into();
+        let mut new = ItemData::new(ItemKind::Login, "Mail");
+        new.password = "second".into();
+        new.carry_over(&old, 100);
+        assert_eq!(new.password_history(), vec![(100, "first")]);
+
+        // The history survives an edit that does not touch the password, and a
+        // client's copy of it is ignored.
+        let mut again = ItemData::new(ItemKind::Login, "Mail (edited)");
+        again.password = "second".into();
+        again.fields.push(CustomField {
+            name: format!("{HISTORY_PREFIX}1"),
+            value: "forged".into(),
+            kind: FieldKind::Hidden,
+        });
+        again.carry_over(&new, 200);
+        assert_eq!(again.password_history(), vec![(100, "first")]);
+
+        // Only the newest HISTORY_KEEP stay.
+        let mut cur = again;
+        for i in 0..15u64 {
+            let mut next = ItemData::new(ItemKind::Login, "Mail");
+            next.password = format!("p{i}");
+            next.carry_over(&cur, 300 + i);
+            cur = next;
+        }
+        assert_eq!(cur.password_history().len(), HISTORY_KEEP);
+        assert_eq!(cur.password_history()[0].1, "p13");
+
+        assert_eq!(cur.trashed_at(), None);
+        cur.set_trashed(Some(5));
+        assert_eq!(cur.trashed_at(), Some(5));
+        cur.set_trashed(None);
+        assert_eq!(cur.trashed_at(), None);
     }
 
     #[test]

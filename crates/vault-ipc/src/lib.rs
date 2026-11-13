@@ -410,6 +410,29 @@ pub enum Request {
     /// The encrypted vault file (as it is now, or a snapshot by name) so a
     /// client can save it somewhere. Answers with `VaultFile`.
     ExportVault { snapshot: Option<String> },
+    /// Items in the trash, newest first. Answers with `Trash`.
+    ListTrash,
+    /// Take an item out of the trash.
+    RestoreItem { id: ItemId },
+    /// Delete a trashed item for good.
+    PurgeItem { id: ItemId },
+    /// Delete everything in the trash for good.
+    EmptyTrash,
+    /// A login's earlier passwords, newest first. Answers with `History`.
+    PasswordHistory { id: ItemId },
+}
+
+/// An item in the trash (`Request::ListTrash`).
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct TrashedItem {
+    pub id: ItemId,
+    pub kind: ItemKind,
+    pub title: String,
+    pub subtitle: String,
+    /// When it went to the trash, seconds since the Unix epoch.
+    pub trashed_at: u64,
+    /// When it will be deleted for good, seconds since the Unix epoch.
+    pub purge_at: u64,
 }
 
 /// A kept copy of the vault file (`Request::Snapshots`).
@@ -579,6 +602,10 @@ pub enum Response {
     },
     /// The snapshots of the vault file, oldest first.
     Snapshots(Vec<SnapshotInfo>),
+    /// The trash, newest first.
+    Trash(Vec<TrashedItem>),
+    /// A login's earlier passwords, newest first, with when each was replaced.
+    History(Vec<(u64, Secret)>),
 }
 
 /// Write one frame: u32 little-endian length, then postcard bytes.

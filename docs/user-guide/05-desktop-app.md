@@ -332,8 +332,10 @@ codes**.
   them again.
 - A **secure note's** text stays hidden until you press **Show**; **Copy
   note** copies it without showing it.
-- **Edit** opens the form. **Delete** asks **Yes, delete** to confirm;
-  there is no undo.
+- **Edit** opens the form. **Delete** asks **Yes, delete** to confirm, then
+  moves the item to **Trash** (sidebar, under Tools), where **Restore**
+  brings it back for 30 days and **Delete for good** or **Empty the trash**
+  removes it at once.
 
 ### SSH and PGP keys
 
