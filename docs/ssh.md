@@ -12,7 +12,7 @@ eval "$(vault ssh agent)"       # sets SSH_AUTH_SOCK; put this in your shell pro
 ssh-add -L                      # the vault's keys, while it is unlocked
 ```
 
-On Windows, `vault ssh agent` prints a PowerShell line. Use the Windows OpenSSH client (`C:\Windows\System32\OpenSSH`); Git for Windows' bundled ssh cannot use a named pipe, so set `git config --global core.sshCommand C:/Windows/System32/OpenSSH/ssh.exe`. Windows support is untested on real hardware.
+On Windows, `vault ssh agent` prints a PowerShell line. Use the Windows OpenSSH client (`C:\Windows\System32\OpenSSH`); Git for Windows' bundled ssh cannot use a named pipe, so set `git config --global core.sshCommand C:/Windows/System32/OpenSSH/ssh.exe`. Tested on Windows 11 with the built-in OpenSSH.
 
 ## Git commit signing
 
@@ -39,7 +39,7 @@ With confirmation off, any program running as you can sign with the key while th
 
 - Lists and signs with Ed25519 and ECDSA (P-256) keys from the vault, only while it is unlocked. Locked, it lists nothing. P-256 keys use ssh-key 0.7 (a release candidate, pinned exactly) because 0.6 signs them with crypto-bigint 0.5 (RUSTSEC-2026-0387); move to 0.7.0 when it ships.
 - Does not accept keys from `ssh-add`, does not remove or lock keys on request, and has no RSA support (the `rsa` crate has no constant-time fix for the Marvin attack).
-- Checks the peer's user on every connection, like the main socket. The agent socket is `$XDG_RUNTIME_DIR/vault/ssh-agent.sock` (`\\.\pipe\vaultd-ssh-<SID>` on Windows); change it with `vaultd --ssh-agent PATH` or turn it off with `--no-ssh-agent`.
+- Checks the peer's user on every connection, like the main socket. The agent socket is `$XDG_RUNTIME_DIR/vault/ssh-agent.sock` (`\\.\pipe\vaultd-ssh-<SID>` on Windows); change it with `vaultd --ssh-agent PATH` (or `VAULT_SSH_AGENT`) or turn it off with `--no-ssh-agent`. A vaultd started with `--socket` serves its agent next to that socket (`ssh-agent.sock` in the same folder, or `<pipe>-ssh` on Windows), and `vault ssh agent` prints that path when `VAULT_SOCKET` names the same socket, so a second daemon never shares an agent with the first.
 
 ## Storage and export
 
