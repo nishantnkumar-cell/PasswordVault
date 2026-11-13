@@ -37,6 +37,8 @@ vault-hw = { path = "../vault-hw", default-features = false }
 vault-import = { path = "../vault-import" }
 vault-ipc = { path = "../vault-ipc" }
 zeroize = "1.9.1"
+# Rejects weak passwords when a password-only slot is made (security review, finding 2).
+zxcvbn = { version = "3.1.1", default-features = false }
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.31", features = ["socket", "process", "resource", "fs", "user", "signal", "mman"] }

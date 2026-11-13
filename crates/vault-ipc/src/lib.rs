@@ -14,6 +14,8 @@ pub const VERSION: &str = match option_env!("VAULT_VERSION") {
     None => env!("CARGO_PKG_VERSION"),
 };
 #[cfg(windows)]
+pub mod harden;
+#[cfg(windows)]
 pub mod win;
 
 use std::io::{self, Read, Write};

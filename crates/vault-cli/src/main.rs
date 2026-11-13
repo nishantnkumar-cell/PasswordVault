@@ -2,6 +2,8 @@
 
 #![forbid(unsafe_code)]
 
+mod health;
+
 use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::PathBuf;
 use std::process::exit;
@@ -42,7 +44,7 @@ UNLOCKING                      METHOD is one of --password (default), --fido2, -
                                Touch ID (macOS)
 
 ITEMS                          ID may be any unique prefix of an item ID
-  ls [KIND]                    list items, or only logins, notes, cards or identities
+  ls [KIND]                    list items, or only logins, notes, cards, identities or keys
   show ID [--reveal]           show an item (secrets hidden unless --reveal)
   add [KIND] [--generate]      add an item interactively; KIND is login (default),
                                note, card or identity
@@ -60,6 +62,9 @@ ITEMS                          ID may be any unique prefix of an item ID
                                N random words, 3 by default (UK NCSC style)
   gen --apple                  Apple style: three groups of six, like abcdef-gh1jkl-Mnopqr
   import bitwarden|csv FILE    import an unencrypted export (delete the file afterwards)
+  health [--online]            reused, weak and old passwords and logins without a one-time
+                               code; --online also checks Have I Been Pwned (sends 5 hash
+                               characters per password, never the password)
 
 ONE-TIME CODES                 two-step sign-in codes, like an authenticator app
   code add [--qr IMAGE] [--to ID] [--title T] [--account A] [--replace]
@@ -204,6 +209,80 @@ fn sync_file(arg: &str) -> PathBuf {
         None => PathBuf::from(arg),
     };
     std::path::absolute(&p).unwrap_or(p)
+}
+
+/// `vault health`.
+fn health_report(online: bool) {
+    let mut c = Client::connect();
+    let logins: Vec<ItemSummary> = items(&mut c)
+        .into_iter()
+        .filter(|i| i.kind == ItemKind::Login)
+        .collect();
+    let mut entries = Vec::with_capacity(logins.len());
+    for s in &logins {
+        let item = get(&mut c, s.id);
+        entries.push(health::Entry {
+            title: item.title.clone(),
+            password: Zeroizing::new(item.password.clone()),
+            modified: item.modified,
+            has_totp: item.totp.is_some(),
+            has_url: !item.urls.is_empty(),
+        });
+    }
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    let r = health::analyze(&entries, now);
+    let name = |i: &usize| entries[*i].title.as_str();
+    let list = |v: &[usize]| v.iter().map(name).collect::<Vec<_>>().join(", ");
+    println!("Checked {} logins.", entries.len());
+    println!();
+    if r.reused.is_empty() {
+        println!("Reused: none.");
+    }
+    for g in &r.reused {
+        println!("Reused: one password is shared by {}.", list(g));
+    }
+    println!(
+        "Weak (easy to guess): {}",
+        if r.weak.is_empty() {
+            "none".into()
+        } else {
+            list(&r.weak)
+        }
+    );
+    println!(
+        "Old (not changed in over a year): {}",
+        if r.old.is_empty() {
+            "none".into()
+        } else {
+            list(&r.old)
+        }
+    );
+    println!(
+        "Website but no one-time code: {}",
+        if r.no_code.is_empty() {
+            "none".into()
+        } else {
+            list(&r.no_code)
+        }
+    );
+    if online {
+        match health::breached(&entries, &mut |p| health::fetch_range(p)) {
+            Ok(hits) if hits.is_empty() => println!("Seen in breaches: none."),
+            Ok(hits) => {
+                for (i, n) in hits {
+                    println!("Seen in breaches: {} ({n} times)", entries[i].title);
+                }
+            }
+            Err(e) => die(format!("could not check Have I Been Pwned: {e}")),
+        }
+    } else {
+        println!();
+        println!(
+            "Add --online to also check Have I Been Pwned (5 hash characters per password leave this computer)."
+        );
+    }
 }
 
 fn die(msg: impl std::fmt::Display) -> ! {
@@ -673,7 +752,7 @@ fn kind_arg(rest: &[String]) -> Option<ItemKind> {
     };
     Some(ItemKind::from_name(singular).unwrap_or_else(|| {
         die(format!(
-            "unknown item kind {k}; use login, note, card or identity"
+            "unknown item kind {k}; use login, note, card, identity or key"
         ))
     }))
 }
@@ -856,17 +935,27 @@ fn main() {
             print_quick(&s.quick_unlock);
         }
         "ls" => {
-            let only = kind_arg(rest);
+            // SSH and OpenPGP keys are stored as logins that carry a key;
+            // list them as keys, and let `vault ls keys` pick them out.
+            let keys_only = rest
+                .iter()
+                .find(|a| !a.starts_with("--"))
+                .is_some_and(|k| k == "key" || k == "keys");
+            let only = if keys_only { None } else { kind_arg(rest) };
             for i in items(&mut Client::connect()) {
-                if only.is_some_and(|k| k != i.kind) {
+                if only.is_some_and(|k| k != i.kind) || (keys_only && i.key.is_none()) {
                     continue;
                 }
                 let totp = if i.has_totp { "  [totp]" } else { "" };
-                let key = if i.key.is_some() { "  [key]" } else { "" };
+                let kind = if i.key.is_some() {
+                    "key"
+                } else {
+                    i.kind.name()
+                };
                 println!(
-                    "{}  {:<8} {:<28} {:<24} {}{totp}{key}",
+                    "{}  {:<8} {:<28} {:<24} {}{totp}",
                     short(&i.id),
-                    i.kind.name(),
+                    kind,
                     i.title,
                     i.subtitle,
                     i.urls.join(" ")
@@ -971,6 +1060,7 @@ fn main() {
             c.call(Request::PutItem { id: Some(id), item });
             println!("Saved {}.", short(&id));
         }
+        "health" => health_report(rest.iter().any(|a| a == "--online")),
         "rm" => {
             let mut c = Client::connect();
             let id = item_id(&mut c, &positional(rest, 0, "ID"));

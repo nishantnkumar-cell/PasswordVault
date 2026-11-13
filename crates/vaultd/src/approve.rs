@@ -94,8 +94,8 @@ pub struct Helper {
 impl Helper {
     /// `VAULT_PROMPT`, else `vault-prompt` next to this executable.
     pub fn find() -> Option<Helper> {
-        let exe = match std::env::var_os("VAULT_PROMPT") {
-            Some(p) => PathBuf::from(p),
+        let exe = match vault_hw::helper_override("VAULT_PROMPT") {
+            Some(p) => p,
             None => std::env::current_exe()
                 .ok()?
                 .with_file_name(format!("vault-prompt{}", std::env::consts::EXE_SUFFIX)),

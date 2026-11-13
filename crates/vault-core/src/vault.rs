@@ -642,19 +642,40 @@ impl Vault {
             return Err(Error::LastSlot);
         }
 
+        // Fresh item keys as well: the old ones may be in the hands of whoever
+        // the revoke is about, and edits made later must not be readable with
+        // them.
         let mut items = Vec::with_capacity(self.items.len());
         for rec in &self.items {
-            let item_key = self.unwrap_item_key(rec)?;
+            let old_key = self.unwrap_item_key(rec)?;
+            let data = crypto::open(
+                &old_key,
+                &rec.data_nonce,
+                &rec.data_commit,
+                &rec.data_ciphertext,
+                &item_data_aad(&self.vault_id, &rec.item_id, rec.version),
+            )
+            .map_err(|_| Error::CorruptItem)?;
+            let item_key = Key::from_bytes(rng::array(rng)?);
             let sealed = crypto::seal(
                 rng,
                 &new_key,
                 &item_key_aad(&self.vault_id, &rec.item_id),
                 item_key.as_bytes(),
             )?;
+            let fresh = crypto::seal(
+                rng,
+                &item_key,
+                &item_data_aad(&self.vault_id, &rec.item_id, rec.version),
+                &data,
+            )?;
             let mut rec = rec.clone();
             rec.key_nonce = sealed.nonce;
             rec.key_commit = sealed.commit;
             rec.wrapped_item_key = sealed.ciphertext.try_into().map_err(|_| Error::Malformed)?;
+            rec.data_nonce = fresh.nonce;
+            rec.data_commit = fresh.commit;
+            rec.data_ciphertext = fresh.ciphertext;
             items.push(rec);
         }
 
@@ -724,28 +745,19 @@ impl Vault {
         data: &[u8],
     ) -> Result<(), Error> {
         let existing = self.items.iter().position(|r| &r.item_id == id);
-        let (item_key, version, key_part) = match existing {
-            Some(i) => {
-                let rec = &self.items[i];
-                let key = self.unwrap_item_key(rec)?;
-                (
-                    key,
-                    rec.version + 1,
-                    (rec.key_nonce, rec.key_commit, rec.wrapped_item_key),
-                )
-            }
-            None => {
-                let key = Key::from_bytes(rng::array(rng)?);
-                let s = crypto::seal(
-                    rng,
-                    &self.vault_key,
-                    &item_key_aad(&self.vault_id, id),
-                    key.as_bytes(),
-                )?;
-                let wrapped: [u8; 48] = s.ciphertext.try_into().map_err(|_| Error::Malformed)?;
-                (key, 1, (s.nonce, s.commit, wrapped))
-            }
-        };
+        // Every write gets a fresh item key, so someone who learned an item's
+        // old key (from a copy of the file made before a revoke) cannot read
+        // what the item says now.
+        let version = existing.map_or(1, |i| self.items[i].version + 1);
+        let item_key = Key::from_bytes(rng::array(rng)?);
+        let s = crypto::seal(
+            rng,
+            &self.vault_key,
+            &item_key_aad(&self.vault_id, id),
+            item_key.as_bytes(),
+        )?;
+        let wrapped: [u8; 48] = s.ciphertext.try_into().map_err(|_| Error::Malformed)?;
+        let key_part = (s.nonce, s.commit, wrapped);
         let data = crypto::seal(
             rng,
             &item_key,

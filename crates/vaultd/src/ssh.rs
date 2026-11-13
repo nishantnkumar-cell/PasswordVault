@@ -27,10 +27,68 @@ const MAX_MESSAGE: usize = 256 * 1024;
 
 // Message numbers.
 const SSH_AGENT_FAILURE: u8 = 5;
+const SSH_AGENT_SUCCESS: u8 = 6;
+const SSH_AGENTC_EXTENSION: u8 = 27;
 const SSH_AGENTC_REQUEST_IDENTITIES: u8 = 11;
 const SSH_AGENT_IDENTITIES_ANSWER: u8 = 12;
 const SSH_AGENTC_SIGN_REQUEST: u8 = 13;
 const SSH_AGENT_SIGN_RESPONSE: u8 = 14;
+
+/// The extension that tells the agent which server a connection is for.
+const SESSION_BIND: &[u8] = b"session-bind@openssh.com";
+/// Most bindings kept per connection (one per hop of a forwarded chain).
+const MAX_BINDINGS: usize = 8;
+
+/// A `session-bind@openssh.com` the client sent, after its signature was checked.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Binding {
+    /// SHA-256 fingerprint of the server's host key.
+    pub host: String,
+    /// The SSH session identifier the server signed.
+    pub session: Vec<u8>,
+    /// Whether the connection to this agent is a forwarded one (`ssh -A`).
+    pub forwarded: bool,
+}
+
+/// Check a `session-bind@openssh.com` body (after the extension name): the
+/// host key, the session identifier, the host's signature over it, and
+/// whether this is a forwarding hop.
+fn parse_binding(r: &mut Reader<'_>) -> R<Binding> {
+    use signature::Verifier;
+    let hostkey = r.string().ok_or("bad session-bind")?;
+    let session = r.string().ok_or("bad session-bind")?;
+    let sig = r.string().ok_or("bad session-bind")?;
+    let forwarded = r.byte().ok_or("bad session-bind")? != 0;
+    let key = ssh_key::PublicKey::from_bytes(hostkey).map_err(|e| e.to_string())?;
+    let sig = ssh_key::Signature::try_from(sig).map_err(|e| e.to_string())?;
+    Verifier::verify(&key, session, &sig).map_err(|_| "session-bind signature is wrong")?;
+    Ok(Binding {
+        host: key.fingerprint(HashAlg::Sha256).to_string(),
+        session: session.to_vec(),
+        forwarded,
+    })
+}
+
+/// What a sign request means given the bindings of its connection: extra
+/// words for the approval window, and whether to ask even for a key that is
+/// not marked "ask before each use". A connection that came through agent
+/// forwarding always asks, because a program on another computer is using the
+/// key.
+fn binding_context(bindings: &[Binding], data: &[u8]) -> (Option<String>, bool) {
+    let forwarded = bindings.iter().any(|b| b.forwarded);
+    let session = Reader(data).string();
+    let bound = session.and_then(|sid| bindings.iter().find(|b| b.session == sid));
+    let text = match (bound, forwarded) {
+        (Some(b), true) => Some(format!(
+            "forwarded from another computer, for the server {}",
+            b.host
+        )),
+        (Some(b), false) => Some(format!("for the server {}", b.host)),
+        (None, true) => Some("forwarded from another computer, for an unknown server".into()),
+        (None, false) => None,
+    };
+    (text, forwarded)
+}
 
 /// Parse a stored key.
 fn parse(openssh: &str) -> R<PrivateKey> {
@@ -216,19 +274,26 @@ fn write_message(s: &mut impl Write, body: &[u8]) -> io::Result<()> {
 
 /// Serve one agent connection. `pid` is the peer, for the approval window.
 pub fn connection(mut s: impl Read + Write, daemon: &Shared, pid: Option<u32>) -> io::Result<()> {
+    let mut bindings: Vec<Binding> = Vec::new();
     loop {
         let msg = match read_message(&mut s) {
             Ok(m) => m,
             Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => return Ok(()),
             Err(e) => return Err(e),
         };
-        let reply = handle(&msg, daemon, pid).unwrap_or_else(|_| vec![SSH_AGENT_FAILURE]);
+        let reply =
+            handle(&msg, daemon, pid, &mut bindings).unwrap_or_else(|_| vec![SSH_AGENT_FAILURE]);
         write_message(&mut s, &reply)?;
     }
 }
 
 /// One request to one reply. `Err` becomes `SSH_AGENT_FAILURE`.
-fn handle(msg: &[u8], daemon: &Shared, pid: Option<u32>) -> R<Vec<u8>> {
+fn handle(
+    msg: &[u8],
+    daemon: &Shared,
+    pid: Option<u32>,
+    bindings: &mut Vec<Binding>,
+) -> R<Vec<u8>> {
     let lock = || daemon.lock().unwrap_or_else(|p| p.into_inner());
     let mut r = Reader(msg);
     match r.byte() {
@@ -255,12 +320,17 @@ fn handle(msg: &[u8], daemon: &Shared, pid: Option<u32>) -> R<Vec<u8>> {
                 .into_iter()
                 .find(|i| i.blob == blob)
                 .ok_or("no such key")?;
-            if ident.confirm {
+            let (context, forwarded) = binding_context(bindings, data);
+            if ident.confirm || forwarded {
                 // Ask without holding the daemon lock while the window is open.
                 let approver = lock().approver().ok_or("no approval window available")?;
+                let mut purpose = purpose(data);
+                if let Some(c) = context {
+                    purpose = format!("{purpose} ({c})");
+                }
                 let prompt = UsePrompt {
                     key: approve::clean_name(&ident.title),
-                    purpose: purpose(data),
+                    purpose,
                     program: pid.and_then(approve::program_of),
                 };
                 if approver.confirm_use(&prompt) != Ok(true) {
@@ -271,6 +341,18 @@ fn handle(msg: &[u8], daemon: &Shared, pid: Option<u32>) -> R<Vec<u8>> {
             let mut out = vec![SSH_AGENT_SIGN_RESPONSE];
             put_string(&mut out, &sig);
             Ok(out)
+        }
+        Some(SSH_AGENTC_EXTENSION) => {
+            // Only session-bind is understood; a client falls back without it.
+            if r.string() != Some(SESSION_BIND) {
+                return Err("unsupported extension".into());
+            }
+            let b = parse_binding(&mut r)?;
+            if bindings.len() >= MAX_BINDINGS {
+                bindings.remove(0);
+            }
+            bindings.push(b);
+            Ok(vec![SSH_AGENT_SUCCESS])
         }
         _ => Err("unsupported".into()),
     }
@@ -320,6 +402,68 @@ mod tests {
                 .unwrap()
                 .starts_with("ecdsa-sha2-nistp256 ")
         );
+    }
+
+    fn binding_body(forwarded: bool, tamper: bool) -> (Vec<u8>, String) {
+        use signature::Signer;
+        let host = PrivateKey::random(&mut UnwrapErr(SysRng), Algorithm::Ed25519).unwrap();
+        let session = [9u8; 32];
+        let sig: ssh_key::Signature = Signer::sign(&host, &session);
+        let mut sig = Vec::try_from(sig).unwrap();
+        if tamper {
+            let n = sig.len();
+            sig[n - 1] ^= 1;
+        }
+        let mut body = Vec::new();
+        put_string(&mut body, &host.public_key().to_bytes().unwrap());
+        put_string(&mut body, &session);
+        put_string(&mut body, &sig);
+        body.push(u8::from(forwarded));
+        (
+            body,
+            host.public_key().fingerprint(HashAlg::Sha256).to_string(),
+        )
+    }
+
+    #[test]
+    fn session_bind_is_checked_and_names_the_server() {
+        let (body, fp) = binding_body(false, false);
+        let b = parse_binding(&mut Reader(&body)).unwrap();
+        assert_eq!(b.host, fp);
+        assert!(!b.forwarded);
+        assert_eq!(b.session, vec![9u8; 32]);
+
+        // A signature that does not verify is refused.
+        let (bad, _) = binding_body(false, true);
+        assert!(parse_binding(&mut Reader(&bad)).is_err());
+        assert!(parse_binding(&mut Reader(b"short")).is_err());
+    }
+
+    #[test]
+    fn forwarded_connections_always_ask() {
+        let (body, fp) = binding_body(true, false);
+        let b = parse_binding(&mut Reader(&body)).unwrap();
+        assert!(b.forwarded);
+        // A userauth request for the bound session.
+        let mut auth = Vec::new();
+        put_string(&mut auth, &[9u8; 32]);
+        auth.push(50);
+        let (text, ask) = binding_context(std::slice::from_ref(&b), &auth);
+        assert!(ask);
+        let text = text.unwrap();
+        assert!(text.contains("forwarded") && text.contains(&fp));
+        // Data for some other session on a forwarded connection still asks.
+        let mut other = Vec::new();
+        put_string(&mut other, &[1u8; 32]);
+        let (text, ask) = binding_context(&[b], &other);
+        assert!(ask && text.unwrap().contains("unknown server"));
+        // No bindings (an older ssh, or git signing): nothing changes.
+        assert_eq!(binding_context(&[], &auth), (None, false));
+        // A direct connection names the server but does not force a question.
+        let (direct, _) = binding_body(false, false);
+        let d = parse_binding(&mut Reader(&direct)).unwrap();
+        let (text, ask) = binding_context(&[d], &auth);
+        assert!(!ask && text.is_some());
     }
 
     #[test]

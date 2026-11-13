@@ -90,8 +90,8 @@ vault ls
 e5a0c912  identity Home                         Alex Example
 ```
 
-`vault ls cards` lists only cards; `logins`, `notes` and `identities` work
-the same way. The first column is the item's ID. Any unique beginning of it works, so
+`vault ls cards` lists only cards; `logins`, `notes`, `identities` and
+`keys` (your SSH and OpenPGP keys) work the same way. The first column is the item's ID. Any unique beginning of it works, so
 `vault show 1c9` is enough.
 
 To see which items the browser would offer on a site:
@@ -158,6 +158,31 @@ It prints each earlier password and when it was replaced. The history lives
 inside the encrypted item and is not shown with the item; there is no way to
 see it in the desktop app yet. Deleting the item for good deletes its
 history. Passwords that apps save through the Secret Service keep no history.
+
+## Password health
+
+```sh
+vault health
+vault health --online
+```
+
+`vault health` looks over your logins and lists
+
+- passwords **reused** on several logins,
+- **weak** passwords that are easy to guess (the same strength check used for
+  new master passwords),
+- passwords **not changed in over a year**, and
+- logins with a website but **no one-time code**, where the site may offer
+  two-step sign-in.
+
+It prints titles only, never passwords. With `--online` it also checks each
+password against the **Have I Been Pwned** list of passwords seen in
+breaches. This is private by design: only the first 5 characters of the
+password's SHA-1 hash are sent (from `api.pwnedpasswords.com`, through the
+`curl` program that comes with Linux, macOS and Windows 10 or later), and the
+comparison happens on your computer. A hit means the password is public
+knowledge: change it. The check runs in the command line, so `vaultd` still
+needs no network access. The desktop app does not have a health page yet.
 
 ## Websites and matching
 

@@ -1,0 +1,50 @@
+[package]
+name = "vault-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+vault-core = { path = "../crates/vault-core" }
+vault-import = { path = "../crates/vault-import", features = ["qr"] }
+vault-ipc = { path = "../crates/vault-ipc" }
+
+# Not part of the main workspace: it needs a nightly compiler to run.
+[workspace]
+
+[patch.crates-io]
+ml-dsa = { path = "../vendor/ml-dsa" }
+
+[[bin]]
+name = "vault_file"
+path = "fuzz_targets/vault_file.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "ipc_frame"
+path = "fuzz_targets/ipc_frame.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "import_bitwarden"
+path = "fuzz_targets/import_bitwarden.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "import_csv"
+path = "fuzz_targets/import_csv.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "qr_image"
+path = "fuzz_targets/qr_image.rs"
+test = false
+doc = false

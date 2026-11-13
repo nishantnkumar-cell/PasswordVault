@@ -106,7 +106,7 @@ pub trait Tpm: Send {
 /// The operating system's own check that the user is at the computer
 /// (Windows Hello, or Touch ID on macOS). It yields no secret, so it only approves a quick unlock
 /// of a key the daemon still holds; it never opens a vault on its own.
-pub trait Presence: Send {
+pub trait Presence: Send + Sync {
     /// Whether the check is set up and usable for this user.
     fn check_available(&self) -> HwResult<()>;
     /// Ask the user, showing `message`. Ok only if the OS verified them.
@@ -117,7 +117,7 @@ pub trait Presence: Send {
 pub struct Hardware {
     pub fido2: Option<Box<dyn Fido2>>,
     pub tpm: Option<Box<dyn Tpm>>,
-    pub presence: Option<Box<dyn Presence>>,
+    pub presence: Option<std::sync::Arc<dyn Presence>>,
 }
 
 impl Hardware {
@@ -140,13 +140,61 @@ impl Hardware {
             )))]
             tpm: None,
             #[cfg(windows)]
-            presence: Some(Box::new(hello::WinHello)),
+            presence: Some(std::sync::Arc::new(hello::WinHello)),
             #[cfg(target_os = "macos")]
-            presence: Some(Box::new(touchid::TouchId)),
+            presence: Some(std::sync::Arc::new(touchid::TouchId)),
             #[cfg(not(any(windows, target_os = "macos")))]
             presence: None,
         }
     }
+}
+
+/// The program an environment variable (`VAULT_PROMPT`, `VAULT_GUI`,
+/// `VAULT_SE_HELPER`) points at, if it is safe to run from the daemon.
+///
+/// These helpers run with the daemon's trust (they see unlock prompts and
+/// secure-enclave input), so a path from the environment is used only when it
+/// is absolute, is a regular file, and (on Unix) is not writable by group or
+/// others and belongs to the same user as the daemon or to root. Otherwise
+/// it is ignored with a message on stderr and the helper next to the daemon
+/// is used.
+pub fn helper_override(var: &str) -> Option<std::path::PathBuf> {
+    let path = std::path::PathBuf::from(std::env::var_os(var)?);
+    match check_helper(&path) {
+        Ok(()) => {
+            eprintln!("vaultd: using {var}={}", path.display());
+            Some(path)
+        }
+        Err(why) => {
+            eprintln!("vaultd: ignoring {var}={}: {why}", path.display());
+            None
+        }
+    }
+}
+
+fn check_helper(path: &std::path::Path) -> Result<(), &'static str> {
+    if !path.is_absolute() {
+        return Err("it is not an absolute path");
+    }
+    let meta = std::fs::metadata(path).map_err(|_| "it cannot be read")?;
+    if !meta.is_file() {
+        return Err("it is not a file");
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if meta.mode() & 0o022 != 0 {
+            return Err("it is writable by other users");
+        }
+        let own = std::env::current_exe()
+            .and_then(std::fs::metadata)
+            .map(|m| m.uid())
+            .map_err(|_| "this program's own owner is unknown")?;
+        if meta.uid() != own && meta.uid() != 0 {
+            return Err("it is owned by another user");
+        }
+    }
+    Ok(())
 }
 
 /// The security key backend for this system. On Windows that is the WebAuthn
@@ -183,5 +231,25 @@ mod tests {
         assert!(!tpm_blob_is_classical(b"VWTPM2\x00\x00"));
         // Linux blobs start with a small length.
         assert!(!tpm_blob_is_classical(&[0x4e, 0x00, 0x00, 0x08]));
+    }
+}
+
+#[cfg(all(test, unix))]
+mod helper_tests {
+    use super::check_helper;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn helper_paths_must_be_absolute_private_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("prompt");
+        std::fs::write(&f, b"#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&f, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(check_helper(&f).is_ok());
+        assert!(check_helper(std::path::Path::new("prompt")).is_err());
+        assert!(check_helper(dir.path()).is_err());
+        assert!(check_helper(&dir.path().join("missing")).is_err());
+        std::fs::set_permissions(&f, std::fs::Permissions::from_mode(0o777)).unwrap();
+        assert!(check_helper(&f).is_err());
     }
 }

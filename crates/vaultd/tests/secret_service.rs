@@ -337,6 +337,27 @@ print("ok")
         eprintln!("skipped the python part: secretstorage is not installed");
     }
 
+    // This program saves an entry of its own, which it can read back.
+    let attrs: HashMap<String, String> = HashMap::from([("team".to_owned(), "test".to_owned())]);
+    let props: HashMap<&str, OwnedVariant> = HashMap::from([
+        (
+            "org.freedesktop.Secret.Item.Label",
+            OwnedVariant::try_from(Variant::from("Test program entry")).unwrap(),
+        ),
+        (
+            "org.freedesktop.Secret.Item.Attributes",
+            OwnedVariant::try_from(Variant::from(attrs)).unwrap(),
+        ),
+    ]);
+    let secret: Secret = (
+        session.clone(),
+        vec![],
+        b"mine".to_vec(),
+        "text/plain".into(),
+    );
+    let _: (OwnedObjectPath, OwnedObjectPath) =
+        coll.call("CreateItem", &(props, secret, true)).unwrap();
+
     // Import into a second vault, reading this one as the "other" Secret
     // Service. Twice: the second time finds everything already there.
     let dir2 = tempfile::tempdir().unwrap();
@@ -344,16 +365,9 @@ print("ok")
     let read = secret_service::read_other(&client, Duration::from_secs(5)).unwrap();
     assert!(read.skipped.is_empty());
     let n = read.found.len();
+    // Each program sees only what it saved: python's entry is not ours.
+    assert!(read.found.iter().all(|f| f.label != "Chat (work)"));
     assert!(n >= 1);
-    if python_ok {
-        let chat = read
-            .found
-            .iter()
-            .find(|f| f.label == "Chat (work)")
-            .unwrap();
-        assert_eq!(&chat.secret[..], b"new");
-        assert_eq!(chat.attributes.get("team").map(String::as_str), Some("ops"));
-    }
     assert_eq!(secret_service::import(&d2, read.found).unwrap(), (n, 0));
     let again = secret_service::read_other(&client, Duration::from_secs(5)).unwrap();
     assert_eq!(secret_service::import(&d2, again.found).unwrap(), (0, n));

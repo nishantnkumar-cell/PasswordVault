@@ -318,7 +318,9 @@ fn setup_wizard_steps_back_reports_failures_and_ends_on_import() {
 #[test]
 fn pairs_a_second_window_and_follows_idle_lock() {
     let dir = tempdir();
-    let sock = start(&dir, Duration::from_secs(2));
+    // Pairing runs Argon2; on a slow runner it can take longer than a short
+    // idle limit, and the daemon locked again before the window saw "unlocked".
+    let sock = start(&dir, Duration::from_secs(8));
     let pw = password();
     let mut first = window(sock.clone(), dir.join("first"), FakeClip::default());
     wait_for(&mut first, Screen::Create);

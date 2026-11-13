@@ -48,15 +48,15 @@ Status: **M** = mitigated by the design, **P** = partially mitigated, **A** = ac
 
 | Threat | Mitigation | Status |
 | --- | --- | --- |
-| Brute-force the password from the file | Argon2id (≥ 256 MiB desktop default, bounded 64 MiB to 4 GiB), all daily-use KEKs mix in a hardware factor | M |
-| Has the FIDO2 key but not the password | Password is part of every daily-use KEK; FIDO2 key requires PIN with on-device retry limit | M |
+| Brute-force the password from the file | Argon2id (≥ 256 MiB desktop default, bounded 64 MiB to 4 GiB). New password-only slots must pass a strength check (zxcvbn score 3 or more). Every vault starts with a password-only slot, so the hardware factors help only after the user removes it (`vault rm-slot`); `vault slots` warns about it once a key or TPM slot exists | P |
+| Has the FIDO2 key but not the password | Password is part of the FIDO2 and TPM slots' KEKs; the FIDO2 key requires its PIN with an on-device retry limit | M |
 | Has the whole laptop including TPM | TPM secret needs authValue (PIN) with TPM dictionary-attack lockout, and the password is still required. Same on Windows, where the secret is wrapped to a TPM-bound RSA key with the PIN as its usage auth | M |
 | Steals the laptop while quick unlock is available (Windows) | The vault key is in `vaultd` memory, wrapped under a key held with `CryptProtectMemory`; opening it needs Windows Hello (face, fingerprint or Windows PIN, with Windows' own retry limits), and quick unlock ends after its time limit (at most 24 h after a full unlock), on restart, after 3 failed checks and on `vault lock --full`. A thief who can sign in as the user, or read RAM of the running machine, gets what they would get from an unlocked vault | P (opt-in, off by default) |
 | Sniffs the discrete TPM bus | Salted, encrypted HMAC sessions for every unseal (verify `tss-esapi`) | M |
 | Reads an automatic snapshot taken before a factor was revoked | The daemon's snapshots keep the slots they had when taken, so they stay readable with the revoked factor. Delete them after a revoke (the guide says how) | A (inherent) |
 | Finds the recovery code | Recovery code is a full 256-bit secret and unlocks alone, by design. Users are told to store it offline | A |
 | Reads metadata without unlocking | All item metadata and slot labels encrypted; the plaintext header holds only what is needed to try an unlock. Body is padded to hide item count roughly | P (file size and slot count leak) |
-| Uses an old copy of the file with a since-revoked factor | Revoking a factor rotates the vault key, so new data is safe. Old copies stay readable with old factors | A (inherent) |
+| Uses an old copy of the file with a since-revoked factor | Revoking a factor rotates the vault key and gives every item a fresh item key; every later edit gets another new item key, so new data is safe. Old copies stay readable with old factors | A (inherent) |
 | Steals an unlocked phone, or a locked one with biometric quick unlock on (iOS, Android) | The app locks after its auto-lock time in the background (default 5 min). The parked vault key in app storage is sealed under a 32-byte wrap key held in the Android Keystore (StrongBox when present) or the iOS Keychain (Secure Enclave-protected, `ThisDeviceOnly`), released only after a strong biometric check, invalidated when a new face or fingerprint is enrolled, and not included in backups. Quick unlock ends after 14 days without the master password, and whenever the vault key is rotated. A thief who can pass the biometric check gets what they would get from an unlocked vault | P (opt-in) |
 
 ### A2, remote phisher
@@ -76,17 +76,22 @@ Status: **M** = mitigated by the design, **P** = partially mitigated, **A** = ac
 
 | Threat | Mitigation | Status |
 | --- | --- | --- |
+| Makes `vaultd` run a look-alike helper through the environment (`VAULT_PROMPT`, `VAULT_GUI`, `VAULT_SE_HELPER`) | These paths are used only when absolute, a regular file, not writable by group or others, and owned by the daemon's user or root; otherwise they are ignored with a message. A running daemon's environment cannot be changed by other processes. Malware that can edit the user's shell profile or service unit can still point `VAULT_SOCKET` at its own socket for the clients, which is why the pairing and approval window exist | P |
 | Read `vaultd` memory while quick unlock is available (Windows) | The parked vault key and its protected wrap key are in the process, as the vault key is while unlocked. `CryptProtectMemory` keeps it out of crash dumps and the page file, not away from code running in or debugging the process | A (opt-in) |
 | Read `vaultd` memory or attach ptrace | Separate system user (`vaultd@.service`; the per-user unit does not give this), `PR_SET_DUMPABLE=0`, Yama ptrace scope, no core dumps | M with the system unit, P with the user unit |
+| Another approved Secret Service program reads or overwrites an app's entries | Each entry records the program that saved it, and a program sees only its own entries and unowned ones (made before this change, or imported). Identity is the executable path from the bus, so scripts under one interpreter share entries, and D-Bus sender identity is no stronger than for the socket (see below) | P |
+| Read `vaultd`, `vault-gui` or `vault-prompt` memory (Windows) | Process ACL without `PROCESS_VM_READ` for our own user, no Windows Error Reporting dumps, vaultd heap locked out of the page file (docs/windows.md, Memory protection). The owner can rewrite the ACL first, so this raises the cost only | P |
 | Connect to the socket and request secrets | One-time client pairing, by proving an unlock method or approved in `vaultd`'s own prompt (one at a time, 10 s cooldown after a decline); fresh user presence for non-allowlisted release; rate limit. The prompt names the peer by PID-derived path, not yet by pidfd. Allow in the prompt works only after the window has had the focus for 1.2 s, so a stray or scripted click at the moment it appears does not approve | P |
 | Impersonate a paired client binary | Pairing key stored in the client's own storage, readable by the same user | A on Linux (no per-app isolation) |
 | Keylog the master password | Wayland: partially mitigated by compositor isolation. X11: any client can keylog | A on X11, P on Wayland |
 | Read the clipboard | Prefer autofill; auto-clear after 30 s. Windows and macOS: the copy is marked so clipboard history and cloud sync skip it. Linux: no hint is set (the clipboard library has none), so a clipboard manager such as Klipper may keep a copied password | P |
 | Read the clipboard on a phone | Copied secrets expire (iOS `expirationDate`, Android clear after the chosen time), are marked local-only on iOS so Universal Clipboard does not send them, and sensitive on Android 13+ so the clipboard preview hides them | P |
+| Screenshot, record or screen-share the desktop app | Windows: `WDA_EXCLUDEFROMCAPTURE` on the app and approval window. Linux and macOS: not yet. Same-user code could still read the window's pixels by other means (for example by injecting into the compositor) | P on Windows, A elsewhere |
 | Screenshot or screen-record the phone app | Android sets `FLAG_SECURE`; iOS covers the window in the app switcher. iOS cannot block screenshots | P |
 | Modify the browser extension or profile | Out of scope: same-user code owns the browser profile | A |
 | Capture a phone passkey's PRF output | The desktop app or `vault` runs the phone passkey (QR code, Bluetooth, the phone maker's relay) and sends the 32-byte PRF output to `vaultd` with the password, so `vaultd` keeps its network sandbox. Same-user code that can see the password can see this output too; it opens only that slot, still with the password, and wrong guesses are rate limited as for any method | A |
 | Answer a phone QR code from far away (relay or phishing over a screen share) | The hybrid transport requires Bluetooth proximity between phone and computer before the phone talks; the relay sees only encrypted traffic | M |
+| A program on a server reached with `ssh -A` uses a forwarded SSH key | Connections that announce forwarding (`session-bind@openssh.com`, OpenSSH 8.9+) always ask in the approval window, even for a key with confirmation off, and the window shows the server's host key fingerprint. Clients that do not send the message are not recognised | P |
 | Take over the Apple or Google account that syncs the passkey | The phone factor never opens the vault alone: the password stays in the KEK | P |
 
 ### A4, root or kernel attacker
@@ -97,6 +102,7 @@ Out of scope for v1. Root can read `vaultd` memory while unlocked. The vault is 
 
 | Threat | Mitigation | Status |
 | --- | --- | --- |
+| Feeds a crafted file or message to a parser (vault file in a sync folder, IPC frame, import file, QR picture) | Parsers bound sizes and parameters before using them, and are fuzzed with cargo-fuzz (`fuzz/`): one run per target in CI on every change to it and weekly for 5 minutes. A short fuzz run is not proof; the SSH agent, native-host and OpenPGP parsers are not fuzzed yet | P |
 | Swap or replay individual records | Item AAD binds vault ID, item ID, item version, format version | M |
 | Add, remove or edit keyslots | Header MAC under a key derived from the vault key, verified on every unlock | M |
 | Set enormous KDF parameters (DoS) | Parameters bounded before Argon2id runs | M |
@@ -120,7 +126,7 @@ The attacker copies the vault file today (for example from a sync folder or a ba
 | OpenPGP keys | `vault pgp new --pq`: ML-DSA-65 + Ed25519, ML-KEM-768 + X25519 (RFC 9980). Classic keys, and messages encrypted to them, are not post-quantum | M with `--pq` |
 | SSH keys | Ed25519, ECDSA P-256 signatures. A signature cannot be harvested; a quantum attacker with your public key could later forge logins. Key exchange is the ssh client's (OpenSSH 10 uses ML-KEM hybrid by default) | Accepted until OpenSSH has a post-quantum key type |
 | Pairing, browser host, IPC | Random tokens over local sockets, no public keys | M |
-| Sharing, device enrollment, phone pairing, release signing | Not built. Must use hybrid PQ when built: X-Wing (ML-KEM-768 + X25519) for the reserved `RecipientHybrid` slot, ML-DSA-65 + Ed25519 for signatures (brief section 11) | Open |
+| Sharing, device enrollment, phone pairing, hybrid post-quantum release signing (release downloads already carry GitHub build attestations) | Not built. Must use hybrid PQ when built: X-Wing (ML-KEM-768 + X25519) for the reserved `RecipientHybrid` slot, ML-DSA-65 + Ed25519 for signatures (brief section 11) | Open |
 
 ## 6. Memory and process hygiene
 
@@ -137,5 +143,5 @@ The attacker copies the vault file today (for example from a sync folder or a ba
 
 ## 8. Open items
 
-- Verify `tss-esapi` session encryption API, `SO_PEERPIDFD` kernel availability, and clipboard hint conventions (brief section 9 and 12).
+- Verify `tss-esapi` session encryption API and clipboard hint conventions (brief section 9 and 12).
 - Decide whether the rollback counter moves into TPM NV storage once the TPM slot exists.

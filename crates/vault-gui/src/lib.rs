@@ -5,6 +5,7 @@
 pub mod app;
 pub mod client;
 pub mod icon;
+pub mod kit;
 pub mod prompt;
 pub mod theme;
 
@@ -18,6 +19,29 @@ pub fn window_icon() -> eframe::egui::IconData {
         "../../../contrib/icons/hicolor/256x256/apps/dev.passwordvault.app.png"
     ))
     .expect("the bundled icon is a valid PNG")
+}
+
+/// Keep this window out of screenshots, recordings and screen sharing
+/// (Windows; `VAULT_ALLOW_CAPTURE=1` turns it off). Call it on every frame:
+/// it acts once, as soon as the window exists. Elsewhere it does nothing.
+pub fn protect_window(frame: &eframe::Frame, done: &mut bool) {
+    if *done {
+        return;
+    }
+    *done = true;
+    #[cfg(windows)]
+    {
+        use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+        match frame.window_handle().map(|h| h.as_raw()) {
+            Ok(RawWindowHandle::Win32(w)) => {
+                vault_ipc::harden::exclude_from_capture(w.hwnd.get());
+            }
+            // Not ready yet: try again next frame.
+            _ => *done = false,
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = frame;
 }
 
 #[cfg(test)]

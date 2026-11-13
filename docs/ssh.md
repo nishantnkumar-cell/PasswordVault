@@ -12,7 +12,7 @@ eval "$(vault ssh agent)"       # sets SSH_AUTH_SOCK; put this in your shell pro
 ssh-add -L                      # the vault's keys, while it is unlocked
 ```
 
-On Windows, `vault ssh agent` prints a PowerShell line. Use the Windows OpenSSH client (`C:\Windows\System32\OpenSSH`); Git for Windows' bundled ssh cannot use a named pipe, so set `git config --global core.sshCommand C:/Windows/System32/OpenSSH/ssh.exe`. Windows support is untested on real hardware.
+On Windows, `vault ssh agent` prints a PowerShell line. Use the Windows OpenSSH client (`C:\Windows\System32\OpenSSH`); Git for Windows' bundled ssh cannot use a named pipe, so set `git config --global core.sshCommand C:/Windows/System32/OpenSSH/ssh.exe`. Tested on Windows 11 with the built-in OpenSSH.
 
 ## Git commit signing
 
@@ -35,11 +35,20 @@ The purpose comes from the data the program sent, so it is a hint, not proof. De
 
 With confirmation off, any program running as you can sign with the key while the vault is unlocked, exactly like a key loaded into `ssh-agent`.
 
+### Which server, and forwarded agents (`session-bind@openssh.com`)
+
+The agent understands OpenSSH's `session-bind@openssh.com` extension (SSH_AGENTC_EXTENSION 27). An `ssh` client that supports it (OpenSSH 8.9 and later) sends, once the server is authenticated, the server's host key, the session identifier, the host's signature over it, and whether this connection to the agent is a forwarded one. The agent checks the signature (Ed25519 and ECDSA host keys; others are not verified and the bind is refused, which the client tolerates), keeps up to 8 bindings per connection, and then:
+
+- adds `for the server SHA256:...` to the approval window for a sign request whose session matches a binding (the host key's fingerprint; the window does not know its name);
+- treats a connection that has a binding with `is_forwarding` set as **forwarded** (`ssh -A`, or `ForwardAgent yes`): every signature on it asks, even for a key with confirmation off, and says `forwarded from another computer`. A sign request for a session that was not bound on such a connection says `for an unknown server`.
+
+This is a policy on the connection and needs no stored per-key setting: leave a key's confirmation on and a program on a server you forwarded to cannot use it without you seeing the window. Clients that do not send the extension (older `ssh`, git signing) are served as before, so a forwarded agent from such a client is not recognised.
+
 ## What the agent does and does not do
 
 - Lists and signs with Ed25519 and ECDSA (P-256) keys from the vault, only while it is unlocked. Locked, it lists nothing. P-256 keys use ssh-key 0.7 (a release candidate, pinned exactly) because 0.6 signs them with crypto-bigint 0.5 (RUSTSEC-2026-0387); move to 0.7.0 when it ships.
 - Does not accept keys from `ssh-add`, does not remove or lock keys on request, and has no RSA support (the `rsa` crate has no constant-time fix for the Marvin attack).
-- Checks the peer's user on every connection, like the main socket. The agent socket is `$XDG_RUNTIME_DIR/vault/ssh-agent.sock` (`\\.\pipe\vaultd-ssh-<SID>` on Windows); change it with `vaultd --ssh-agent PATH` or turn it off with `--no-ssh-agent`.
+- Checks the peer's user on every connection, like the main socket. The agent socket is `$XDG_RUNTIME_DIR/vault/ssh-agent.sock` (`\\.\pipe\vaultd-ssh-<SID>` on Windows); change it with `vaultd --ssh-agent PATH` (or `VAULT_SSH_AGENT`) or turn it off with `--no-ssh-agent`. A vaultd started with `--socket` serves its agent next to that socket (`ssh-agent.sock` in the same folder, or `<pipe>-ssh` on Windows), and `vault ssh agent` prints that path when `VAULT_SOCKET` names the same socket, so a second daemon never shares an agent with the first.
 
 ## Storage and export
 

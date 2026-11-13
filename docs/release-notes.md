@@ -90,6 +90,22 @@ can't remove its own last master password, because that is how it
 unlocks. Android gets these screens later; its app is unchanged. No vault
 file change: a vault changed on the phone opens everywhere as before.
 
+### Printable emergency kit at setup
+
+- **Print a page for the drawer.** The recovery code step of the desktop
+  app's setup has a **Print an emergency kit page** button. It opens a
+  one-page sheet in your browser with the recovery code, the steps to use it
+  and the vault file's location on Linux, Windows and macOS, and a place to
+  note where your backups are. The page is not kept: it is written to your
+  temporary folder, readable only by you, and deleted 90 seconds after it
+  opens, so print it right away.
+- It is offered only at setup, because the code is not shown again. Use
+  **Unlock methods** to make a new recovery code if you need a new kit.
+  `vault init` on the command line does not make the page. Needs a
+  browser; works the same on Linux, Windows and macOS.
+
+How to use it: [Setting up in the desktop app](user-guide/05-desktop-app.md).
+
 ### macOS: locks with the screen, and copied passwords stay on the Mac
 
 - **The vault locks when your Mac does.** Locking the screen, putting the
@@ -109,6 +125,19 @@ file change: a vault changed on the phone opens everywhere as before.
 - Known limits: a `vaultd` started over SSH, outside your desktop session,
   only locks on sleep. Universal Clipboard is a macOS feature; Windows
   already kept copies off its cloud clipboard.
+
+### Password health check
+
+- **`vault health`** lists reused, weak and year-old passwords and logins
+  with a website but no one-time code. It prints titles, never passwords.
+- **`vault health --online`** also checks every password against Have I Been
+  Pwned by k-anonymity: only 5 characters of the SHA-1 hash leave your
+  computer, and nothing is sent unless you add `--online`.
+- Command line only for now (the desktop app and phone apps have no health
+  page). It uses the `curl` program for the online check, which Linux, macOS
+  and Windows 10 or later include; the daemon stays offline.
+
+How to use it: [Password health](user-guide/03-items.md#password-health).
 
 ### Add a one-time code on the desktop and from the command line
 
@@ -151,6 +180,21 @@ already has, edit the login (desktop) or use `vault code add --to ID
 --replace`. Delete the screenshot afterwards: anyone with it can make your
 codes. No vault file change.
 
+### The approval window names the right program (Linux)
+
+- **No more PID mix-ups.** On Linux with kernel 6.5 or later (Ubuntu 24.04,
+  Fedora 38 and newer), `vaultd` now identifies a connecting program through
+  a pidfd held for the whole connection. Before, a program could connect,
+  exit, and have another program take its process number before `vaultd`
+  looked it up, so the approval window might have named the wrong program.
+  Now it cannot.
+- Older Linux kernels keep the old lookup (and the old, small, race). Windows
+  and macOS are unchanged: they have their own process identifiers. There is
+  nothing to turn on. It is checked by a unit test on a real socket, and by
+  seeing the same program name in the approval window as before.
+
+How it works: [`docs/vaultd.md`](vaultd.md).
+
 ### Sync with the Linux systemd service
 
 - **Fixed in the docs, with an example file.** The shipped `vaultd.service`
@@ -164,6 +208,47 @@ codes. No vault file change.
   library cannot mark them); a threat-model line now says so.
 
 How to use it: [Sync, Linux notes](user-guide/10-sync.md#differences-between-systems).
+
+### Fresh item keys on every edit and on revoke
+
+- **Revoke now re-keys every item, and every edit uses a new item key.**
+  Before, a revoke replaced the vault key but kept each item's own key, so
+  someone who had saved the old vault file and had been revoked could still
+  read later edits of an item they already had. Now the old item keys open
+  nothing in a file written after the revoke. Old copies stay readable with
+  the old factors, as before, so delete them.
+- No new steps: `vault revoke` just takes a little longer on a large vault.
+  The file format does not change, older files open as they did, and
+  Linux, Windows, macOS and the phone apps behave the same.
+
+How to use it: [Revoke a lost or stolen factor](user-guide/02-unlocking.md#revoke-a-lost-or-stolen-factor).
+
+### Linux fixes from testing in WSL
+
+- **vaultd locks its memory on more systems.** It used to lock memory only
+  when the lock limit was unlimited or at least 5 GiB. Now it first raises
+  its own limit as far as the system allows, and 1.5 GiB is enough: the
+  largest Argon2id buffer a vault can use (1 GiB) plus room for the rest.
+  On WSL, the limit is set lower than that, so keys could reach swap there.
+  vaultd says so at start, and
+  [Memory locking](vaultd.md#memory-and-session-locking) shows how to raise
+  the limit.
+- **`vault ssh agent` prints the right socket.** With `VAULT_SOCKET` set
+  (the system-user service, or a second test vault), it printed the default
+  agent socket instead of the one vaultd was serving. A vaultd on its own
+  socket now serves its agent next to it, and `vault ssh agent` prints that
+  path. The system-user service's agent moves to
+  `/run/vault/<you>/ssh-agent.sock`: run `vault ssh agent` again and update
+  `SSH_AUTH_SOCK` in your shell profile if you set it by hand.
+- **`vault ls` shows SSH and OpenPGP keys as keys**, not as logins with a
+  `[key]` mark, and `vault ls keys` lists only them.
+
+| | Linux | Windows | macOS |
+| --- | --- | --- | --- |
+| Memory lock needs | 1.5 GiB lock limit (was 5 GiB) | Nothing (locks per block) | Not used (swap is encrypted) |
+| `vault ssh agent` with `VAULT_SOCKET` | Fixed | Fixed | Fixed |
+
+No vault file change.
 
 ### Signed Mac downloads, the iPhone app in TestFlight, and Secure Enclave unlock
 
@@ -256,6 +341,69 @@ programs must be updated together (two new requests).
   only. The desktop app does not show the log yet. The first-time-user guide
   (chapter 8) has a section on it.
 
+### Windows keeps your keys out of the page file, crash reports and screen shares
+
+- **The last "Not yet" for Windows memory safety is closed.** vaultd now
+  locks the memory it holds keys and items in, so Windows never writes it to
+  the page file, the same as on Linux.
+- **No crash reports with secrets.** vaultd, the desktop app and the
+  approval window are excluded from Windows Error Reporting, so a crash does
+  not leave a dump of their memory on disk.
+- **Other programs cannot read their memory.** Their process permissions
+  now let other programs (even ones running as you) only see and end them,
+  not read or change their memory. vaultd also refuses legacy DLL injection
+  and loads system DLLs only from System32.
+- **The app is left out of screenshots and screen sharing.** The desktop
+  app and the approval window no longer show up in screenshots, screen
+  recordings or a shared screen in Teams or Zoom; you still see them as
+  usual. To take a screenshot on purpose, start the app with
+  `VAULT_ALLOW_CAPTURE=1`; see
+  [Screenshots and screen sharing](user-guide/05-desktop-app.md#screenshots-and-screen-sharing-windows).
+- Nothing to set up: it is on after updating. Turn on BitLocker or Device
+  Encryption as well, because hibernation and blue-screen dumps write all of
+  memory to disk. How it works and how to check it:
+  [How vaultd protects its memory](user-guide/windows-install.md#how-vaultd-protects-its-memory).
+
+| | Linux | Windows | macOS |
+| --- | --- | --- | --- |
+| Keys kept out of swap / page file | Yes (`mlockall`) | Yes (new) | Swap is always encrypted |
+| No crash dumps | Yes | Yes (new) | Yes |
+| Other programs of yours can't read the memory | With the system-user unit | Yes, unless they change the permissions back first (new) | Debugger attach refused |
+| App hidden from screenshots and screen sharing | Not yet | Yes (new) | Not yet |
+
+Known limits: the desktop app does not lock its own memory (it holds only
+what is on screen). An administrator, or malware that first changes the
+process permissions, can still read memory. `VAULT_HARDEN=off` turns the
+permission change off for debugging. Because of it, PowerShell's
+`Stop-Process -Name vaultd` now says "Access is denied": stop vaultd with
+`taskkill /im vaultd.exe` instead: vaultd now locks and exits when asked
+to close. The installer and uninstaller stop it that way.
+No vault file change.
+
+- **An open Windows Hello prompt no longer holds up everything else.**
+  While a quick-unlock prompt (Windows Hello or Touch ID) waited for you,
+  every other request to vaultd waited too, even `vault status`, until the
+  prompt was answered. Now the rest keeps working, and you can unlock with
+  your password instead while it is open. Found in testing on a real PC.
+
+### Windows on Arm
+
+- **A native installer for Arm PCs**, such as Snapdragon laptops:
+  `SecretVault-Setup-<version>-arm64.exe` on the Releases page, next to the
+  usual one. Everything runs natively instead of through Windows' x64
+  emulation, so unlocking (Argon2id) is faster and uses less battery.
+- Which one to download: [Before you start](user-guide/windows-install.md#before-you-start).
+  Installing the Arm version over the x64 one (or back) upgrades in place,
+  as the same app.
+
+| | Linux | Windows | macOS |
+| --- | --- | --- | --- |
+| Arm downloads | Not yet (build from source) | Yes (new) | Yes (universal, already) |
+
+Known limits: built and tested in CI on GitHub's Windows 11 Arm runners;
+not yet tried on a real Arm PC (no TPM, security key or Windows Hello there).
+Windows 10 on Arm is untested.
+
 ### Sync: three devices now always end with the same item
 
 - If three devices edited one item at once and synced in a particular order,
@@ -298,6 +446,24 @@ Nothing changes in day-to-day use.
 
 Known limits: the Android frame check has unit tests but hasn't been tried
 on a real phone with a mixed-site page. No vault file change.
+
+### SSH agent: which server, and forwarded agents always ask
+
+- **The approval window names the server.** With OpenSSH 8.9 or later, a
+  login's approval window now shows `for the server SHA256:...`, the server's
+  host key fingerprint, because the agent checks OpenSSH's
+  `session-bind@openssh.com` message.
+- **Forwarded use always asks.** If a program on a server you connected to
+  with `ssh -A` asks for your key, the window opens even for a key with
+  *Ask before each use* turned off, and says it is forwarded from another
+  computer. Deny it if you did not expect it.
+- Same on Linux, macOS and Windows (OpenSSH for Windows included). `ssh`
+  clients that do not send the message (older versions, git signing) are
+  served as before, and a forwarded connection from them is not recognised.
+  Needs a second computer to try: `ssh -A` into it and run `ssh-add -L` or
+  `git fetch` there.
+
+How to use it: [Agent forwarding](user-guide/06-ssh-and-git.md#agent-forwarding-ssh--a).
 
 ### The approval window ignores clicks that come too soon
 
@@ -356,6 +522,20 @@ touches; Ed25519 SSH keys (the default) are not affected. The `rsa`
 which the vault refuses to store, so it does not apply. The desktop app still
 pulls in `zbus` 5 through its screen-reader support (`eframe` 0.37, its
 newest release); it moves when `eframe` does.
+
+### Helper programs from the environment are checked first
+
+- **`VAULT_PROMPT`, `VAULT_GUI` and `VAULT_SE_HELPER` are checked.** `vaultd`
+  runs the program they name only when it is an absolute path to a regular
+  file that group and others cannot write, and that belongs to you (or
+  root). Otherwise it prints `ignoring VAULT_PROMPT=...` and uses the helper
+  next to itself. This closes a way for a planted variable (for example in
+  a shell profile) to swap the approval window.
+- If you use these variables, no change is needed when the file is yours
+  and not writable by others. Windows only checks that the path is absolute
+  and a file. Linux, macOS and Windows otherwise behave the same.
+
+How it works: [`vaultd` approval window](vaultd.md).
 
 ### Library advisories: what is left
 
@@ -768,6 +948,23 @@ Platform differences:
   apply when they do.
 - Paths starting with `~/` work on every system, meaning your home folder.
 
+### Apps see only their own saved passwords (Linux)
+
+- **Each approved program sees only what it saved** through the Secret
+  Service. Before, allowing one program once gave it every app password in
+  the vault. Now an entry records the program that made it, and other
+  programs can't list, read, change or delete it. The approval window and
+  the **App passwords** list work as before.
+- Entries made earlier, and ones imported from GNOME Keyring or KWallet,
+  have no recorded program and stay visible to every approved program. To
+  tighten them, delete them in **App passwords** and let each app save its
+  password again.
+- Linux only. Windows and macOS don't use this feature. Needs a desktop to
+  try: save a password with `secret-tool store` from one terminal program
+  and look it up from another program, such as Python's `keyring`.
+
+How to use it: [What apps can and can't do](user-guide/12-secret-service.md#what-apps-can-and-cant-do).
+
 ### Post-quantum Windows TPM slots
 
 - **Windows TPM slots are now sealed inside the TPM.** A TPM slot added on
@@ -898,6 +1095,23 @@ yet because the daemon does not run there.
 
 How to use it: [Versions, downloads and upgrading](user-guide/11-versions-and-upgrades.md).
 
+### Build attestations for every download
+
+- **Check who built a download.** Each file on the Releases page now gets a
+  signed build attestation from GitHub (free for public repositories). With
+  the GitHub CLI, `gh attestation verify FILE --repo nishantnkumar-cell/PasswordVault`
+  confirms the file was built by this project's release workflow from the
+  release tag. The checksums file only showed that a download arrived
+  intact.
+- Works the same for the Windows, Linux, macOS and extension downloads. It
+  does not replace Windows or Apple code signing (the Mac downloads are
+  already signed and notarized). It starts with the next release, and it
+  can only be tried by pushing a release tag. A hybrid post-quantum
+  signature on the checksums file is not added: it needs a long-lived
+  signing key kept as a secret, which is a decision for the owner.
+
+How to use it: [Proving where a download came from](user-guide/11-versions-and-upgrades.md#proving-where-a-download-came-from-optional).
+
 ### A cleaner, more polished desktop app
 
 - **New look throughout.** The app now ships its own fonts (Inter for text,
@@ -1027,6 +1241,20 @@ How to use it: [Versions, downloads and upgrading](user-guide/11-versions-and-up
 - **Not yet.** Importing existing keys, exporting a private key, and
   encrypting, decrypting or signing with OpenPGP still use `vault ssh` and
   `vault pgp`.
+
+### Fuzz testing for the file, message and import parsers
+
+- **Developer-facing safety net.** Five fuzz targets (`fuzz/`) throw
+  random and mutated input at the vault file parser, the daemon's message
+  reader, the Bitwarden and CSV importers and the QR picture reader. A
+  weekly GitHub run (and one on request) fuzzes each for five minutes and
+  keeps any crashing input. A first 20-second run of each found nothing.
+- Nothing changes for users, and nothing is installed with the app. Linux,
+  Windows, macOS and phones are covered the same way, because the parsers
+  are shared. The SSH agent, native-host and OpenPGP parsers are not
+  fuzzed yet.
+
+How to run it yourself: [`fuzz/README.md`](../fuzz/README.md).
 
 ### Desktop app: key details, Unlock methods and Sync pages
 
@@ -1390,6 +1618,24 @@ How to use it: [Delete](user-guide/03-items.md#delete) and [Earlier passwords](u
   could have been merged before.
 
 How to use it: [Removing an unlock method](user-guide/10-sync.md#removing-an-unlock-method).
+
+### Weak passwords refused, and a warning for password-only slots
+
+- **A password that is easy to guess is refused** when it will be the only
+  thing guarding a slot: your first password and `vault add-slot password`.
+  The check is zxcvbn, which spots common words, keyboard runs, dates and
+  leaked-password patterns. Passwords used together with a security key or
+  the TPM keep the 8-character rule. Existing vaults are not affected.
+- **The password-only slot is flagged once you add a key or the TPM.**
+  `vault slots` and the desktop slot list say that this slot opens the
+  vault without your key or TPM, and how to remove it if you want a device
+  to always be needed.
+- **Threat model corrected.** It no longer claims that every daily-use
+  slot mixes in a hardware factor: the first password slot never does.
+- Linux, Windows, macOS and the phone apps behave the same. The phone apps
+  do not have the strength check yet.
+
+How to use it: [Make a device or key always needed](user-guide/02-unlocking.md#make-a-device-or-key-always-needed).
 
 ---
 

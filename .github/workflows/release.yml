@@ -73,12 +73,22 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      # Signed build provenance for every download (GitHub artifact attestations).
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v7
         with:
           path: dist
           merge-multiple: true
+      # Signs a statement, with the workflow's identity, that each file was
+      # built by this workflow from this tag. Check a download with
+      # `gh attestation verify FILE --repo OWNER/REPO` (docs/user-guide/11-versions-and-upgrades.md).
+      - name: Attest the downloads
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: "dist/*"
       - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -118,7 +128,7 @@ jobs:
             echo "::warning title=No Android APK::this release has no Android app"
           fi
           # Every download a release promises (docs/user-guide/11-versions-and-upgrades.md).
-          for f in "SecretVault-Setup-$version.exe" "secret-vault_${version}_amd64.deb" \
+          for f in "SecretVault-Setup-$version.exe" "SecretVault-Setup-$version-arm64.exe" "secret-vault_${version}_amd64.deb" \
               "secret-vault-$version-linux-x86_64.tar.gz" "SecretVault-$version-macos.pkg" \
               "secret-vault-$version-macos-universal.tar.gz" "secret-vault-extension-$version.zip"; do
             test -f "dist/$f" || { echo "missing dist/$f" >&2; ls -l dist >&2; exit 1; }

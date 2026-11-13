@@ -153,7 +153,9 @@ extension's **Connect** button.
 
 **No approval window appears when pairing**
 The window is `vault-prompt`, which must be in the same folder as `vaultd`
-(or named by the `VAULT_PROMPT` variable) and needs a desktop session. If
+(or named by the `VAULT_PROMPT` variable, which is used only when it is an
+absolute path to a file that only you or root can write; otherwise `vaultd`
+prints "ignoring VAULT_PROMPT" and looks next to itself) and needs a desktop session. If
 `vaultd` runs as a systemd user service, the session must have passed
 `DISPLAY` or `WAYLAND_DISPLAY` to it (desktop environments normally do).
 A `vaultd` started with `--no-prompt` or running as the Linux system user
@@ -315,8 +317,10 @@ the daemon would still accept a copy of that token.
 - **Unlock outside the browser** when you can. Typing the master password in
   the extension's popup works, but it passes through the browser.
 - **Delete import files** right after importing.
-- **Windows:** the daemon's memory is not yet protected from the page file
-  and crash dumps. Do not leave the vault unlocked longer than you need to.
+- **Windows:** turn on BitLocker or Device Encryption (Settings > Privacy &
+  security > Device encryption). vaultd keeps keys out of the page file and
+  crash reports itself, but hibernation and a blue screen write all of memory
+  to disk, and only disk encryption protects those files.
 - **Linux, stronger setup:** run `vaultd` as its own system user
   (`contrib/systemd/vaultd@.service`) so programs running as you cannot read
   its memory.

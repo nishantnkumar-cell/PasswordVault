@@ -101,6 +101,14 @@ methods, so:
 - write it on paper or print it, and keep it away from the computer;
 - do not save it in a file, a screenshot or a photo on this computer.
 
+**Print an emergency kit page** opens a one-page sheet in your browser with
+the code, the steps to use it and where the vault file lives on Linux,
+Windows and macOS, ready to print and put in a drawer or safe. The page is
+written to the temporary folder (readable only by you) and deleted again
+90 seconds later, so print it right away. It exists only here, at setup:
+the code is not shown again. (The screenshot below was taken before this
+button was added.)
+
 Tick **I've written down my recovery code and put it somewhere safe**, then
 press **Continue**. You can't go on until the box is ticked.
 
@@ -520,6 +528,27 @@ so clipboard history apps (Maccy, Paste, Raycast and others) skip it, and
 it stays on this Mac: Universal Clipboard does not pass it to your iPhone,
 iPad or other Macs. Ordinary text you copy elsewhere still goes to them as
 usual.
+
+### Screenshots and screen sharing (Windows)
+
+On Windows the app and its approval window are left out of screenshots,
+screen recordings and screen sharing (Teams, Zoom, Snipping Tool, Win +
+Shift + S, the Xbox Game Bar). People watching your shared screen see an
+empty space, or a black box on Windows 10 older than version 2004, where
+the window is, so a password you show by mistake does not reach them.
+You see the window as usual.
+
+To take a screenshot of the app on purpose, for example to report a
+problem, start it with screen capture allowed: in PowerShell,
+
+    $env:VAULT_ALLOW_CAPTURE = '1'; & "$env:LOCALAPPDATA\Programs\Secret Vault\vault-gui.exe"
+
+(use `C:\Program Files\Secret Vault\` for an all-users install). Close
+the app afterwards and start it again from the Start menu to protect it
+again. The approval window follows the setting that vaultd was started
+with.
+
+On Linux and macOS the app can be captured like any other window for now.
 
 ## Generator
 

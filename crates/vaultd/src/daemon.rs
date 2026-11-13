@@ -119,6 +119,9 @@ const PROMPT_COOLDOWN: Duration = Duration::from_secs(10);
 
 type R<T> = Result<T, String>;
 
+const QUICK_NOT_NOW: &str = "quick unlock is not available now: unlock with your password \
+                             (or another method) first";
+
 /// `pgp::decrypt` or `pgp::unwrap`.
 type PgpOpen = fn(&[u8], &[u8]) -> R<Zeroizing<Vec<u8>>>;
 
@@ -430,16 +433,63 @@ impl Daemon {
         self.quick_hours > 0 && self.quick_until.is_some_and(|t| SystemTime::now() < t)
     }
 
-    /// Re-open the parked vault after Windows Hello or Touch ID confirms the user.
-    fn quick_unlock(&mut self) -> R<Vault> {
-        const NOT_NOW: &str = "quick unlock is not available now: unlock with your password \
-                               (or another method) first";
+    /// Start a quick unlock: check it may happen now and hand back the
+    /// presence check to run. The caller runs it without holding the daemon
+    /// lock, so other requests are served while the Windows Hello or Touch ID
+    /// prompt is open, then passes the verdict to [`Daemon::end_quick_unlock`].
+    /// `None`: the vault is already open, nothing to ask.
+    pub fn begin_quick_unlock(
+        &mut self,
+        token: Option<&ClientToken>,
+    ) -> R<Option<Arc<dyn vault_hw::Presence>>> {
+        let t = token.ok_or("this client is not paired; run `vault pair`")?;
+        self.store
+            .client_scope(t)
+            .ok_or("unknown client token; pair again")?;
+        self.last_activity = Instant::now();
+        if self.vault.is_some() {
+            return Ok(None);
+        }
+        if self.parked.is_none() || !self.quick_open() {
+            self.parked = None;
+            return Err(QUICK_NOT_NOW.into());
+        }
+        self.hw
+            .presence
+            .clone()
+            .map(Some)
+            .ok_or(QUICK_NOT_NOW.into())
+    }
+
+    /// Finish a quick unlock with the presence check's verdict.
+    pub fn end_quick_unlock(&mut self, verdict: Result<(), String>) -> Response {
+        match self.finish_quick_unlock(verdict) {
+            Ok(r) => r,
+            Err(m) => Response::Error(m),
+        }
+    }
+
+    fn finish_quick_unlock(&mut self, verdict: Result<(), String>) -> R<Response> {
+        if self.vault.is_some() {
+            // Opened another way while the prompt was up.
+            return Ok(Response::Ok);
+        }
+        let mut v = self.quick_unlock(verdict)?;
+        v.set_device(self.device);
+        self.vault = Some(v);
+        self.sync_now(None, true);
+        Ok(Response::Ok)
+    }
+
+    /// Re-open the parked vault after Windows Hello or Touch ID confirmed
+    /// the user (`verdict`).
+    fn quick_unlock(&mut self, verdict: Result<(), String>) -> R<Vault> {
+        const NOT_NOW: &str = QUICK_NOT_NOW;
         if self.parked.is_none() || !self.quick_open() {
             self.parked = None;
             return Err(NOT_NOW.into());
         }
-        let hello = self.hw.presence.as_ref().ok_or(NOT_NOW)?;
-        if let Err(m) = hello.verify("Unlock Secret Vault") {
+        if let Err(m) = verdict {
             let p = self.parked.as_mut().ok_or(NOT_NOW)?;
             p.failures += 1;
             if p.failures >= QUICK_ATTEMPTS {
@@ -913,13 +963,18 @@ impl Daemon {
             Request::Unlock {
                 method: UnlockMethod::Hello,
             } => {
-                if self.vault.is_none() {
-                    let mut v = self.quick_unlock()?;
-                    v.set_device(self.device);
-                    self.vault = Some(v);
-                    self.sync_now(None, true);
+                // The socket server asks without the daemon lock (see
+                // `begin_quick_unlock`); this path is for direct callers.
+                if self.vault.is_some() {
+                    return Ok(Response::Ok);
                 }
-                Ok(Response::Ok)
+                if self.parked.is_none() || !self.quick_open() {
+                    self.parked = None;
+                    return Err(QUICK_NOT_NOW.into());
+                }
+                let hello = self.hw.presence.clone().ok_or(QUICK_NOT_NOW)?;
+                let verdict = hello.verify("Unlock Secret Vault");
+                self.finish_quick_unlock(verdict)
             }
             Request::Unlock { method } => {
                 let v = self.prove(&method)?;
@@ -1081,7 +1136,7 @@ impl Daemon {
         if self.store.exists() {
             return Err("a vault already exists".into());
         }
-        check_password(password)?;
+        check_new_password(password)?;
         let rng = &mut OsRandom;
         let mut v = Vault::new(rng).map_err(e)?;
         let pw_slot = v
@@ -1425,19 +1480,32 @@ impl Daemon {
         match req {
             Request::ListSlots => {
                 let v = self.vault()?;
+                let has_hardware = v.slots().any(|m| {
+                    matches!(
+                        m.factor,
+                        Factor::PasswordFido2 { .. } | Factor::PasswordTpm { .. }
+                    )
+                });
                 Ok(Response::Slots(
                     v.slots()
                         .map(|m| SlotInfo {
                             id: m.id,
                             kind: kind(&m.factor).into(),
                             label: v.slot_label(&m.id).unwrap_or("").into(),
-                            warning: slot_warning(&m.factor),
+                            warning: slot_warning(&m.factor).or_else(|| {
+                                (has_hardware && m.factor == Factor::PasswordOnly).then(|| {
+                                    "opens the vault with the password alone, without your \
+                                     security key or TPM; remove it if you want a device or \
+                                     key to always be needed"
+                                        .into()
+                                })
+                            }),
                         })
                         .collect(),
                 ))
             }
             Request::AddPasswordSlot { password, label } => {
-                check_password(&password)?;
+                check_new_password(&password)?;
                 let cost = self.cost;
                 let id = self
                     .vault()?
@@ -2029,6 +2097,25 @@ fn prf_key(out: &[u8]) -> R<HwKey> {
         .try_into()
         .map_err(|_| "a passkey PRF output is 32 bytes")?;
     Ok(HwKey::new(b))
+}
+
+/// The check for a password that will be the only thing guarding a new slot
+/// (a first password, or an extra password-only slot). Slots that also need a
+/// security key or the TPM can keep the plain length rule, because the
+/// hardware factor carries the strength there.
+fn check_new_password(p: &str) -> R<()> {
+    check_password(p)?;
+    let est = zxcvbn::zxcvbn(p, &[]);
+    if est.score() >= zxcvbn::Score::Three {
+        return Ok(());
+    }
+    let tip = est
+        .feedback()
+        .and_then(|f| f.warning())
+        .map_or_else(String::new, |w| format!(" ({w})"));
+    Err(format!(
+        "that password is too easy to guess{tip}; use a longer one, or a few unrelated words"
+    ))
 }
 
 fn check_password(p: &str) -> R<()> {

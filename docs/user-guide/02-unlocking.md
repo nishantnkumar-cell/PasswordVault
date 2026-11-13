@@ -336,6 +336,28 @@ vault add-slot recovery --label "safe deposit box"
 
 A new recovery slot prints its own code once. Keep each code separately.
 
+A password that is the only thing guarding a slot (your first password, or
+`add-slot password`) is checked for strength, and a password that is easy to
+guess, such as `password123`, is refused with a hint. Use a longer one, or
+three or four unrelated words. Passwords that are used together with a
+security key or the TPM only need the usual 8 characters, because the key or
+chip adds the strength.
+
+## Make a device or key always needed
+
+Every vault starts with a password-only slot, so anyone who guesses the
+password can open a copy of the file without your security key or TPM. Once
+you have added a security key or the TPM, `vault slots` marks the
+password-only slot with a warning. To always require that key or device,
+check that the key or TPM slot works, then remove the password-only slot:
+
+```sh
+vault rm-slot 3fa9
+```
+
+Keep the recovery code safe first: it is what opens the vault if the key or
+device is lost. The desktop app shows the same warning in the slot list.
+
 ## See your slots
 
 ```sh
@@ -374,7 +396,7 @@ vault revoke --keep 3fa9,8be4
 ```
 
 You prove each slot you keep (password, recovery code, touch the key). Every
-other slot is removed and the vault key is replaced. Old copies and backups
+other slot is removed, the vault key is replaced and every item is encrypted again under a new key. Old copies and backups
 of the file can still be opened with the old factors, so delete those
 copies too.
 
