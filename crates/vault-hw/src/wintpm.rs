@@ -11,7 +11,8 @@
 //! PIN is salted to the storage key (RSA-OAEP through CNG) and encrypted
 //! both ways.
 //!
-//! Blob: `WIN_TPM_SEALED` || u16 LE public length || TPMT_PUBLIC ||
+//! Blob: `WIN_TPM_SEALED` || u16 LE public length (high bit set: the 34-byte
+//! name of the storage key follows it, and unsealing checks it) || TPMT_PUBLIC ||
 //! TPM2B_PRIVATE contents.
 //!
 //! Slots made before (`VWTPM1`) still unlock: their secret was wrapped with
@@ -294,25 +295,26 @@ fn pin_bytes(pin: Option<&str>) -> Option<&[u8]> {
 
 impl Tpm for WinTpm {
     fn seal(&self, secret: &[u8; 32], pin: Option<&str>, bind_pcr7: bool) -> HwResult<Vec<u8>> {
-        let (public, private) = client()?.seal(secret, pin_bytes(pin), bind_pcr7)?;
-        let mut blob = Vec::with_capacity(WIN_TPM_SEALED.len() + 2 + public.len() + private.len());
-        blob.extend_from_slice(WIN_TPM_SEALED);
-        blob.extend_from_slice(
-            &u16::try_from(public.len())
-                .map_err(|_| "TPM public too large")?
-                .to_le_bytes(),
-        );
-        blob.extend_from_slice(&public);
-        blob.extend_from_slice(&private);
+        let mut c = client()?;
+        let (public, private) = c.seal(secret, pin_bytes(pin), bind_pcr7)?;
+        let mut blob = WIN_TPM_SEALED.to_vec();
+        blob.extend_from_slice(&tpm2::pack_sealed(c.srk_name(), &public, &private)?);
         Ok(blob)
     }
 
     fn unseal(&self, blob: &[u8], pin: Option<&str>, bind_pcr7: bool) -> HwResult<HwKey> {
         if let Some(rest) = blob.strip_prefix(WIN_TPM_SEALED) {
-            let (len, rest) = rest.split_at_checked(2).ok_or("TPM blob truncated")?;
-            let len = u16::from_le_bytes([len[0], len[1]]) as usize;
-            let (public, private) = rest.split_at_checked(len).ok_or("TPM blob truncated")?;
-            return client()?.unseal(public, private, pin_bytes(pin), bind_pcr7);
+            let (pinned, public, private) = tpm2::unpack_sealed(rest)?;
+            let mut c = client()?;
+            if pinned.is_some_and(|n| n != c.srk_name()) {
+                return Err(
+                    "this TPM's storage key is not the one this slot was made under \
+                            (the TPM was cleared or replaced); unlock another way and add \
+                            the TPM again"
+                        .into(),
+                );
+            }
+            return c.unseal(public, private, pin_bytes(pin), bind_pcr7);
         }
         unseal_wrapped(blob, pin)
     }

@@ -639,6 +639,21 @@ change: computers and phones read the same files.
   must happen before vaultd takes over; it does not read keyring files
   directly.
 
+### Windows TPM slots remember which TPM key they belong to
+
+- **A clearer message and one more check.** New Windows TPM slots store the
+  name of the TPM's storage key. If the TPM was cleared or replaced, unlock
+  says "this TPM's storage key is not the one this slot was made under"
+  instead of a TPM error, and no secret is sent to a key that is not the
+  expected one. When it happens: unlock with your password and security
+  key or the recovery code, remove the old TPM slot and add the TPM again.
+- Slots made before this update have no stored name and keep working. Linux
+  and macOS TPM and Secure Enclave slots are unchanged. Needs a real
+  Windows PC to try: clear the TPM (or use a second PC with a copied vault
+  file) and unlock.
+
+How to use it: [Add the TPM](user-guide/02-unlocking.md#add-the-tpm).
+
 ### Public downloads with checksums
 
 Every release is published on the
