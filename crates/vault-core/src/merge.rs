@@ -44,6 +44,8 @@ pub struct MergeReport {
     /// Slots this copy lost by taking the other key. Their factors must be
     /// enrolled again.
     pub slots_dropped: Vec<SlotId>,
+    /// Settings the other copy changed more recently (section 5.2).
+    pub settings_updated: usize,
     /// The other copy lacks something this one has and should be rewritten.
     pub other_behind: bool,
 }
@@ -53,6 +55,7 @@ impl MergeReport {
     pub fn changed(&self) -> bool {
         self.added + self.updated + self.deleted + self.conflicts > 0
             || self.slots_added + self.slots_removed > 0
+            || self.settings_updated > 0
             || self.rekeyed
     }
 }
@@ -91,6 +94,13 @@ struct Shape {
 impl Vault {
     fn clock(&self, id: &ItemId) -> Clock {
         self.clocks.get(id).cloned().unwrap_or_default()
+    }
+
+    fn settings_rank(&self) -> Vec<(&str, u64, u64, &[u8])> {
+        self.settings
+            .values()
+            .map(|s| (s.name.as_str(), s.stamp, s.device, s.value.as_slice()))
+            .collect()
     }
 
     fn shape(&self) -> Shape {
@@ -414,11 +424,23 @@ impl Vault {
         }
         report.deleted = deleted.len();
 
+        for (name, theirs) in &other.settings {
+            let newer = self
+                .settings
+                .get(name)
+                .is_none_or(|mine| theirs.rank() > mine.rank());
+            if newer {
+                self.settings.insert(name.clone(), theirs.clone());
+                report.settings_updated += 1;
+            }
+        }
+
         self.generation = self.generation.max(other.generation);
         self.key_epoch = self.key_epoch.max(other.key_epoch);
         report.other_behind = !self.vault_key.ct_eq(&other.vault_key)
             || self.shape() != other.shape()
-            || self.retired_keys != other.retired_keys;
+            || self.retired_keys != other.retired_keys
+            || self.settings_rank() != other.settings_rank();
         Ok(report)
     }
 }

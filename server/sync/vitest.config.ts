@@ -5,7 +5,7 @@ export default defineConfig({
   plugins: [
     cloudflareTest({
       wrangler: { configPath: "./wrangler.jsonc" },
-      miniflare: { bindings: { CREATE_KEY: "test-create-key" } },
+      miniflare: { bindings: { ADMIN_KEY: "test-admin-key" } },
     }),
   ],
 });

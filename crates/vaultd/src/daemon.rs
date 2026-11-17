@@ -15,7 +15,8 @@ use vault_core::{
 };
 use vault_hw::protect::ProtectedKey;
 use vault_ipc::{
-    AppApproval, ClientScope, ClientToken, Envelope, ImportFormat, ItemSummary, PasskeySlot,
+    AppApproval, CLOUD_COPY_FILE, CLOUD_DEVICE_FILE, CLOUD_SETTING, ClientScope, ClientToken,
+    CloudDevice, CloudInfo, CloudSettings, Envelope, ImportFormat, ItemSummary, PasskeySlot,
     PasswordStyle, QuickUnlockInfo, Request, Response, Secret, SlotInfo, StatusInfo, SyncInfo,
     UnlockMethod,
 };
@@ -898,7 +899,7 @@ impl Daemon {
             | Request::Init { .. }
             | Request::Pair { .. }
             | Request::PasskeySlots => None,
-            Request::SetSync { .. } if !self.store.exists() => None,
+            Request::SetSync { .. } | Request::CloudAttach { .. } if !self.store.exists() => None,
             _ => {
                 let t = env
                     .token
@@ -982,6 +983,9 @@ impl Daemon {
                 Ok(Response::Ok)
             }
             Request::SetSync { path } => self.set_sync(path),
+            Request::CloudGet => self.cloud_get(),
+            Request::CloudSet { settings } => self.cloud_set(settings),
+            Request::CloudAttach { device, file } => self.cloud_attach(device, file),
             Request::Lock => {
                 self.lock();
                 Ok(Response::Ok)
@@ -1098,6 +1102,84 @@ impl Daemon {
             self.sync_now(None, true);
         }
         Ok(Response::Status(self.status()))
+    }
+
+    /// The folder `vault-sync` mirrors to the cloud mailbox: `cloud` next to
+    /// the vault file (docs/cloud-sync.md).
+    fn cloud_dir(&self) -> PathBuf {
+        self.store
+            .vault_path()
+            .parent()
+            .unwrap_or(std::path::Path::new("."))
+            .join("cloud")
+    }
+
+    fn cloud_get(&mut self) -> R<Response> {
+        let settings = match self.vault.as_ref().and_then(|v| v.setting(CLOUD_SETTING)) {
+            Some(b) => Some(
+                postcard::from_bytes::<CloudSettings>(b)
+                    .map_err(|_| "the vault's cloud sync settings are unreadable")?,
+            ),
+            None => None,
+        };
+        let device = std::fs::read_to_string(self.cloud_dir().join(CLOUD_DEVICE_FILE))
+            .ok()
+            .map(Zeroizing::new)
+            .and_then(|t| CloudDevice::from_text(&t));
+        Ok(Response::Cloud(CloudInfo { settings, device }))
+    }
+
+    fn cloud_set(&mut self, settings: Option<CloudSettings>) -> R<Response> {
+        let bytes = settings
+            .map(|s| postcard::to_allocvec(&s).map(Zeroizing::new))
+            .transpose()
+            .map_err(|e| e.to_string())?;
+        self.vault()?
+            .set_setting(CLOUD_SETTING, bytes.as_ref().map(|b| b.as_slice()))
+            .map_err(e)?;
+        self.save()?;
+        Ok(Response::Ok)
+    }
+
+    fn cloud_attach(&mut self, device: Option<CloudDevice>, file: Option<Vec<u8>>) -> R<Response> {
+        let dir = self.cloud_dir();
+        let copy = dir.join(CLOUD_COPY_FILE);
+        let Some(d) = device else {
+            match std::fs::remove_file(dir.join(CLOUD_DEVICE_FILE)) {
+                Err(err) if err.kind() != std::io::ErrorKind::NotFound => {
+                    return Err(err.to_string());
+                }
+                _ => {}
+            }
+            if self.store.sync_path().as_deref() == Some(copy.as_path()) {
+                return self.set_sync(None);
+            }
+            return Ok(Response::Status(self.status()));
+        };
+        let hex = |s: &str, n: usize| {
+            s.len() == n && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        };
+        let token_ok = (43..=128).contains(&d.token.len())
+            && d.token.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
+        if !d.server.starts_with("https://")
+            || d.server.contains(char::is_whitespace)
+            || !hex(&d.mailbox, 32)
+            || !hex(&d.device, 16)
+            || !token_ok
+        {
+            return Err("malformed cloud sync access".into());
+        }
+        let mut b = std::fs::DirBuilder::new();
+        b.recursive(true);
+        #[cfg(unix)]
+        std::os::unix::fs::DirBuilderExt::mode(&mut b, 0o700);
+        b.create(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+        crate::store::write_atomic(&dir.join(CLOUD_DEVICE_FILE), d.to_text().as_bytes())
+            .map_err(|e| e.to_string())?;
+        if let Some(f) = file {
+            crate::store::write_atomic(&copy, &f).map_err(|e| e.to_string())?;
+        }
+        self.set_sync(Some(copy.display().to_string()))
     }
 
     fn status(&self) -> StatusInfo {
@@ -1972,6 +2054,9 @@ impl Daemon {
             | Request::PasskeySlots
             | Request::Unlock { .. }
             | Request::SetSync { .. }
+            | Request::CloudGet
+            | Request::CloudSet { .. }
+            | Request::CloudAttach { .. }
             | Request::Lock
             | Request::LockFully
             | Request::Generate { .. }

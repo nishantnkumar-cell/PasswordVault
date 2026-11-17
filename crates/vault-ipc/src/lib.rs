@@ -422,6 +422,97 @@ pub enum Request {
     PasswordHistory { id: ItemId },
     /// The newest entries of the activity log. Answers with `Activity`.
     Activity { limit: u32 },
+    /// Cloud sync's settings (kept in the vault, so every device has them)
+    /// and this device's own access to the server. Answers with `Cloud`.
+    CloudGet,
+    /// Store cloud sync's settings in the vault, or remove them with `None`.
+    CloudSet { settings: Option<CloudSettings> },
+    /// Give this device its access to the cloud mailbox and keep the vault in
+    /// sync with the mailbox copy that `vault-sync` mirrors (the `cloud`
+    /// folder next to the vault file). `file` is the copy just downloaded,
+    /// written there first so a new device can join from it. `None` stops
+    /// cloud sync on this device. Like `SetSync`, needs no token while no
+    /// vault exists here. Answers with `Status`.
+    CloudAttach {
+        device: Option<CloudDevice>,
+        file: Option<Vec<u8>>,
+    },
+}
+
+/// Cloud sync settings, stored in the vault under the setting name
+/// [`CLOUD_SETTING`] (docs/cloud-sync.md). They reach every device through
+/// the merge; no device keeps them anywhere else.
+#[derive(Serialize, Deserialize, Clone)]
+pub struct CloudSettings {
+    /// The server, such as `https://vault-sync.example-name.workers.dev`.
+    pub server: String,
+    /// This vault's mailbox on the server: 32 lowercase hex characters.
+    pub mailbox: String,
+    /// The Cloudflare account the server runs in.
+    pub account_id: String,
+    /// The Worker's name in that account.
+    pub worker: String,
+    /// Creates mailboxes on the server; set on the Worker at setup.
+    pub admin_key: Secret,
+    /// The Cloudflare API token, kept only if the user chose to, for updating
+    /// the server later without pasting a new one.
+    pub api_token: Option<Secret>,
+}
+
+/// Name of the vault setting that holds [`CloudSettings`].
+pub const CLOUD_SETTING: &str = "cloud-sync";
+
+/// One device's own access to the cloud mailbox. Never synced: each device
+/// has its own token, so a lost one can be removed on its own.
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct CloudDevice {
+    pub server: String,
+    pub mailbox: String,
+    /// This device's id on the server (16 hex characters).
+    pub device: String,
+    pub token: Secret,
+}
+
+/// Name of the file in the cloud folder that holds a [`CloudDevice`].
+pub const CLOUD_DEVICE_FILE: &str = "device.conf";
+/// Name of the mailbox copy in the cloud folder.
+pub const CLOUD_COPY_FILE: &str = "vault.svault";
+
+impl CloudDevice {
+    /// The `key=value` text kept in [`CLOUD_DEVICE_FILE`].
+    pub fn to_text(&self) -> Secret {
+        Secret::new(format!(
+            "# Secret Vault cloud sync: this device's access to its mailbox.\n\
+             # Written by vaultd; read by vault-sync. Keep it private.\n\
+             server={}\nmailbox={}\ndevice={}\ntoken={}\n",
+            self.server, self.mailbox, self.device, *self.token
+        ))
+    }
+
+    /// Reads [`Self::to_text`]'s format.
+    pub fn from_text(text: &str) -> Option<CloudDevice> {
+        let get = |k: &str| {
+            text.lines()
+                .find_map(|l| l.strip_prefix(k)?.strip_prefix('='))
+                .map(|v| v.trim().to_owned())
+                .filter(|v| !v.is_empty())
+        };
+        Some(CloudDevice {
+            server: get("server")?,
+            mailbox: get("mailbox")?,
+            device: get("device")?,
+            token: Secret::new(get("token")?),
+        })
+    }
+}
+
+/// What `CloudGet` answers.
+#[derive(Serialize, Deserialize, Default)]
+pub struct CloudInfo {
+    /// The vault's cloud settings; `None` while locked or not set up.
+    pub settings: Option<CloudSettings>,
+    /// This device's access, if it has joined.
+    pub device: Option<CloudDevice>,
 }
 
 /// One line of the activity log (`Request::Activity`).
@@ -623,6 +714,8 @@ pub enum Response {
     History(Vec<(u64, Secret)>),
     /// The activity log, newest first.
     Activity(Vec<ActivityEntry>),
+    /// Cloud sync settings and this device's access.
+    Cloud(CloudInfo),
 }
 
 /// Write one frame: u32 little-endian length, then postcard bytes.
@@ -674,6 +767,18 @@ pub fn parse_id(s: &str) -> Option<[u8; 16]> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn cloud_device_text_round_trips() {
+        let d = super::CloudDevice {
+            server: "https://vault-sync.example-name.workers.dev".into(),
+            mailbox: "0123456789abcdef0123456789abcdef".into(),
+            device: "0011223344556677".into(),
+            token: super::Secret::new("A".repeat(43)),
+        };
+        assert!(super::CloudDevice::from_text(&d.to_text()) == Some(d));
+        assert!(super::CloudDevice::from_text("server=x\n").is_none());
+    }
+
     use super::*;
 
     #[test]

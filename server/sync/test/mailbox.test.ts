@@ -1,9 +1,10 @@
 import { exports } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
-import { MAX_FILE, MAX_WRITES_PER_MINUTE } from "../src/index";
+import { MAX_FILE, MAX_TICKETS, MAX_WRITES_PER_MINUTE, REVISION } from "../src/index.js";
 
-const BASE = "https://sync.example.com/v1/m/";
-const CREATE_KEY = "test-create-key";
+const ORIGIN = "https://sync.example.com";
+const BASE = `${ORIGIN}/v1/m/`;
+const ADMIN_KEY = "test-admin-key";
 
 function randomId(): string {
   return [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -26,36 +27,63 @@ async function call(path: string, init: RequestInit & { token?: string } = {}): 
   return exports.default.fetch(new Request(BASE + path, { ...init, headers }));
 }
 
-async function create(file: Uint8Array = bytes(4096)): Promise<{ id: string; token: string }> {
+/** A mailbox holding `file` (version 1), and its first device's token. */
+async function create(file: Uint8Array | null = bytes(4096)): Promise<{ id: string; token: string; device: string }> {
   const id = randomId();
   const token = randomToken();
-  const r = await call(id, { method: "POST", token, body: file, headers: { "x-create-key": CREATE_KEY } });
+  const r = await call(id, { method: "POST", token, headers: { "x-admin-key": ADMIN_KEY, "x-device-name": "Laptop" } });
   expect(r.status).toBe(201);
-  expect(r.headers.get("etag")).toBe('"1"');
-  return { id, token };
+  const { device } = (await r.json()) as { device: string };
+  expect(device).toMatch(/^[0-9a-f]{16}$/);
+  if (file) {
+    const put = await call(id, { method: "PUT", token, body: file, headers: { "if-match": '"0"' } });
+    expect(put.status).toBe(200);
+  }
+  return { id, token, device };
 }
 
-describe("creating a mailbox", () => {
-  it("needs the create key", async () => {
-    const token = randomToken();
-    const id = randomId();
-    expect((await call(id, { method: "POST", token, body: bytes(10) })).status).toBe(403);
-    expect(
-      (await call(id, { method: "POST", token, body: bytes(10), headers: { "x-create-key": "wrong" } })).status,
-    ).toBe(403);
-  });
+async function join(id: string, token: string, name = "Phone"): Promise<{ token: string; device: string }> {
+  const t = await call(`${id}/tickets`, { method: "POST", token });
+  expect(t.status).toBe(201);
+  const { ticket } = (await t.json()) as { ticket: string };
+  const mine = randomToken();
+  const r = await call(`${id}/join`, { method: "POST", token: mine, headers: { "x-ticket": ticket, "x-device-name": name } });
+  expect(r.status).toBe(201);
+  const { device } = (await r.json()) as { device: string };
+  return { token: mine, device };
+}
 
-  it("refuses a second create and bad ids or tokens", async () => {
-    const { id, token } = await create();
-    const again = await call(id, { method: "POST", token, body: bytes(10), headers: { "x-create-key": CREATE_KEY } });
-    expect(again.status).toBe(409);
-    expect((await call("NOT-HEX", { token })).status).toBe(400);
-    expect((await call(id, { token: "short" })).status).toBe(401);
+describe("the server", () => {
+  it("says what it is", async () => {
+    const r = await exports.default.fetch(new Request(`${ORIGIN}/`));
+    expect(await r.json()).toEqual({ service: "secret-vault-sync", api: 1, revision: REVISION });
+    const page = await exports.default.fetch(new Request(`${ORIGIN}/join`));
+    expect(await page.text()).toContain("Join a Secret Vault");
   });
 
   it("refuses plain http", async () => {
     const r = await exports.default.fetch(new Request("http://sync.example.com/v1"));
     expect(r.status).toBe(400);
+  });
+});
+
+describe("creating a mailbox", () => {
+  it("needs the admin key", async () => {
+    const token = randomToken();
+    const id = randomId();
+    expect((await call(id, { method: "POST", token })).status).toBe(403);
+    expect((await call(id, { method: "POST", token, headers: { "x-admin-key": "wrong" } })).status).toBe(403);
+  });
+
+  it("starts empty and refuses a second create and bad ids or tokens", async () => {
+    const { id, token } = await create(null);
+    const empty = await call(id, { token });
+    expect(empty.status).toBe(204);
+    expect(empty.headers.get("etag")).toBe('"0"');
+    const again = await call(id, { method: "POST", token, headers: { "x-admin-key": ADMIN_KEY } });
+    expect(again.status).toBe(409);
+    expect((await call("NOT-HEX", { token })).status).toBe(400);
+    expect((await call(id, { token: "short" })).status).toBe(401);
   });
 });
 
@@ -111,8 +139,8 @@ describe("reading and writing", () => {
   });
 
   it("limits saves per minute", async () => {
-    const { id, token } = await create();
-    let v = 1;
+    const { id, token } = await create(null);
+    let v = 0;
     for (let i = 0; i < MAX_WRITES_PER_MINUTE; i++) {
       const r = await call(id, { method: "PUT", token, body: bytes(10), headers: { "if-match": `"${v}"` } });
       expect(r.status).toBe(200);
@@ -123,17 +151,53 @@ describe("reading and writing", () => {
   });
 });
 
-describe("tokens and deleting", () => {
-  it("replacing the token locks out the old one", async () => {
-    const { id, token } = await create();
-    const next = randomToken();
-    expect((await call(`${id}/token`, { method: "POST", token, headers: { "x-new-token": "bad" } })).status).toBe(400);
-    expect((await call(`${id}/token`, { method: "POST", token, headers: { "x-new-token": next } })).status).toBe(204);
-    expect((await call(id, { token })).status).toBe(401);
-    expect((await call(id, { token: next })).status).toBe(200);
+describe("devices", () => {
+  it("joins a device with a one-time ticket", async () => {
+    const { id, token, device } = await create();
+    const phone = await join(id, token);
+    expect((await call(id, { token: phone.token })).status).toBe(200);
+
+    const r = await call(`${id}/devices`, { token: phone.token });
+    const list = (await r.json()) as { id: string; name: string; current: boolean }[];
+    expect(list.map((d) => [d.id, d.name, d.current])).toEqual([
+      [device, "Laptop", false],
+      [phone.device, "Phone", true],
+    ]);
   });
 
-  it("delete removes the file", async () => {
+  it("refuses a used, made-up or missing ticket", async () => {
+    const { id, token } = await create();
+    const t = await call(`${id}/tickets`, { method: "POST", token });
+    const { ticket } = (await t.json()) as { ticket: string };
+    const first = await call(`${id}/join`, { method: "POST", token: randomToken(), headers: { "x-ticket": ticket } });
+    expect(first.status).toBe(201);
+    const second = await call(`${id}/join`, { method: "POST", token: randomToken(), headers: { "x-ticket": ticket } });
+    expect(second.status).toBe(401);
+    const madeUp = await call(`${id}/join`, { method: "POST", token: randomToken(), headers: { "x-ticket": randomToken() } });
+    expect(madeUp.status).toBe(401);
+    expect((await call(`${id}/join`, { method: "POST", token: randomToken() })).status).toBe(400);
+    // Only a device can ask for a ticket.
+    expect((await call(`${id}/tickets`, { method: "POST", token: randomToken() })).status).toBe(401);
+  });
+
+  it("limits unused tickets", async () => {
+    const { id, token } = await create();
+    for (let i = 0; i < MAX_TICKETS; i++) {
+      expect((await call(`${id}/tickets`, { method: "POST", token })).status).toBe(201);
+    }
+    expect((await call(`${id}/tickets`, { method: "POST", token })).status).toBe(429);
+  });
+
+  it("removing a device locks it out", async () => {
+    const { id, token } = await create();
+    const phone = await join(id, token);
+    expect((await call(`${id}/devices/zz`, { method: "DELETE", token })).status).toBe(400);
+    expect((await call(`${id}/devices/${phone.device}`, { method: "DELETE", token })).status).toBe(204);
+    expect((await call(id, { token: phone.token })).status).toBe(401);
+    expect((await call(id, { token })).status).toBe(200);
+  });
+
+  it("delete removes the mailbox", async () => {
     const { id, token } = await create();
     expect((await call(id, { method: "DELETE", token })).status).toBe(204);
     expect((await call(id, { token })).status).toBe(401);
@@ -158,6 +222,17 @@ describe("watching for changes", () => {
     await got;
     expect(seen).toEqual([1, 2]);
     ws.close();
+  });
+
+  it("closes a removed device's socket", async () => {
+    const { id, token } = await create();
+    const phone = await join(id, token);
+    const r = await call(`${id}/watch`, { token: phone.token, headers: { upgrade: "websocket" } });
+    const ws = r.webSocket!;
+    const closed = new Promise<number>((resolve) => ws.addEventListener("close", (e) => resolve(e.code)));
+    ws.accept();
+    await call(`${id}/devices/${phone.device}`, { method: "DELETE", token });
+    expect(await closed).toBe(4001);
   });
 
   it("needs a WebSocket upgrade and a valid token", async () => {
