@@ -15,7 +15,7 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 ver=${1:?usage: package.sh VERSION}
-bins=(vaultd vault vault-gui vault-prompt vault-native-host vault-gpg)
+bins=(vaultd vault vault-gui vault-prompt vault-native-host vault-gpg vault-sync)
 out=target/packages
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
@@ -31,6 +31,8 @@ for b in "${bins[@]}"; do
 done
 sed 's|^ExecStart=.*|ExecStart=/usr/bin/vaultd|; s|install to ~/.config/systemd/user/ and run|installed by the package; enable it with|' \
     contrib/systemd/vaultd.service >"$root/usr/lib/systemd/user/vaultd.service"
+sed 's|^ExecStart=.*|ExecStart=/usr/bin/vault-sync|' \
+    contrib/systemd/vault-sync.service >"$root/usr/lib/systemd/user/vault-sync.service"
 install -m644 contrib/desktop/dev.passwordvault.app.desktop "$root/usr/share/applications/"
 cp -r contrib/icons/hicolor "$root/usr/share/icons/"
 install -m644 LICENSE.md "$root/usr/share/doc/secret-vault/copyright"
@@ -73,12 +75,13 @@ for b in "${bins[@]}"; do
     install -m755 "target/release/$b" "$tar_root/bin/"
 done
 install -m644 contrib/systemd/vaultd.service "$tar_root/share/vaultd.service"
+install -m644 contrib/systemd/vault-sync.service "$tar_root/share/vault-sync.service"
 install -m644 contrib/desktop/dev.passwordvault.app.desktop "$tar_root/share/applications/"
 cp -r contrib/icons/hicolor "$tar_root/share/hicolor"
 install -m755 contrib/linux/install.sh "$tar_root/install.sh"
 install -m755 contrib/linux/get.sh "$tar_root/get.sh"
 # For get.sh's system service (vaultd as the "vault" user).
-install -m644 contrib/systemd/vaultd@.service contrib/sysusers.d/vault.conf \
+install -m644 contrib/systemd/vaultd@.service contrib/systemd/vault-sync@.service contrib/sysusers.d/vault.conf \
     contrib/udev/70-vault-fido.rules "$tar_root/share/"
 install -m644 LICENSE.md "$tar_root/"
 echo "$ver" >"$tar_root/VERSION"

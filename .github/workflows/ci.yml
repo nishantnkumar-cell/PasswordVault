@@ -40,6 +40,27 @@ jobs:
           swtpm socket --tpm2 --server type=tcp,port=2321 --ctrl type=tcp,port=2322 --tpmstate dir=/tmp/swtpm --flags startup-clear --daemon
           TCTI=swtpm:port=2321 cargo test -p vault-hw --lib --locked -- --ignored
 
+  # The cloud sync server (server/sync) in the Workers runtime, locally.
+  # `vault cloud setup` uploads server/sync/src/index.js as it is.
+  sync-server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: npm ci
+        working-directory: server/sync
+      - run: npm run check
+        working-directory: server/sync
+      - run: npm test
+        working-directory: server/sync
+      - name: Wrangler accepts the Worker (no upload)
+        run: npx wrangler deploy --dry-run --outdir "$RUNNER_TEMP/worker"
+        working-directory: server/sync
+        env:
+          WRANGLER_SEND_METRICS: "false"
+
   extension:
     runs-on: ubuntu-latest
     steps:

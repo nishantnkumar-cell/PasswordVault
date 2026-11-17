@@ -1136,3 +1136,17 @@ fn settings_refuse_bad_names_and_values() {
     let big = vec![0u8; 16 * 1024 + 1];
     assert_eq!(a.set_setting("cloud", Some(&big)), Err(Error::BadSetting));
 }
+
+#[test]
+fn bodies_without_settings_stay_readable_by_older_versions() {
+    use crate::vault::BodyV3;
+    let mut rng = TestRng(0);
+    let (_, mut a, _) = two_devices(&mut rng);
+    // No settings: exactly the body earlier versions read ("body v3").
+    assert!(format::decode_canonical::<BodyV3>(&a.encode_body()).is_ok());
+    a.set_setting("cloud", Some(b"x")).unwrap();
+    assert!(format::decode_canonical::<BodyV3>(&a.encode_body()).is_err());
+    // A removal is still recorded, so the newer body stays.
+    a.set_setting("cloud", None).unwrap();
+    assert!(format::decode_canonical::<BodyV3>(&a.encode_body()).is_err());
+}

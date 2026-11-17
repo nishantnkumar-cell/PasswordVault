@@ -62,6 +62,9 @@ random program on your computer cannot just ask for your passwords.
 14. [Phone and tablet apps](14-phone-apps.md): Secret Vault on iPhone, iPad
     and Android, with Face ID or fingerprint unlock, AutoFill and sync with
     your computer.
+15. [Cloud sync with your own Cloudflare account](15-cloud-sync.md): sync
+    your computers through a free sync server that Secret Vault sets up in
+    your own Cloudflare account, and add a computer with a one-time link.
 
 ## What works where
 

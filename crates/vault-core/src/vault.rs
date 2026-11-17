@@ -58,7 +58,7 @@ struct BodyV2 {
 
 /// The body with retired vault keys (section 5.1), before settings.
 #[derive(Serialize, Deserialize)]
-struct BodyV3 {
+pub(crate) struct BodyV3 {
     generation: u64,
     slot_labels: Vec<(SlotId, String)>,
     items: Vec<ItemRecord>,
@@ -568,6 +568,45 @@ impl Vault {
         self.vault_id
     }
 
+    /// The body's plaintext encoding (section 5).
+    pub(crate) fn encode_body(&self) -> Zeroizing<Vec<u8>> {
+        let body = Body {
+            generation: self.generation,
+            slot_labels: self.slot_labels.clone(),
+            items: self.items.clone(),
+            clocks: self
+                .items
+                .iter()
+                .filter_map(|r| Some((r.item_id, self.clocks.get(&r.item_id)?.clone())))
+                .collect(),
+            tombstones: self
+                .tombstones
+                .iter()
+                .map(|(id, c)| (*id, c.clone()))
+                .collect(),
+            removed_slots: self.removed_slots.clone(),
+            key_epoch: self.key_epoch,
+            retired_keys: self.retired_keys.clone(),
+            settings: self.settings.values().cloned().collect(),
+        };
+        // Without settings, write the older body (v3), which earlier program
+        // versions still open; the settings field is added only when used.
+        Zeroizing::new(if body.settings.is_empty() {
+            format::encode(&BodyV3 {
+                generation: body.generation,
+                slot_labels: body.slot_labels,
+                items: body.items,
+                clocks: body.clocks,
+                tombstones: body.tombstones,
+                removed_slots: body.removed_slots,
+                key_epoch: body.key_epoch,
+                retired_keys: body.retired_keys,
+            })
+        } else {
+            format::encode(&body)
+        })
+    }
+
     /// A vault-wide setting's value (section 5.2), if it is set.
     pub fn setting(&self, name: &str) -> Option<&[u8]> {
         self.settings
@@ -948,26 +987,7 @@ impl Vault {
             &[&prefix, &header_bytes],
         );
 
-        let body = Body {
-            generation: self.generation,
-            slot_labels: self.slot_labels.clone(),
-            items: self.items.clone(),
-            clocks: self
-                .items
-                .iter()
-                .filter_map(|r| Some((r.item_id, self.clocks.get(&r.item_id)?.clone())))
-                .collect(),
-            tombstones: self
-                .tombstones
-                .iter()
-                .map(|(id, c)| (*id, c.clone()))
-                .collect(),
-            removed_slots: self.removed_slots.clone(),
-            key_epoch: self.key_epoch,
-            retired_keys: self.retired_keys.clone(),
-            settings: self.settings.values().cloned().collect(),
-        };
-        let encoded = Zeroizing::new(format::encode(&body));
+        let encoded = self.encode_body();
         let mut plain = Zeroizing::new(vec![0u8; padded_len(8 + encoded.len())]);
         plain[..8].copy_from_slice(&(encoded.len() as u64).to_le_bytes());
         plain[8..8 + encoded.len()].copy_from_slice(&encoded);

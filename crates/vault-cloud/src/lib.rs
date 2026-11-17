@@ -655,7 +655,6 @@ impl Cloudflare {
                 { "type": "durable_object_namespace", "name": "MAILBOX", "class_name": "Mailbox" },
                 { "type": "secret_text", "name": "ADMIN_KEY", "text": admin_key },
             ],
-            "observability": { "enabled": false },
         });
         match self.existing(worker)? {
             Some(Some(tag)) if tag == "v1" => {}

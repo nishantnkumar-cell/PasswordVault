@@ -9,6 +9,10 @@ the others.
 The service only ever sees the encrypted vault file. You don't give
 Secret Vault any account or password for it, and the service gets no key.
 
+No cloud drive app on some of your computers (for example OneDrive or
+Google Drive on Linux)? [Chapter 15](15-cloud-sync.md) syncs through a free
+server in your own Cloudflare account instead.
+
 Use it when:
 
 - you want the same logins on a Windows desktop and a Linux laptop;

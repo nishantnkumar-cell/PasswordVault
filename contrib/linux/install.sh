@@ -30,6 +30,10 @@ for f in "$here"/bin/*; do
     mv -f "$bin/.$(basename "$f").new" "$bin/$(basename "$f")"
 done
 sed 's|^ExecStart=.*|ExecStart=%h/.local/bin/vaultd|' "$here/share/vaultd.service" >"$units/vaultd.service"
+# Cloud sync helper; enabled by you after `vault cloud setup` or `vault cloud join`.
+if [ -f "$here/share/vault-sync.service" ]; then
+    sed 's|^ExecStart=.*|ExecStart=%h/.local/bin/vault-sync|' "$here/share/vault-sync.service" >"$units/vault-sync.service"
+fi
 sed "s|^Exec=vault-gui|Exec=$bin/vault-gui|" "$here/share/applications/dev.passwordvault.app.desktop" \
     >"$share/applications/dev.passwordvault.app.desktop"
 cp -r "$here/share/hicolor/." "$share/icons/hicolor/"

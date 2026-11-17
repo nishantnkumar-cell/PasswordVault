@@ -175,8 +175,16 @@ impl Mirror {
                 let d = digest(&bytes);
                 let local = fs::read(&self.copy).ok().map(|b| digest(&b));
                 if local != Some(d) {
-                    write_atomic(&self.copy, &bytes)
-                        .map_err(|e| format!("{}: {e}", self.copy.display()))?;
+                    write_atomic(&self.copy, &bytes).map_err(|e| {
+                        let hint = if e.kind() == io::ErrorKind::ReadOnlyFilesystem
+                            || e.kind() == io::ErrorKind::PermissionDenied
+                        {
+                            " (if the service started before cloud sync was set up, restart it)"
+                        } else {
+                            ""
+                        };
+                        format!("{}: {e}{hint}", self.copy.display())
+                    })?;
                     self.local_changed();
                 }
                 self.version = Some(v);
