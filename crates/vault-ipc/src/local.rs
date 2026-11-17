@@ -145,7 +145,7 @@ fn login_name() -> Option<String> {
 }
 
 /// The name of `uid` in a passwd file's text.
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", all(test, unix)))]
 fn passwd_name(passwd: &str, uid: &str) -> Option<String> {
     passwd.lines().find_map(|l| {
         let mut f = l.split(':');
