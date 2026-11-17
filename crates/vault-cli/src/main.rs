@@ -2,6 +2,7 @@
 
 #![forbid(unsafe_code)]
 
+mod cloud;
 mod health;
 
 use std::io::{self, BufRead, IsTerminal, Write};
@@ -119,6 +120,20 @@ SYNC                           through a folder that OneDrive, Google Drive or D
                                on a device with no vault yet, this joins the vault in FILE
   sync off                     stop syncing (the copy in the folder stays)
   sync now                     merge now instead of at the next check
+
+CLOUD SYNC                     through your own free Cloudflare account (user guide, chapter 15)
+  cloud                        show cloud sync state
+  cloud setup [--account ID] [--worker NAME] [--keep-token] [--name DEVICE]
+  cloud setup --server URL     use a sync server you deployed yourself (asks for its admin key)
+                               put the sync server in your Cloudflare account and start
+                               syncing; asks for an API token (Workers Scripts: Edit)
+  cloud link                   a one-time link and QR code (10 minutes) to add a device
+  cloud join LINK [--name DEVICE]
+                               add this device; on a device with no vault yet, this joins it
+  cloud devices                list devices; `cloud remove ID` cuts one off (a lost phone)
+  cloud update                 upload this program's newer sync server code
+  cloud forget-token           stop keeping the Cloudflare API token in the vault
+  cloud off [--everywhere]     stop on this device; --everywhere also deletes the server copy
 
 APP PASSWORDS (Linux)          what apps keep through the Secret Service (vaultd --secret-service)
   apps                         programs allowed to use them since vaultd started
@@ -430,18 +445,23 @@ fn method(args: &[String]) -> UnlockMethod {
     }
 }
 
+/// A QR code on stderr, light modules on dark as terminals usually are
+/// (phones read both).
+fn print_qr(text: &str) {
+    let code = qrcode::QrCode::new(text.as_bytes()).unwrap_or_else(|e| die(e));
+    let img = code
+        .render::<qrcode::render::unicode::Dense1x2>()
+        .dark_color(qrcode::render::unicode::Dense1x2::Light)
+        .light_color(qrcode::render::unicode::Dense1x2::Dark)
+        .build();
+    eprintln!("\n{img}\n");
+}
+
 /// Show what the phone ceremony needs: the QR code (Linux) and progress.
 fn phone_event(e: PhoneEvent) {
     match e {
         PhoneEvent::Qr(uri) => {
-            let code = qrcode::QrCode::new(uri.as_bytes()).unwrap_or_else(|e| die(e));
-            // Light modules on dark, as terminals usually are; phones read both.
-            let img = code
-                .render::<qrcode::render::unicode::Dense1x2>()
-                .dark_color(qrcode::render::unicode::Dense1x2::Light)
-                .light_color(qrcode::render::unicode::Dense1x2::Dark)
-                .build();
-            eprintln!("\n{img}\n");
+            print_qr(&uri);
             eprintln!(
                 "Scan this with your phone's camera, keep Bluetooth on on both, and confirm on the phone."
             );
@@ -1387,6 +1407,7 @@ fn main() {
             println!("Copies of the old file can still be opened with the old factors.");
         }
         "apps" => apps(rest),
+        "cloud" => cloud::cloud(rest),
         "code" | "codes" => code(rest),
         "ssh" => ssh(rest),
         "pgp" => pgp(rest),

@@ -1157,11 +1157,19 @@ impl Daemon {
             return Ok(Response::Status(self.status()));
         };
         let hex = |s: &str, n: usize| {
-            s.len() == n && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+            s.len() == n
+                && s.bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
         };
         let token_ok = (43..=128).contains(&d.token.len())
-            && d.token.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
-        if !d.server.starts_with("https://")
+            && d.token
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
+        // https, or plain http to this computer only (`wrangler dev`, tests).
+        let server_ok = ["https://", "http://127.0.0.1:", "http://localhost:"]
+            .iter()
+            .any(|p| d.server.starts_with(p));
+        if !server_ok
             || d.server.contains(char::is_whitespace)
             || !hex(&d.mailbox, 32)
             || !hex(&d.device, 16)
@@ -1173,7 +1181,8 @@ impl Daemon {
         b.recursive(true);
         #[cfg(unix)]
         std::os::unix::fs::DirBuilderExt::mode(&mut b, 0o700);
-        b.create(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+        b.create(&dir)
+            .map_err(|e| format!("{}: {e}", dir.display()))?;
         crate::store::write_atomic(&dir.join(CLOUD_DEVICE_FILE), d.to_text().as_bytes())
             .map_err(|e| e.to_string())?;
         if let Some(f) = file {

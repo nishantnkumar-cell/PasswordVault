@@ -448,9 +448,10 @@ pub struct CloudSettings {
     pub server: String,
     /// This vault's mailbox on the server: 32 lowercase hex characters.
     pub mailbox: String,
-    /// The Cloudflare account the server runs in.
+    /// The Cloudflare account the server runs in; empty for a server the
+    /// user deployed by hand (`vault cloud setup --server`).
     pub account_id: String,
-    /// The Worker's name in that account.
+    /// The Worker's name in that account; empty for a hand-deployed server.
     pub worker: String,
     /// Creates mailboxes on the server; set on the Worker at setup.
     pub admin_key: Secret,

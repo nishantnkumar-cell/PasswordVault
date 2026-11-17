@@ -32,23 +32,27 @@
 
 import { DurableObject } from "cloudflare:workers";
 
+// Only the default handler and Mailbox may be exported: the Workers runtime
+// refuses a main module that exports anything else. The tests repeat the
+// limits below.
+
 /** Bumped whenever this file changes, so `vault cloud status` can tell that
  * the deployed server is older than the program's copy. */
-export const REVISION = 1;
+const REVISION = 1;
 
 /** Largest vault file accepted. Vaults with thousands of items are < 1 MiB. */
-export const MAX_FILE = 4 * 1024 * 1024;
+const MAX_FILE = 4 * 1024 * 1024;
 /** SQLite rows in a Durable Object are limited to 2 MB. */
 const CHUNK = 1024 * 1024;
 /** Saves per mailbox per minute before 429. */
-export const MAX_WRITES_PER_MINUTE = 60;
+const MAX_WRITES_PER_MINUTE = 60;
 /** Open watch sockets per mailbox. */
-export const MAX_WATCHERS = 32;
+const MAX_WATCHERS = 32;
 /** Devices per mailbox. */
-export const MAX_DEVICES = 32;
+const MAX_DEVICES = 32;
 /** Unused join tickets kept per mailbox. */
-export const MAX_TICKETS = 5;
-export const TICKET_SECONDS = 10 * 60;
+const MAX_TICKETS = 5;
+const TICKET_SECONDS = 10 * 60;
 /** last_seen is written at most this often per device (writes cost quota). */
 const SEEN_EVERY_MS = 60 * 60 * 1000;
 
@@ -139,7 +143,9 @@ export default {
   /** @param {Request} req @param {Env} env */
   async fetch(req, env) {
     const url = new URL(req.url);
-    if (url.protocol !== "https:") return text(400, "use https");
+    // Plain http only on this computer, for `wrangler dev` and tests.
+    const loopback = url.hostname === "127.0.0.1" || url.hostname === "localhost";
+    if (url.protocol !== "https:" && !loopback) return text(400, "use https");
     if (url.pathname === "/" || url.pathname === "/v1") {
       return json({ service: "secret-vault-sync", api: 1, revision: REVISION });
     }

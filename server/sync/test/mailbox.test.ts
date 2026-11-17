@@ -1,6 +1,11 @@
 import { exports } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
-import { MAX_FILE, MAX_TICKETS, MAX_WRITES_PER_MINUTE, REVISION } from "../src/index.js";
+
+// The server's limits (src/index.js), which it may not export.
+const MAX_FILE = 4 * 1024 * 1024;
+const MAX_TICKETS = 5;
+const MAX_WRITES_PER_MINUTE = 60;
+const REVISION = 1;
 
 const ORIGIN = "https://sync.example.com";
 const BASE = `${ORIGIN}/v1/m/`;
@@ -54,6 +59,11 @@ async function join(id: string, token: string, name = "Phone"): Promise<{ token:
 }
 
 describe("the server", () => {
+  it("exports only what the Workers runtime accepts", async () => {
+    const mod = await import("../src/index.js");
+    expect(Object.keys(mod).sort()).toEqual(["Mailbox", "default"]);
+  });
+
   it("says what it is", async () => {
     const r = await exports.default.fetch(new Request(`${ORIGIN}/`));
     expect(await r.json()).toEqual({ service: "secret-vault-sync", api: 1, revision: REVISION });

@@ -14,6 +14,7 @@ path = "src/main.rs"
 data-encoding = "2"
 qrcode = { version = "0.14.1", default-features = false }
 rpassword = "7"
+vault-cloud = { path = "../vault-cloud" }
 vault-core = { path = "../vault-core" }
 vault-import = { path = "../vault-import", features = ["qr"] }
 vault-hw = { path = "../vault-hw", default-features = false, features = ["phone"] }
