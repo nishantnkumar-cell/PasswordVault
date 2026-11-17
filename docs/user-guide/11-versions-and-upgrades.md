@@ -55,7 +55,8 @@ No GitHub account is needed. Each release has:
 |---|---|
 | `SecretVault-Setup-<version>.exe` | Windows 10 (1903 or later) and 11, 64-bit Intel or AMD |
 | `SecretVault-Setup-<version>-arm64.exe` | Windows 11 on Arm (Snapdragon and other Arm PCs) |
-| `secret-vault_<version>_amd64.deb` | Debian 13, Ubuntu 24.04 and newer |
+| `secret-vault_<version>_amd64.deb` | Debian 13, Ubuntu 24.04 and newer: everything in one go, system service included |
+| `secret-vault-<version>-x86_64.pkg.tar.zst` | Arch Linux and distributions based on it (`sudo pacman -U`); from 0.2.0-beta.3 on |
 | `secret-vault-<version>-linux-x86_64.tar.gz` | Other Linux distributions (64-bit) |
 | `SecretVault-<version>-macos.pkg` | macOS 11 and newer, Apple silicon and Intel: the installer ([chapter 13](13-macos.md)) |
 | `secret-vault-<version>-macos-universal.tar.gz` | macOS without an administrator password, with `install.sh` |
@@ -202,15 +203,27 @@ going back.
 sudo apt install ./secret-vault_0.3.0_amd64.deb
 ```
 
-apt replaces the older package in place. Then, as each person who uses the
-vault on the computer, restart the daemon so it runs the new version:
-
-```sh
-systemctl --user restart vaultd
-```
+apt replaces the older package in place and restarts every running
+`vaultd@<login>` on the new version, so each vault is locked until its
+owner unlocks it again. Upgrading from a package older than 0.2.0-beta.3
+also sets up the system service for you, and gives each person who had a
+`vaultd@` their own `vault-<login>` account in place of the shared `vault`
+one (you can then remove the old account with `sudo userdel vault`). If you
+used the per-user service (`systemctl --user`) before, your vault is copied
+to the system service and the per-user service is turned off.
 
 apt also refuses to install an older package over a newer one unless you
 ask it to (`--allow-downgrades`).
+
+### Arch Linux (.pkg.tar.zst)
+
+```sh
+sudo pacman -U secret-vault-0.3.0-x86_64.pkg.tar.zst
+```
+
+pacman replaces the older package and restarts running daemons, as apt
+does above. The version inside has no hyphen (`0.2.0beta.3` for
+`0.2.0-beta.3`), so pacman sorts a beta before the release it leads to.
 
 ### Other Linux (.tar.gz)
 

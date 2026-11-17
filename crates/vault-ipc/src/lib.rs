@@ -422,6 +422,10 @@ pub enum Request {
     PasswordHistory { id: ItemId },
     /// The newest entries of the activity log. Answers with `Activity`.
     Activity { limit: u32 },
+    /// Give an OpenPGP key made by an older version hash, cipher and
+    /// compression preferences (new self-signatures; same key). Answers with
+    /// `PublicKey`, the updated certificate to hand out again.
+    UpdatePgpPreferences { id: ItemId },
 }
 
 /// One line of the activity log (`Request::Activity`).

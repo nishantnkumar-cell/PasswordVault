@@ -90,12 +90,10 @@ pub(super) struct Setup {
 
 /// Which methods this build of the daemon can add, by platform.
 fn extras() -> &'static [Extra] {
-    // Windows Hello or Touch ID, then the TPM or a Mac's Secure Enclave.
-    if cfg!(any(windows, target_os = "macos")) {
-        &[Extra::Hello, Extra::Tpm, Extra::SecurityKey]
-    } else {
-        &[Extra::Tpm, Extra::SecurityKey]
-    }
+    // Windows Hello, Touch ID or (Linux) the login password through
+    // polkit, then the TPM or a Mac's Secure Enclave. Quick unlock shows
+    // only where vaultd says it is supported.
+    &[Extra::Hello, Extra::Tpm, Extra::SecurityKey]
 }
 
 impl App {
@@ -136,7 +134,7 @@ impl App {
             (Op::SetupHello, Response::Status(st)) => {
                 s.added.push(Extra::Hello);
                 s.open = None;
-                self.notice = Some(format!("{HELLO} quick unlock is on."));
+                self.notice = Some(format!("Quick unlock with {HELLO} is on."));
                 self.on_status(st);
             }
             _ => self.error = Some("Unexpected answer from vaultd.".into()),
@@ -884,7 +882,8 @@ fn about(e: Extra) -> &'static str {
         Extra::Hello if cfg!(target_os = "macos") => {
             "Unlock again with your fingerprint, Apple Watch or Mac password"
         }
-        Extra::Hello => "Unlock again with your face, fingerprint or Windows PIN",
+        Extra::Hello if cfg!(windows) => "Unlock again with your face, fingerprint or Windows PIN",
+        Extra::Hello => "Unlock again with your login password or fingerprint",
         Extra::Tpm => "Ties the vault to this computer, together with your password",
         Extra::SecurityKey => "Your password plus a touch on a USB or NFC key",
     }

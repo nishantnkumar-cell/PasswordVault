@@ -7,11 +7,14 @@ license.workspace = true
 publish.workspace = true
 
 [features]
-default = ["fido2", "tpm", "logind", "secret-service"]
+default = ["fido2", "tpm", "logind", "polkit", "secret-service"]
 fido2 = ["vault-hw/fido2"]
 tpm = ["vault-hw/tpm"]
 # Lock on suspend and screen lock (Linux, systemd-logind over D-Bus).
 logind = ["dep:zbus"]
+# Quick unlock with the login password or a fingerprint, through polkit
+# (Linux, the system bus).
+polkit = ["dep:zbus"]
 # The freedesktop Secret Service (org.freedesktop.secrets) on the session
 # bus, for apps that keep passwords through libsecret (Linux, opt-in at run
 # time with --secret-service).

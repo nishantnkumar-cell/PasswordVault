@@ -102,6 +102,26 @@ example `friend.asc`, or import them with `vault-gpg --import friend.asc`
 ([chapter 9](09-gpg-programs.md#5-other-peoples-public-keys)). They are not
 secret, so the vault itself does not store them.
 
+### Keys made before 0.2.0-beta.1: add algorithm preferences
+
+Keys the vault made before version 0.2.0-beta.1 do not say which hash and
+cipher algorithms they prefer. GnuPG then signs mail to you with SHA-1,
+which Thunderbird refuses as an invalid signature. `vault pgp ls` marks
+such keys with "no algorithm preferences". Fix one with:
+
+```sh
+vault pgp update-prefs me > me.asc
+```
+
+It adds the preferences (SHA-512, SHA-384, SHA-256; AES-256, AES-192,
+AES-128) to the key's self-signatures and prints the updated public key.
+It is the same key, with the same fingerprint, so nothing else changes:
+just send `me.asc` again to the people and programs that have the old one
+(in Thunderbird, import it again as in
+[chapter 9, step 3](09-gpg-programs.md#step-3-give-thunderbird-your-public-key)).
+Running it on a key that already has preferences changes nothing. Same on
+Linux, Windows and macOS.
+
 ## 3. Encrypt
 
 **In the desktop app:** use the **Encrypt and sign** page under Tools. See

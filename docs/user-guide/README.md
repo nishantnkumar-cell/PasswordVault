@@ -72,12 +72,11 @@ random program on your computer cannot just ask for your passwords.
 | Secure notes, cards, identities | Yes | Yes | Yes |
 | Card and address autofill | Yes (card fill needs a desktop session) | Yes | Yes |
 | Unlock: password, recovery code | Yes | Yes | Yes |
-| Packages and in-place upgrades | `.deb`, and `.tar.gz` with `install.sh` | Installer, no administrator rights needed | Installer `.pkg` (administrator password), or `.tar.gz` with `install.sh` (no administrator rights) |
+| Packages and in-place upgrades | `.deb` and Arch package (everything in one go, system service included), and `.tar.gz` with `get.sh` or `install.sh` | Installer, no administrator rights needed | Installer `.pkg` (administrator password), or `.tar.gz` with `install.sh` (no administrator rights) |
 | Unlock: password + FIDO2 security key | Yes | Yes (Windows 11, or Windows 10 with current updates) | Yes |
 | Unlock: password + this device's chip | Yes (TPM) | Yes (TPM) | Yes (Secure Enclave, Apple silicon or T2) |
-| Quick unlock with Windows Hello or Touch ID (after a full unlock) | Not yet | Yes (Windows Hello) | Yes (Touch ID) |
+| Quick unlock after a full unlock | Yes (login password or fingerprint, through polkit) | Yes (Windows Hello) | Yes (Touch ID) |
 | Unlock: password + phone passkey | Yes (Bluetooth) | Yes (Windows 11 23H2 or later) | Not yet |
-| Face or fingerprint quick unlock on Linux | Not yet | Not applicable | Not applicable |
 | iPhone, iPad and Android apps sync with this computer | Yes | Yes | Yes |
 | SSH agent and git signing | Yes | Yes (untested on real hardware) | Yes |
 | OpenPGP keys | Yes | Yes | Yes |

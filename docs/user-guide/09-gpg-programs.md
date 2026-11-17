@@ -340,7 +340,7 @@ encrypted message), or the step that failed.
 | "Unable to sign message" or "Sending of the message failed" | Run `gpgme-check.py` (above). Usually GPGME is not installed, the path in `alternative_gpg_path` is wrong, or the vault is locked. |
 | An encrypted message stays unreadable, with no approval window | Check that the mail was encrypted to your vault key (`vault-gpg -d --list-only -v mail.asc` names the key IDs), and that the vault is unlocked. |
 | Your own signatures show as unverified | Import your public key and accept it (step 3). |
-| Mail from a GnuPG user shows an invalid signature | Their GnuPG signed with SHA-1, which Thunderbird refuses. GnuPG does that when your key lists no preferred algorithms: vault keys made before this release list none. Make a new key (`vault pgp new`) and send people its public key, or ask the sender to add `digest-algo SHA512` to their `gpg.conf`. |
+| Mail from a GnuPG user shows an invalid signature | Their GnuPG signed with SHA-1, which Thunderbird refuses. GnuPG does that when your key lists no preferred algorithms: vault keys made before 0.2.0-beta.1 list none (`vault pgp ls` marks them). Run `vault pgp update-prefs ID`, then send people the public key it prints (and import it into Thunderbird again, step 3); the key itself stays the same. Or ask the sender to add `digest-algo SHA512` to their `gpg.conf`. |
 
 ## What it does not do
 
