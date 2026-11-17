@@ -29,7 +29,14 @@ die() { printf 'vault-setup-user: %s\n' "$*" >&2; exit 1; }
 [ "$(id -u)" = 0 ] || die "run as root (sudo vault-setup-user ...)"
 
 account() { echo "vault-$1"; }
-nologin() { command -v nologin 2>/dev/null || echo /usr/sbin/nologin; }
+# An absolute path: useradd refuses a bare name (and dpkg's PATH may differ).
+nologin() {
+    local p
+    for p in /usr/sbin/nologin /sbin/nologin /usr/bin/nologin; do
+        [ -x "$p" ] && { echo "$p"; return; }
+    done
+    echo /bin/false
+}
 has_systemd() { [ -d /run/systemd/system ] && command -v systemctl >/dev/null; }
 
 # Every vault-* account this script made, as "login account" lines.
