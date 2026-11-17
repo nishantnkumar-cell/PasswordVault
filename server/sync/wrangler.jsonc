@@ -1,0 +1,20 @@
+// Secret Vault cloud sync server (docs/cloud-sync.md). Deployed by the
+// "Deploy sync server" workflow (.github/workflows/sync-server.yml).
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "vault-sync",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+  // Served on <name>.<your subdomain>.workers.dev; no domain needed.
+  "workers_dev": true,
+  "preview_urls": false,
+  "durable_objects": {
+    "bindings": [{ "name": "MAILBOX", "class_name": "Mailbox" }]
+  },
+  // SQLite-backed Durable Objects are the kind the Workers Free plan offers.
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Mailbox"] }],
+  // Nothing about requests is logged by this code; Cloudflare's own request
+  // logs stay off unless you turn them on in the dashboard.
+  "observability": { "enabled": false }
+  // CREATE_KEY is a secret (wrangler secret put CREATE_KEY), never set here.
+}
