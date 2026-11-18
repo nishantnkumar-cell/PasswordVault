@@ -56,22 +56,29 @@ pub trait Clip {
 }
 
 /// What this system calls its quick unlock check (vault_hw::PRESENCE_NAME).
+/// On Linux it is polkit asking for the login password (or a fingerprint).
 pub(crate) const HELLO: &str = if cfg!(target_os = "macos") {
     "Touch ID"
-} else {
+} else if cfg!(windows) {
     "Windows Hello"
+} else {
+    "your login password"
 };
 /// The ways the quick unlock check accepts, as a sentence start.
 pub(crate) const HELLO_WAYS: &str = if cfg!(target_os = "macos") {
     "Your fingerprint, Apple Watch or Mac password"
-} else {
+} else if cfg!(windows) {
     "Face, fingerprint or your Windows PIN"
+} else {
+    "Your login password, or a fingerprint where the computer has one set up"
 };
 /// What to show while the quick unlock check waits for the person.
 pub(crate) const HELLO_CONFIRM: &str = if cfg!(target_os = "macos") {
     "Confirm it's you with Touch ID…"
-} else {
+} else if cfg!(windows) {
     "Confirm it's you in the Windows Security window…"
+} else {
+    "Confirm it's you in the password window…"
 };
 
 /// The command palette's shortcut as this system writes it.
@@ -1797,7 +1804,7 @@ impl App {
                 ui.add(
                     egui::Label::new(
                         RichText::new(format!(
-                            "{HELLO} unlock shows here from the next time the vault locks."
+                            "Quick unlock with {HELLO} shows here from the next time the vault locks."
                         ))
                         .color(theme::MUTED),
                     )

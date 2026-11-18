@@ -36,13 +36,15 @@ SETUP
 UNLOCKING                      METHOD is one of --password (default), --fido2, --phone, --tpm,
                                --recovery
   unlock [METHOD]              unlock the vault
-  unlock --hello               quick unlock with Windows Hello or Touch ID (after a full
-                               unlock, see below); --touch-id is the same
+  unlock --hello               quick unlock with Windows Hello, Touch ID or (Linux) your
+                               login password (after a full unlock, see below);
+                               --touch-id is the same
   lock [--full]                lock it and wipe keys from memory (--full: forget the
                                quick unlock key too, so the next unlock needs METHOD)
   quick-unlock [HOURS|off]     show, turn on (for HOURS after each full unlock, 1 to 24)
-                               or turn off quick unlock with Windows Hello (Windows) or
-                               Touch ID (macOS)
+                               or turn off quick unlock with Windows Hello (Windows),
+                               Touch ID (macOS) or your login password or fingerprint
+                               through polkit (Linux)
 
 ITEMS                          ID may be any unique prefix of an item ID
   ls [KIND]                    list items, or only logins, notes, cards, identities or keys
@@ -91,6 +93,9 @@ OPENPGP KEYS                   keys stay in vaultd; FILE defaults to stdin, -o t
                                (--pq: post-quantum v6 key, RFC 9980)
   pgp import TITLE FILE [--no-confirm]    store a secret key (asks its passphrase)
   pgp ls | pub ID | confirm ID on|off | export ID [METHOD]
+  pgp update-prefs ID          give a key made before 0.2.0-beta.1 hash and cipher
+                               preferences (so GnuPG stops signing with SHA-1); prints
+                               the updated public key to hand out again
   pgp encrypt [-r ID].. [-R CERT].. [--sign ID] [--binary] [FILE] [-o OUT]
                                -r: a key in the vault, -R: a certificate file
   pgp decrypt [FILE] [-o OUT]  with whichever vault key the message is for
@@ -150,13 +155,17 @@ ENVIRONMENT
 /// The quick unlock check on this system.
 const PRESENCE: &str = if cfg!(target_os = "macos") {
     "Touch ID"
-} else {
+} else if cfg!(windows) {
     "Windows Hello"
+} else {
+    "your login password"
 };
 const CONFIRM: &str = if cfg!(target_os = "macos") {
     "Confirm it's you with Touch ID or your Mac password..."
-} else {
+} else if cfg!(windows) {
     "Confirm it's you in the Windows Security window..."
+} else {
+    "Confirm it's you in the password window on your desktop..."
 };
 
 fn print_quick(q: &QuickUnlockInfo) {
@@ -306,7 +315,7 @@ fn die(msg: impl std::fmt::Display) -> ! {
 }
 
 fn socket_path() -> PathBuf {
-    local::endpoint().unwrap_or_else(|e| die(e))
+    local::client_endpoint().unwrap_or_else(|e| die(e))
 }
 
 fn token_path() -> PathBuf {
@@ -968,7 +977,8 @@ fn main() {
             };
             if !s.quick_unlock.supported {
                 die(
-                    "quick unlock needs Windows Hello or Touch ID, which this system does not have",
+                    "quick unlock needs Windows Hello, Touch ID or (on Linux) polkit, which this \
+                     system does not have",
                 );
             }
             print_quick(&s.quick_unlock);
@@ -1726,7 +1736,7 @@ fn ssh(args: &[String]) {
             print!("{}", k.as_str());
         }
         "agent" => {
-            let p = local::ssh_agent_endpoint().unwrap_or_else(|e| die(e));
+            let p = local::client_ssh_agent_endpoint().unwrap_or_else(|e| die(e));
             #[cfg(unix)]
             println!("export SSH_AUTH_SOCK={}", p.display());
             #[cfg(windows)]
@@ -1874,6 +1884,17 @@ fn pgp(args: &[String]) {
         "pub" => {
             let id = key_id(&mut c, &pos(0, "ID"));
             print_public(&mut c, id);
+        }
+        "update-prefs" => {
+            let id = key_id(&mut c, &pos(0, "ID"));
+            let Response::PublicKey(text) = c.call(Request::UpdatePgpPreferences { id }) else {
+                die("unexpected response")
+            };
+            eprintln!(
+                "The key states its preferences now. Give the public key below to the people \
+                 and programs that have the old one (for Thunderbird: import it again)."
+            );
+            print!("{text}");
         }
         "confirm" => {
             let id = key_id(&mut c, &pos(0, "ID"));

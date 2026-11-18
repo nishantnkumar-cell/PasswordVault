@@ -1,0 +1,7 @@
+#!/bin/sh
+set -e
+# @HOOKS@ (package.sh puts contrib/linux/hooks.sh here)
+if [ "$1" = configure ]; then
+    if [ -n "$2" ]; then fresh=; else fresh=1; fi
+    vault_after_install /usr/sbin/vault-setup-user "$fresh"
+fi

@@ -103,7 +103,7 @@ struct Client {
 
 impl Client {
     fn connect() -> Result<Client, String> {
-        let p = local::endpoint().map_err(|e| e.to_string())?;
+        let p = local::client_endpoint().map_err(|e| e.to_string())?;
         let stream = local::connect(&p).map_err(|e| {
             format!(
                 "cannot reach vaultd at {}: {e}. Is it running?",

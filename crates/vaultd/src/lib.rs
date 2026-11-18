@@ -5,7 +5,7 @@
 pub mod approve;
 pub mod daemon;
 #[cfg(all(
-    any(feature = "logind", feature = "secret-service"),
+    any(feature = "logind", feature = "polkit", feature = "secret-service"),
     target_os = "linux"
 ))]
 pub mod dbus;
@@ -15,6 +15,8 @@ pub mod logind;
 #[cfg(target_os = "macos")]
 pub mod macsession;
 pub mod pgp;
+#[cfg(all(feature = "polkit", target_os = "linux"))]
+pub mod polkit;
 #[cfg(all(feature = "secret-service", target_os = "linux"))]
 pub mod secret_service;
 pub mod server;

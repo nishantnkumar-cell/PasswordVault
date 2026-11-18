@@ -195,7 +195,7 @@ struct Daemon {
 impl Daemon {
     fn call(&mut self, request: Request) -> Response {
         if self.stream.is_none() {
-            match local::endpoint().and_then(|p| local::connect(&p)) {
+            match local::client_endpoint().and_then(|p| local::connect(&p)) {
                 Ok(s) => self.stream = Some(s),
                 Err(_) => return Response::Error("vaultd is not running".into()),
             }

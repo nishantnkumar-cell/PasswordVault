@@ -39,6 +39,8 @@ const MAX_BACKOFF: Duration = Duration::from_secs(300);
 const MAX_QUICK_HOURS: u32 = 24;
 /// Failed Windows Hello or Touch ID attempts before the quick unlock key is forgotten.
 const QUICK_ATTEMPTS: u32 = 3;
+/// What the presence prompt says when quick unlock is turned on.
+pub const QUICK_ON_MESSAGE: &str = "Turn on quick unlock for Secret Vault";
 
 pub struct Daemon {
     store: Store,
@@ -524,18 +526,63 @@ impl Daemon {
     }
 
     fn set_quick_unlock(&mut self, hours: u32) -> R<Response> {
+        if let Some(hello) = self.quick_unlock_check(hours)? {
+            hello.check_available()?;
+            hello.verify(QUICK_ON_MESSAGE)?;
+        }
+        self.apply_quick_unlock(hours)
+    }
+
+    /// The presence check that turning quick unlock on for `hours` needs,
+    /// or `None` to turn it off.
+    fn quick_unlock_check(&self, hours: u32) -> R<Option<Arc<dyn vault_hw::Presence>>> {
         if hours > MAX_QUICK_HOURS {
             return Err(format!(
                 "quick unlock lasts at most {MAX_QUICK_HOURS} hours after a full unlock"
             ));
         }
-        if hours > 0 {
-            let hello = self.hw.presence.as_ref().ok_or(
-                "quick unlock needs Windows Hello or Touch ID, which this system does not have",
-            )?;
-            hello.check_available()?;
-            hello.verify("Turn on quick unlock for Secret Vault")?;
+        if hours == 0 {
+            return Ok(None);
         }
+        self.hw.presence.clone().map(Some).ok_or_else(|| {
+            "quick unlock needs Windows Hello, Touch ID or (on Linux) polkit, which this \
+             system does not have"
+                .into()
+        })
+    }
+
+    /// Start turning quick unlock on or off for the client `token`: check
+    /// the request and hand back the presence check to run, as
+    /// [`Daemon::begin_quick_unlock`] does, so the prompt is open without
+    /// the daemon lock. `None`: nothing to ask (turning it off).
+    pub fn begin_set_quick_unlock(
+        &mut self,
+        token: Option<&ClientToken>,
+        hours: u32,
+    ) -> R<Option<Arc<dyn vault_hw::Presence>>> {
+        self.full_client(token)?;
+        self.quick_unlock_check(hours)
+    }
+
+    /// Finish turning quick unlock on or off with the presence check's
+    /// verdict. The client and the open vault are checked again: the vault
+    /// may have locked while the prompt was open.
+    pub fn end_set_quick_unlock(
+        &mut self,
+        token: Option<&ClientToken>,
+        hours: u32,
+        verdict: Result<(), String>,
+    ) -> Response {
+        let r = verdict
+            .and_then(|()| self.full_client(token))
+            .and_then(|()| self.apply_quick_unlock(hours));
+        match r {
+            Ok(r) => r,
+            Err(m) => Response::Error(m),
+        }
+    }
+
+    fn apply_quick_unlock(&mut self, hours: u32) -> R<Response> {
         self.store
             .set_quick_unlock_hours(hours)
             .map_err(|e| e.to_string())?;
@@ -1756,6 +1803,24 @@ impl Daemon {
                     recovery_code: Some(Zeroizing::new(code.as_str().to_owned())),
                 })
             }
+            Request::UpdatePgpPreferences { id } => {
+                let mut item = self.item(&id)?;
+                let Some(KeyData::OpenPgp { tsk, .. }) = item.key.as_mut() else {
+                    return Err("this item has no OpenPGP key".into());
+                };
+                if let Some(updated) = pgp::update_preferences(tsk)? {
+                    *tsk = updated;
+                    item.modified = now();
+                    self.vault()?
+                        .put_item(rng, &id, &item.to_bytes())
+                        .map_err(e)?;
+                    self.save()?;
+                }
+                let Some(KeyData::OpenPgp { tsk, .. }) = &item.key else {
+                    unreachable!()
+                };
+                Ok(Response::PublicKey(pgp::public_armored(tsk)?))
+            }
             Request::Activity { limit } => Ok(Response::Activity(
                 self.store.activity((limit as usize).clamp(1, 500)),
             )),
@@ -2145,7 +2210,7 @@ fn describe_key(k: &KeyData) -> String {
             ssh::describe(openssh).unwrap_or_else(|_| "unreadable SSH key".into())
         }
         KeyData::OpenPgp { tsk, .. } => {
-            pgp::describe(tsk).unwrap_or_else(|_| "unreadable OpenPGP key".into())
+            pgp::describe_with_note(tsk).unwrap_or_else(|_| "unreadable OpenPGP key".into())
         }
     }
 }

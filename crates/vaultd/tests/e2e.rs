@@ -1698,3 +1698,90 @@ fn activity_log_records_what_happened_without_secrets() {
         .unwrap_or_default();
     assert!(!log.contains(PW));
 }
+
+/// A presence check like polkit's on Linux: it needs the requesting
+/// program's PID, records it, and can be held open.
+struct PeerPresence {
+    hold: Arc<std::sync::atomic::AtomicBool>,
+    peers: Arc<Mutex<Vec<Option<u32>>>>,
+}
+
+impl vaultd::hw::Presence for PeerPresence {
+    fn check_available(&self) -> vaultd::hw::HwResult<()> {
+        Err("needs the requesting program".into())
+    }
+
+    fn verify(&self, _message: &str) -> vaultd::hw::HwResult<()> {
+        Err("needs the requesting program".into())
+    }
+
+    fn check_available_for(&self, peer: Option<u32>) -> vaultd::hw::HwResult<()> {
+        peer.map(|_| ()).ok_or("no peer".into())
+    }
+
+    fn verify_for(&self, _message: &str, peer: Option<u32>) -> vaultd::hw::HwResult<()> {
+        self.peers.lock().unwrap().push(peer);
+        while self.hold.load(std::sync::atomic::Ordering::SeqCst) {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        peer.map(|_| ()).ok_or("no peer".into())
+    }
+}
+
+#[test]
+fn quick_unlock_asks_for_the_requesting_program() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let dir = tempfile::tempdir().unwrap();
+    let hold = Arc::new(AtomicBool::new(false));
+    let peers = Arc::new(Mutex::new(Vec::new()));
+    let mut hw = soft_hw();
+    hw.presence = Some(Arc::new(PeerPresence {
+        hold: hold.clone(),
+        peers: peers.clone(),
+    }));
+    let (sock, _d) = start_daemon_with(
+        dir.path(),
+        server::current_user(),
+        Duration::from_secs(600),
+        hw,
+    );
+    let mut c = C::new(&sock);
+    let Response::Initialized { token, .. } = c.ok(Request::Init {
+        password: s(PW),
+        client_name: "cli".into(),
+    }) else {
+        panic!()
+    };
+    c.token = Some(token.clone());
+
+    // Turning it on and quick unlocking both ask about this process.
+    c.ok(Request::SetQuickUnlock { hours: 8 });
+    c.ok(Request::Lock);
+    c.ok(Request::Unlock {
+        method: UnlockMethod::Hello,
+    });
+    let me = Some(std::process::id());
+    assert_eq!(*peers.lock().unwrap(), vec![me, me]);
+
+    // An open "turn on" prompt does not stall other clients, and a vault
+    // that locked meanwhile is not changed by a late answer.
+    c.ok(Request::SetQuickUnlock { hours: 0 });
+    hold.store(true, Ordering::SeqCst);
+    let waiting = {
+        let sock = sock.clone();
+        let token = token.clone();
+        std::thread::spawn(move || {
+            let mut c = C::new(&sock);
+            c.token = Some(token);
+            c.call(Request::SetQuickUnlock { hours: 4 })
+        })
+    };
+    std::thread::sleep(Duration::from_millis(200));
+    let mut other = C::new(&sock);
+    other.token = Some(token);
+    other.ok(Request::LockFully);
+    hold.store(false, Ordering::SeqCst);
+    assert!(matches!(waiting.join().unwrap(), Response::Error(_)));
+    other.ok(Request::Unlock { method: pw() });
+    assert_eq!(status(&mut other).quick_unlock.hours, 0);
+}

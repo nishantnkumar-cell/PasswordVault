@@ -327,6 +327,59 @@ Good to know:
   vault is unlocked. Leave quick unlock off if that matters more to you
   than typing the password.
 
+## Quick unlock on Linux: login password or fingerprint
+
+On Linux, quick unlock works the same way as Windows Hello above, but your
+desktop asks instead: the same window that asks for your password when you
+install updates (polkit). It accepts your **login password**, or your
+**fingerprint** if your computer has a reader set up for signing in
+(fprintd), or your face where Howdy is set up. This is the computer's login
+password, not your vault's master password.
+
+What you need:
+
+- A desktop session (GNOME, KDE Plasma, Xfce, Cinnamon, MATE and others all
+  have the password window). Over SSH there is no window to show, so quick
+  unlock fails there and you unlock with your master password.
+- The package, `get.sh` or the steps in `contrib/systemd/vaultd@.service`
+  installed the policy file
+  `/usr/share/polkit-1/actions/dev.passwordvault.quick-unlock.policy`. A
+  build from source needs
+  `sudo install -m644 contrib/polkit/dev.passwordvault.quick-unlock.policy /usr/share/polkit-1/actions/`.
+- For fingerprints: enrol a finger in your desktop's settings (Settings >
+  Users > Fingerprint Login on GNOME) and, on Debian and Ubuntu, turn on
+  "Fingerprint authentication" in `sudo pam-auth-update`.
+
+Then, with the vault unlocked:
+
+```sh
+vault quick-unlock 8        # quick unlock for 8 hours after each full unlock
+vault lock
+vault unlock --hello        # the password window opens; type your login password or touch the reader
+vault quick-unlock off      # turn it off again
+```
+
+In the desktop app: **Unlock methods**, then **Quick unlock with your login
+password**, pick a time and press **Apply**. While quick unlock is
+available, the lock screen shows **Unlock with your login password**.
+
+Good to know:
+
+- Every quick unlock asks again: the vault never reuses an earlier answer,
+  even one from a moment ago.
+- If an administrator adds a polkit rule that lets this action through
+  without asking, vaultd notices and refuses quick unlock rather than
+  opening without a check.
+- It works whether vaultd runs as you or as its own `vault-<login>` system
+  account. The window shows in the session of the program that asked (the
+  app, or the terminal you typed `vault unlock --hello` in).
+- The same limits as Windows Hello apply: three failed or cancelled tries
+  switch it off until the next full unlock, it never stands in for a full
+  method, and while it is available someone who can read vaultd's memory
+  could get the vault key. Your login password is usually shorter than
+  your master password, so leave quick unlock off on a computer where
+  others may know or watch your login password.
+
 ## Add another password or a new recovery code
 
 ```sh
@@ -429,7 +482,9 @@ slots but not revoke.
   directly, with the PIN typed in the app or the `vault` command, as on
   Linux, and need no extra permission. See
   [Installing and running on macOS](13-macos.md).
-- **Linux:** no Windows Hello equivalent yet. Face and fingerprint unlock
-  are planned as the same kind of quick unlock.
-- **Linux:** when `vaultd` runs as the separate `vault` system user, install
-  `contrib/udev/70-vault-fido.rules` so it can reach security keys.
+- **Linux:** quick unlock asks for your login password or fingerprint
+  through polkit, in place of Windows Hello or Touch ID
+  ([above](#quick-unlock-on-linux-login-password-or-fingerprint)).
+- **Linux:** when `vaultd` runs as its own `vault-<login>` system account,
+  `contrib/udev/70-vault-fido.rules` must be installed so it can reach
+  security keys (the packages and `get.sh` do this).

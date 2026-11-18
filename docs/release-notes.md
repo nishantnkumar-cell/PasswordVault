@@ -84,6 +84,70 @@ folder sync with that vault) before running `vault cloud setup`. Vaults
 without cloud sync are written as before. Family sharing is planned
 separately.
 
+### Linux: one package installs everything, and quick unlock with your login password
+
+- **Install everything in one go.** The `.deb` (Debian 13, Ubuntu 24.04
+  and newer) and a new **Arch Linux package**
+  (`secret-vault-<version>-x86_64.pkg.tar.zst`, for `sudo pacman -U`) now
+  install the programs, the app menu entry, the system service, the
+  security key rule, TPM access and the quick unlock setting. Installed
+  with `sudo`, the package starts your own `vaultd@<you>` right away and
+  copies a vault you made with the per-user service. Others on the
+  computer get theirs with `sudo vault-setup-user enable <login>`.
+  How to start:
+  [Another easy way: one package](user-guide/01-getting-started.md#another-easy-way-one-package-everything-in-one-go).
+- **Each person's vaultd runs as its own account.** `vaultd@alex` now runs
+  as `vault-alex` instead of one `vault` account shared by everyone, so a
+  fault in one person's daemon cannot reach another person's memory or
+  vault file. Upgrading (the packages or `get.sh`) moves existing
+  instances over and restarts them; the old shared `vault` account can
+  then be removed with `sudo userdel vault`.
+- **No more `VAULT_SOCKET`.** The `vault` command, the desktop app, the
+  browser host and `vault-gpg` find the system service's socket
+  (`/run/vault/<you>/vaultd.sock`) by themselves. `get.sh` stops adding the
+  setting to your shell start-up files and removes the lines it added
+  before.
+- **Quick unlock with your login password or fingerprint.** After a full
+  unlock, the vault can be opened again with your computer's login
+  password, or a fingerprint (fprintd) or face (Howdy) where the computer
+  has one set up, through the desktop's polkit password window. It works
+  with vaultd as you or as its own account, asks fresh every time, and
+  refuses rather than opens if a local polkit rule would skip the
+  question. How to start:
+  [Quick unlock on Linux](user-guide/02-unlocking.md#quick-unlock-on-linux-login-password-or-fingerprint).
+- **Fixed:** turning quick unlock on no longer holds up other programs
+  while the Windows Hello, Touch ID or polkit window is open.
+
+| | Linux | Windows | macOS |
+| --- | --- | --- | --- |
+| Quick unlock | Login password or fingerprint (polkit), new | Windows Hello | Touch ID |
+| One-step package | `.deb` and Arch package, new: system service included | Installer | `.pkg` |
+| Daemon as its own account | One per person, new | No (per-user daemon) | No (launch agent) |
+
+Known limits: quick unlock needs a desktop session (over SSH there is no
+window to ask in). Fingerprints work only where the computer's login
+already accepts them (on Debian and Ubuntu, `sudo pam-auth-update`). The
+Arch package is built and installed in CI but not yet tried on a real Arch
+computer.
+
+### OpenPGP keys from older versions get algorithm preferences
+
+- **`vault pgp update-prefs ID`.** Keys the vault made before 0.2.0-beta.1
+  name no preferred hash or cipher, so GnuPG signs mail to them with
+  SHA-1 and Thunderbird shows those signatures as invalid. The command
+  adds the preferences new keys have, keeps the key and its fingerprint,
+  and prints the updated public key to send again. `vault pgp ls` marks
+  keys that need it. Same on Linux, Windows and macOS.
+- How to start:
+  [Keys made before 0.2.0-beta.1](user-guide/07-openpgp.md#keys-made-before-020-beta1-add-algorithm-preferences).
+
+### Phone passkeys on libwebauthn 0.11 (Linux)
+
+- The Linux phone passkey code moved to libwebauthn 0.11, whose hybrid
+  (QR code and Bluetooth) transport replaced the old caBLE module. Nothing
+  changes in use; phone slots made before keep working. Windows and macOS
+  are not affected.
+
 ### iPhone and iPad: unlock methods, import, SSH keys and keyboard shortcuts
 
 - **Change your unlock methods on the phone.** **Settings > Unlock

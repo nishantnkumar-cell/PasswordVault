@@ -30,19 +30,23 @@ curl -fsSL https://raw.githubusercontent.com/nishantnkumar-cell/PasswordVault/ma
 
 It downloads the newest release, checks it against the release's
 fingerprints (`SHA256SUMS.txt`), and sets everything up. It asks for your
-password once (`sudo`), because it runs `vaultd` as its own `vault` user:
-programs running as you then cannot read the daemon's memory, and your keys
-never reach swap. It also moves a vault you made earlier with the per-user
-service (it asks first, and keeps the old copy). Afterwards, open a new
-terminal, sign out and back in once, and go to
-[Create your vault](#create-your-vault). To upgrade, run the same command
+password once (`sudo`), because it runs `vaultd` as its own system account,
+`vault-<your login>`: programs running as you then cannot read the daemon's
+memory, and your keys never reach swap. It also copies a vault you made
+earlier with the per-user service (the old copy stays as a backup).
+Afterwards go to [Create your vault](#create-your-vault): the `vault`
+command and the app find the service by themselves, with no setting and no
+new terminal needed. To upgrade, run the same command
 again: it keeps your vault, and restarting vaultd locks it, so unlock it
 once afterwards.
 
 On a computer shared by several people, each person runs the command once
-as themselves. Everyone gets their own vault (`/var/lib/vault/<name>`), their
-own master password and their own `vaultd@<name>`, which answers only its
-owner.
+as themselves (or, with a package, `sudo vault-setup-user enable <login>`
+once for each person). Everyone gets their own vault
+(`/var/lib/vault/<name>`), their own master password and their own
+`vaultd@<name>`, which runs as its own account `vault-<name>` and answers
+only its owner. So a fault in one person's daemon cannot reach anyone
+else's memory or vault file.
 
 In this mode there is no approval window, because the daemon has no
 desktop: you pair the browser and other programs by proving your password
@@ -51,25 +55,52 @@ desktop: you pair the browser and other programs by proving your password
 `--user-service` instead: it needs no password and puts everything in
 `~/.local`. On some systems it then offers one `sudo` step so that vaultd can
 keep keys out of swap. `--help` lists every option, and `--uninstall`
-removes the programs and the lines it added to your shell start-up files. It
-never deletes a vault, and it keeps the `vault` system user for the other
-people on the computer.
+removes the programs and the lines older versions added to your shell
+start-up files. It never deletes a vault or anyone's `vault-<name>` account.
 
-### Another easy way: a package
+Quick unlock works in this mode too: your desktop asks for your login
+password or fingerprint (see
+[Quick unlock on Linux](02-unlocking.md#quick-unlock-on-linux-login-password-or-fingerprint)).
+
+### Another easy way: one package, everything in one go
 
 Download a release from the project's
-[Releases page](https://github.com/nishantnkumar-cell/PasswordVault/releases):
+[Releases page](https://github.com/nishantnkumar-cell/PasswordVault/releases)
+and install it with your system's package manager:
 
 - **Debian 13, Ubuntu 24.04 or newer:**
   `sudo apt install ./secret-vault_<version>_amd64.deb`
-- **Any other 64-bit distribution:** unpack
-  `secret-vault-<version>-linux-x86_64.tar.gz` and run `./install.sh` in it
-  (installs into `~/.local`, no root).
+- **Arch Linux (and Manjaro, EndeavourOS):**
+  `sudo pacman -U secret-vault-<version>-x86_64.pkg.tar.zst`
 
-Then start the daemon with `systemctl --user enable --now vaultd` and go to
-[Create your vault](#create-your-vault). Upgrading later is the same
-command with the newer file; see
+The package installs everything at once: the programs, the desktop app's
+menu entry, the system service, the rule that lets it use security keys,
+access to the TPM, and the quick unlock setting. Because you installed it
+with `sudo`, it also makes your own `vault-<your login>` account and starts
+your `vaultd@<your login>` straight away, and it copies a vault you made
+earlier with the per-user service. Then open **Secret Vault** from the app
+menu and go to [Create your vault](#create-your-vault).
+
+Other people on the same computer each need their own daemon. An
+administrator runs this once for each of them:
+
+```sh
+sudo vault-setup-user enable alex      # alex's own vault-alex account and vaultd@alex
+sudo vault-setup-user list             # who is set up, and whether it runs
+sudo vault-setup-user disable alex     # stop it (the vault stays)
+```
+
+Upgrading later is the same install command with the newer file: running
+daemons restart on the new version (so they are locked until unlocked
+again). Removing the package (`sudo apt remove secret-vault`,
+`sudo pacman -R secret-vault`) stops every daemon but keeps the vaults in
+`/var/lib/vault` and the accounts. See
 [Versions, downloads and upgrading](11-versions-and-upgrades.md).
+
+**Any other 64-bit distribution:** unpack
+`secret-vault-<version>-linux-x86_64.tar.gz` and run `./get.sh --from` on
+it, or `./install.sh` (installs into `~/.local`, no root, then start the
+daemon with `systemctl --user enable --now vaultd`).
 
 The rest of this section builds the programs from source instead.
 
@@ -126,11 +157,12 @@ systemctl --user enable --now vaultd
 The service also locks the daemon's memory so keys never reach swap.
 
 > **Stronger option (Linux only).** `contrib/systemd/vaultd@.service` runs
-> `vaultd` as a separate `vault` system user, so even programs running as
-> you cannot read its memory. Its install steps are at the top of the file.
-> In that mode there is no approval window (the daemon has no desktop), so
-> you pair programs by proving an unlock method, and you must set
-> `VAULT_SOCKET=/run/vault/$USER/vaultd.sock` in your shell profile.
+> `vaultd` as its own system account, `vault-<your login>`, so even
+> programs running as you cannot read its memory. Its install steps are at
+> the top of the file (`sudo vault-setup-user enable $USER` does most of
+> them). In that mode there is no approval window (the daemon has no
+> desktop), so you pair programs by proving an unlock method. Programs find
+> its socket, `/run/vault/$USER/vaultd.sock`, without any setting.
 
 Now go to [Create your vault](#create-your-vault).
 

@@ -1,5 +1,5 @@
 # Cloud sync helper (docs/cloud-sync.md) for the system service vaultd@.service:
-# runs as the same "vault" user and mirrors the cloud mailbox to
+# runs as the same account, vault-<you>, and mirrors the cloud mailbox to
 # /var/lib/vault/<you>/cloud, the folder vaultd@<you> keeps in sync.
 #
 #   sudo install -m755 target/release/vault-sync /usr/local/bin/
@@ -15,8 +15,8 @@ Wants=network-online.target
 After=network-online.target vaultd@%i.service
 
 [Service]
-User=vault
-Group=vault
+User=vault-%i
+Group=vault-%i
 ExecStart=/usr/local/bin/vault-sync --dir /var/lib/vault/%i/cloud
 Restart=on-failure
 RestartSec=10
@@ -44,7 +44,7 @@ ProtectHostname=yes
 UMask=0077
 # Only the cloud folder is writable, and vaultd's state (paired clients)
 # is hidden, so a fault in this network-facing program cannot pair a client
-# or touch the vault file, although it runs as the same user as vaultd. The
+# or touch the vault file, although it runs as the same account as vaultd. The
 # folder exists once `vault cloud setup` or `vault cloud join` ran; start
 # this unit after that.
 ReadWritePaths=-/var/lib/vault/%i/cloud

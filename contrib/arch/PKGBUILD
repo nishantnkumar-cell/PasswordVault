@@ -1,0 +1,43 @@
+# Arch Linux package for Secret Vault, built from this source tree.
+# Use contrib/arch/build.sh VERSION (it sets the version and the install
+# hooks); CI runs it in an Arch container for every release.
+pkgname=secret-vault
+pkgver=${VAULT_PKGVER:-0.0.0}
+pkgrel=1
+pkgdesc="Local-first password vault: vault command, desktop app, browser autofill, SSH agent and OpenPGP keys"
+arch=(x86_64)
+url="https://github.com/nishantnkumar-cell/PasswordVault"
+license=(LicenseRef-PolyForm-Noncommercial-1.0.0)
+depends=(glibc gcc-libs systemd systemd-libs dbus tpm2-tss openssl libxkbcommon wayland libglvnd)
+makedepends=(cargo pkgconf hidapi)
+optdepends=(
+    'polkit: quick unlock with your login password or fingerprint'
+    'fprintd: fingerprint for quick unlock'
+    'libx11: the desktop app in an X11 session'
+    'libxcursor: the desktop app in an X11 session'
+    'libxi: the desktop app in an X11 session'
+    'libxrandr: the desktop app in an X11 session'
+    'bluez: phone passkey unlock'
+    'gnupg: vault-gpg for git, pass and Thunderbird'
+)
+install=secret-vault.install
+options=(!lto !debug)
+
+# The source is this checkout (two levels up), not a download.
+_tree=$(cd "$startdir/../.." && pwd)
+
+build() {
+    cd "$_tree"
+    cargo build --release --locked
+}
+
+check() {
+    cd "$_tree"
+    test "$(target/release/vaultd --version)" = "vaultd ${VAULT_VERSION:-}" || [ -z "${VAULT_VERSION:-}" ]
+}
+
+package() {
+    cd "$_tree"
+    BIN_DIR=target/release contrib/linux/stage.sh "$pkgdir" bin
+    install -Dm644 LICENSE.md "$pkgdir/usr/share/licenses/$pkgname/LICENSE.md"
+}

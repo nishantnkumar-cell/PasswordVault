@@ -91,12 +91,48 @@ jobs:
           dpkg-deb --contents target/packages/*.deb | grep -q ./usr/bin/vaultd
           sudo apt-get install -y ./target/packages/*.deb
           test "$(/usr/bin/vault --version)" = "vault $VAULT_VERSION"
+      - name: Check the system service the .deb sets up
+        run: contrib/linux/check-system-service.sh deb
       - uses: actions/upload-artifact@v7
         with:
           name: linux-packages
           path: |
             target/packages/*.deb
             target/packages/*.tar.gz
+
+  # The Arch Linux package, built and installed in an Arch container.
+  arch-package:
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - name: Build tools
+        run: pacman -Syu --noconfirm --needed git rust pkgconf hidapi tpm2-tss dbus systemd libxkbcommon wayland libglvnd polkit
+      - uses: actions/checkout@v7
+      - name: Version
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          export VAULT_COMMIT=${VAULT_COMMIT_SHA::7}
+          echo "VAULT_VERSION=$(contrib/release/version.sh --build)" >> "$GITHUB_ENV"
+      # makepkg refuses to run as root.
+      - name: Build the package
+        run: |
+          useradd -m builder
+          chown -R builder "$GITHUB_WORKSPACE"
+          su builder -c "cd '$GITHUB_WORKSPACE' && CARGO_HOME=/home/builder/.cargo contrib/arch/build.sh '$VAULT_VERSION'"
+      - name: Check the package
+        run: |
+          pkg=target/packages/secret-vault-$VAULT_VERSION-x86_64.pkg.tar.zst
+          pacman -Qip "$pkg"
+          pacman -Qlp "$pkg" | grep -q /usr/bin/vault-setup-user
+          pacman -U --noconfirm "$pkg"
+          test "$(/usr/bin/vault --version)" = "vault $VAULT_VERSION"
+          contrib/linux/check-system-service.sh arch
+          pacman -R --noconfirm secret-vault
+          test ! -e /usr/bin/vaultd
+      - uses: actions/upload-artifact@v7
+        with:
+          name: arch-package
+          path: target/packages/*.pkg.tar.zst
 
   # One universal build (Apple silicon and Intel), as an installer .pkg and
   # an install.sh archive. The job installs the .pkg, checks it and removes
