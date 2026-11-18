@@ -36,21 +36,24 @@ struct WelcomeView: View {
     @State private var busy = false
     @State private var error: String?
     @State private var picking = false
+    @State private var joiningCloud = false
 
     var body: some View {
         CenteredColumn {
             AppIconView().padding(.top, 40)
             Text("Secret Vault").font(.largeTitle.bold()).padding(.top, 22)
-            Text("Your passwords, cards and one-time codes, encrypted on this device. Nothing is sent to a server.")
+            Text("Your passwords, cards and one-time codes, encrypted on this device. Only encrypted copies ever leave it, to your own sync server or folder.")
                 .multilineTextAlignment(.center).foregroundStyle(Palette.muted).padding(.top, 8)
 
             if !creating {
                 VStack(spacing: 12) {
                     Button { creating = true } label: { Text("Create a New Vault").frame(maxWidth: .infinity) }
                         .buttonStyle(.glassProminent).controlSize(.large)
-                    Button { picking = true } label: { Text("Use a Vault from My Computer").frame(maxWidth: .infinity) }
+                    Button { joiningCloud = true } label: { Text("Join with a Link from My Computer").frame(maxWidth: .infinity) }
                         .buttonStyle(.glass).controlSize(.large)
-                    Text("To use your desktop vault here, turn on Sync on your computer with a folder in iCloud Drive, OneDrive or Dropbox, then pick the synced .svault file.")
+                    Button { picking = true } label: { Text("Use a Synced File from My Computer").frame(maxWidth: .infinity) }
+                        .buttonStyle(.glass).controlSize(.large)
+                    Text("With cloud sync on your computer, click Add a Device on its Sync page and scan the code. With folder sync (iCloud Drive, OneDrive or Dropbox), pick the synced .svault file instead.")
                         .font(.footnote).foregroundStyle(Palette.muted).multilineTextAlignment(.center)
                 }
                 .padding(.top, 36)
@@ -88,6 +91,7 @@ struct WelcomeView: View {
         .fileImporter(isPresented: $picking, allowedContentTypes: [.data]) { result in
             do { try vault.join(url: try result.get()) } catch { self.error = describe(error) }
         }
+        .sheet(isPresented: $joiningCloud) { CloudJoinView() }
     }
 }
 

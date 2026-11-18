@@ -1,6 +1,9 @@
 import AuthenticationServices
 import Foundation
 import Observation
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// The one vault on this device, shared by the app and the AutoFill
 /// extension: its file, its unlocked session and the folder sync. Argon2
@@ -15,7 +18,11 @@ final class VaultModel {
     }
 
     struct SyncStatus: Equatable {
+        /// Folder sync (iCloud Drive or another Files location).
         var enabled = false
+        /// Cloud sync: the server's address.
+        var cloud: String?
+        var busy = false
         var last: Date?
         var error: String?
         var needsPassword = false
@@ -42,6 +49,7 @@ final class VaultModel {
 
     func refreshState() {
         sync.enabled = Prefs.syncBookmark != nil
+        sync.cloud = CloudAccess.isOn ? (CloudAccess.server ?? "your sync server") : nil
         if session != nil { state = .unlocked; return }
         guard let data = try? Data(contentsOf: AppGroup.vaultFile), let locked = try? LockedVault(bytes: data) else {
             state = .noVault
@@ -76,6 +84,63 @@ final class VaultModel {
         }
         Prefs.syncBookmark = bookmark
         refreshState()
+    }
+
+    /// Join cloud sync with a link from a computer (Add a device on its Sync
+    /// page, or `vault cloud link`) when there is no vault here yet: keep
+    /// this device's access and the downloaded vault, which then opens with
+    /// the master password.
+    func joinCloud(link: String) async throws {
+        let name = deviceName()
+        let j = try await Task.detached { try cloudJoin(link: link, name: name) }.value
+        guard let file = j.file else {
+            _ = try? await Task.detached { try cloudLeave(access: j.access) }.value
+            throw MobileError.Invalid(message: "The vault is not on the server yet. Open the vault on your computer with its sync helper running, then make a new link.")
+        }
+        _ = try LockedVault(bytes: file)
+        try CloudAccess.save(j.access)
+        CloudAccess.version = j.version
+        CloudAccess.server = j.server
+        CloudAccess.dirty = false
+        try writeLocal(file)
+        refreshState()
+    }
+
+    /// Turn cloud sync on for the open vault with a link from a computer.
+    /// The vault on the server must be this one; the two are merged.
+    func addCloud(link: String) async throws {
+        let s = try unlocked()
+        let name = deviceName()
+        let j = try await Task.detached { try cloudJoin(link: link, name: name) }.value
+        if let file = j.file, (try? LockedVault(bytes: file).vaultId()) != s.vaultId() {
+            _ = try? await Task.detached { try cloudLeave(access: j.access) }.value
+            throw MobileError.DifferentVault(message: "The vault on that server is a different vault from the one on this device. Remove this one first (Settings, Remove from This Device) to use that one.")
+        }
+        try CloudAccess.save(j.access)
+        CloudAccess.server = j.server
+        CloudAccess.version = nil
+        CloudAccess.dirty = true
+        refreshState()
+        await syncNow()
+    }
+
+    /// Stop cloud sync here: this device's access on the server is deleted;
+    /// the vault stays on this device and on the server.
+    func leaveCloud() async {
+        if let a = CloudAccess.access {
+            _ = try? await Task.detached { try cloudLeave(access: a) }.value
+        }
+        CloudAccess.clear()
+        sync.error = nil
+        refreshState()
+    }
+
+    private func deviceName() -> String {
+        #if canImport(UIKit)
+        return UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
+        #else
+        return "iPhone"
+        #endif
     }
 
     // MARK: Unlocking
@@ -278,6 +343,11 @@ final class VaultModel {
             catch { sync.error = "Could not write the synced copy: \(describe(error))" }
         }
         reloadItems()
+        if CloudAccess.isOn {
+            CloudAccess.dirty = true
+            // The AutoFill extension leaves the upload to the app.
+            if syncOnOpen { Task { await syncCloud(s, password: nil) } }
+        }
     }
 
     private func writeLocal(_ bytes: Data) throws {
@@ -299,7 +369,7 @@ final class VaultModel {
     func setSync(url: URL?, create: Bool) async {
         guard let url else {
             Prefs.syncBookmark = nil
-            sync = SyncStatus()
+            sync = SyncStatus(cloud: sync.cloud)
             return
         }
         do {
@@ -319,6 +389,37 @@ final class VaultModel {
     func syncNow(password: String? = nil) async {
         guard let s = session else { return }
         mergeFolder(s, password: password)
+        await syncCloud(s, password: password)
+    }
+
+    /// Merge with the cloud sync server's copy, and upload when it lacks
+    /// something. The network part runs off the main actor.
+    private func syncCloud(_ s: VaultSession, password: String?) async {
+        guard let access = CloudAccess.access, !sync.busy else { return }
+        sync.busy = true
+        defer { sync.busy = false }
+        let known = CloudAccess.version
+        let dirty = CloudAccess.dirty
+        do {
+            let r = try await Task.detached {
+                try s.cloudSync(access: access, known: known, dirty: dirty, password: password)
+            }.value
+            CloudAccess.version = r.version
+            CloudAccess.dirty = false
+            if r.changed {
+                try writeLocal(try s.toBytes())
+                reloadItems()
+            }
+            sync.last = Date()
+            sync.error = nil
+            sync.needsPassword = false
+            sync.conflicts += Int(r.conflicts)
+        } catch MobileError.Rekeyed(let m) {
+            sync.error = m
+            sync.needsPassword = true
+        } catch {
+            sync.error = describe(error)
+        }
     }
 
     private func mergeFolder(_ s: VaultSession, password: String?) {
@@ -409,6 +510,10 @@ final class VaultModel {
         QuickUnlock.disable()
         try? FileManager.default.removeItem(at: AppGroup.vaultFile)
         Prefs.syncBookmark = nil
+        if let a = CloudAccess.access {
+            Task.detached { _ = try? cloudLeave(access: a) }
+        }
+        CloudAccess.clear()
         ASCredentialIdentityStore.shared.removeAllCredentialIdentities { _, _ in }
         refreshState()
     }

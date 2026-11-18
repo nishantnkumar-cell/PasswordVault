@@ -28,12 +28,15 @@ struct SettingsView: View {
     @State private var askPassword = false
     @State private var password = ""
     @State private var confirmRemove = false
+    @State private var joiningCloud = false
+    @State private var confirmLeaveCloud = false
     @State private var error: String?
 
     var body: some View {
         Form {
             unlockSection
-            syncSection
+            cloudSection
+            if vault.sync.cloud == nil { syncSection }
             autofillSection
             Section {
                 NavigationLink {
@@ -83,6 +86,12 @@ struct SettingsView: View {
         } message: {
             Text("An unlock method was revoked on another device. Enter your master password to take the new key.")
         }
+        .sheet(isPresented: $joiningCloud) { CloudJoinView() }
+        .confirmationDialog("Stop cloud sync on this device?", isPresented: $confirmLeaveCloud, titleVisibility: .visible) {
+            Button("Stop Cloud Sync", role: .destructive) { Task { await vault.leaveCloud() } }
+        } message: {
+            Text("This device's access to the server is removed. The vault stays on this device and on your other devices.")
+        }
         .confirmationDialog("Remove the vault from this device?", isPresented: $confirmRemove, titleVisibility: .visible) {
             Button("Remove", role: .destructive) { vault.removeFromDevice() }
         } message: {
@@ -127,6 +136,43 @@ struct SettingsView: View {
         }
     }
 
+    @ViewBuilder private var cloudSection: some View {
+        Section {
+            if let server = vault.sync.cloud {
+                LabeledContent("Server") { Text(server).lineLimit(1).truncationMode(.middle) }
+                LabeledContent("Status") {
+                    if vault.sync.busy {
+                        ProgressView()
+                    } else if let e = vault.sync.error {
+                        Text(e).foregroundStyle(Palette.warn)
+                    } else if let last = vault.sync.last {
+                        Text("Synced \(last, format: .relative(presentation: .named))")
+                    } else {
+                        Text("Waiting")
+                    }
+                }
+                if vault.sync.conflicts > 0 {
+                    Text("\(vault.sync.conflicts) item(s) were edited on two devices at once. Both versions were kept; look for titles ending in \"(conflict)\".")
+                        .font(.footnote).foregroundStyle(Palette.warn)
+                }
+                if vault.sync.needsPassword {
+                    Button("Enter Master Password to Merge") { askPassword = true }
+                }
+                Button { Task { await vault.syncNow() } } label: { Label("Sync Now", systemImage: "arrow.triangle.2.circlepath") }
+                    .disabled(vault.sync.busy)
+                Button("Stop Cloud Sync on This Device", role: .destructive) { confirmLeaveCloud = true }
+            } else {
+                Button { joiningCloud = true } label: { Label("Join with a Link from My Computer", systemImage: "qrcode.viewfinder") }
+            }
+        } header: {
+            Text("Cloud Sync")
+        } footer: {
+            Text(vault.sync.cloud == nil
+                 ? "Sync through your own server (in your Cloudflare account or on a computer at home) that your computer set up. On the computer, click Add a Device on the Sync page."
+                 : "Changes go to the server as you make them, and come in when you open the app or tap Sync Now. The server only ever sees encrypted data.")
+        }
+    }
+
     @ViewBuilder private var syncSection: some View {
         Section {
             if vault.sync.enabled {
@@ -158,7 +204,7 @@ struct SettingsView: View {
                 }
             }
         } header: {
-            Text("Sync")
+            Text("Folder Sync")
         } footer: {
             Text("Secret Vault keeps one encrypted file in a folder you choose (iCloud Drive, OneDrive, Dropbox) and merges changes from every device. The folder's provider only ever sees encrypted data.")
         }

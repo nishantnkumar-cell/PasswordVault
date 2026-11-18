@@ -120,13 +120,30 @@ TestFlight app has AutoFill.
 
 ## Set up the app
 
-The first screen offers two choices. Button names below are the iPhone's;
-Android uses the same words in sentence case (for example *Use a vault from
-my computer*).
+The first screen offers three choices on iPhone and iPad (two on Android).
+Button names below are the iPhone's; Android uses the same words in
+sentence case (for example *Use a vault from my computer*).
+
+### Join cloud sync with a link (iPhone and iPad)
+
+If your computer uses cloud sync ([chapter 15](15-cloud-sync.md) or
+[16](16-cloud-sync-docker.md)):
+
+1. On the computer, click **Add a device** on the **Sync** page. It shows a
+   QR code.
+2. On the phone, tap **Join with a Link from My Computer**, tap the QR code
+   button and point the camera at it (or paste the link), and tap **Join**.
+3. Type your master password and tap **Unlock**.
+
+From then on changes go both ways through your sync server. Android can't
+join cloud sync yet; use folder sync there.
 
 ### Use the vault from your computer
 
-1. Tap **Use a Vault from My Computer**.
+With folder sync on your computer ([chapter 10](10-sync.md)):
+
+1. Tap **Use a Synced File from My Computer** (Android: *Use a vault from
+   my computer*).
 2. The file picker opens. Go to the synced folder (for example *iCloud
    Drive*, *OneDrive* or *Drive*) and pick the vault file, for example
    `vault.svault`.
@@ -462,7 +479,15 @@ unlocked.
 
 ## Sync settings
 
-**Settings > Sync** shows when the vault last synced.
+**Settings > Cloud Sync** (iPhone and iPad) shows your sync server, when
+the vault last synced and any problem. **Sync Now** syncs straight away;
+**Stop Cloud Sync on This Device** removes this phone's access to the
+server and keeps the vault on the phone. When cloud sync is off, **Join with
+a Link from My Computer** turns it on with a link from your computer, and
+the folder sync settings below are shown instead.
+
+**Settings > Folder Sync** (Android: *Sync*) shows when the vault last
+synced.
 
 - **Sync Now** merges straight away. Pulling down on the item list does the
   same.
@@ -487,7 +512,7 @@ unlocked.
 | One-time codes in AutoFill | Yes | Not yet | No |
 | Set up a code from the camera or a link | Yes ("Set Up Codes In") | No, scan in the app | No camera: paste the key or read a QR screenshot (**Add code**, `vault code add`) |
 | Save a new login when you sign up in another app | Not yet | Not yet | Browser extension |
-| Sync | iCloud Drive, OneDrive, Dropbox through Files | Google Drive, OneDrive, Dropbox through the file picker | Any synced folder |
+| Sync | Cloud sync with a link, or iCloud Drive, OneDrive, Dropbox through Files | Google Drive, OneDrive, Dropbox through the file picker (cloud sync not yet) | Cloud sync, or any synced folder |
 | Change master password, new recovery code, remove unlock methods | Yes | Not yet (use a computer) | Yes |
 | Import from another password manager | Yes, from Files | Not yet (use a computer) | Yes |
 | SSH and OpenPGP keys | Public key shown, copied and shared; SSH keys made; not used | Shown, not used | Yes |

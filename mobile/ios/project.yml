@@ -55,7 +55,9 @@ targets:
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: true
         NSFaceIDUsageDescription: Unlock your vault with Face ID instead of typing the master password.
-        NSCameraUsageDescription: Scan a website's QR code to set up its one-time codes.
+        NSCameraUsageDescription: Scan a QR code to set up a site's one-time codes, or to join cloud sync.
+        # Cloud sync with a server on a computer at home (docs/cloud-sync.md).
+        NSLocalNetworkUsageDescription: Sync with the Secret Vault server on your home network.
         ITSAppUsesNonExemptEncryption: false
         # Opening otpauth links puts Secret Vault in iOS's "Set Up Codes In" list.
         CFBundleURLTypes:

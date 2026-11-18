@@ -25,8 +25,8 @@ Use cloud sync when:
 You can still use folder sync instead. Use one or the other on a device,
 not both.
 
-> Phones and tablets cannot join cloud sync yet: that is coming next. Until
-> then, phones keep using folder sync.
+> iPhones and iPads join cloud sync with the same link (see "Add an iPhone
+> or iPad" below). Android phones keep using folder sync for now.
 
 ## What you need
 
@@ -232,6 +232,35 @@ If the new computer already had a different vault, its copy is refused
 aside ([chapter 8, "Where your files are"](08-troubleshooting.md#where-your-files-are)),
 start `vaultd` again and join.
 
+### Add an iPhone or iPad
+
+The phone needs no helper program: the app talks to your sync server
+itself.
+
+1. On the computer, click **Add a device** on the **Sync** page (or run
+   `vault cloud link`).
+2. On the iPhone or iPad, open Secret Vault:
+   - **No vault on it yet:** tap **Join with a Link from My Computer**.
+   - **Already using the vault** (with folder sync): open **Settings**, and
+     under **Cloud Sync** tap **Join with a Link from My Computer**.
+3. Tap the QR code button and point the camera at the computer's screen, or
+   paste the link, and tap **Join** (or **Turn On Cloud Sync**).
+4. On a new phone, unlock with your master password.
+
+![Joining cloud sync on an iPhone](images/ios-cloud-join.png)
+
+The phone sends its changes to the server as you make them and gets the
+others' changes when you open the app, come back to it, pull down on the
+list, or tap **Sync Now** in **Settings > Cloud Sync**. It shows in
+**Devices** on the computer like any other device, where **Remove** cuts it
+off. **Stop Cloud Sync on This Device** in the phone's Settings does the
+same from the phone; the vault stays on it.
+
+With a server on your own computer ([chapter 16](16-cloud-sync-docker.md)),
+the phone asks once to find devices on your local network: tap **Allow**.
+Away from home it syncs again when it is back on your Wi-Fi (or through a
+VPN to your home).
+
 ## Everyday use
 
 There is nothing to do. Edit on any computer while it is unlocked; the
@@ -276,7 +305,8 @@ the source code, then `vault cloud setup --server https://your-address` (or
 |---|---|---|---|
 | Desktop app Sync page and `vault cloud` | Yes | Yes | Yes |
 | Background helper | In the packages; systemd service, starts with the computer or at sign-in | Build from source; Startup folder shortcut | Build from source; start it yourself |
-| Phones and tablets | Coming next (use folder sync until then) | | |
+| iPhone and iPad | Join with the link, as above; no helper needed | | |
+| Android | Not yet: use folder sync | | |
 
 ## Troubleshooting
 

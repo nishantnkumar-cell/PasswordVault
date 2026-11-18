@@ -59,7 +59,7 @@ struct VaultCommands: Commands {
                 .disabled(!open || search == nil)
             Button("Sync Now") { Task { await vault.syncNow() } }
                 .keyboardShortcut("r")
-                .disabled(!open || !vault.sync.enabled)
+                .disabled(!open || (!vault.sync.enabled && vault.sync.cloud == nil))
             Divider()
             Button("Lock") { vault.lock() }
                 .keyboardShortcut("l")

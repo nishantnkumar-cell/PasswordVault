@@ -7359,8 +7359,10 @@ dependencies = [
  "ssh-key",
  "thiserror 2.0.21",
  "uniffi",
+ "vault-cloud",
  "vault-core",
  "vault-import",
+ "vault-ipc",
  "zeroize",
 ]
 

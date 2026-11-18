@@ -28,7 +28,10 @@ getrandom = { version = "=0.4.3", features = ["sys_rng"] }
 ssh-key = { version = "=0.7.0-rc.12", default-features = false, features = ["std", "ed25519", "p256", "getrandom"] }
 thiserror = "2.0.21"
 uniffi = "0.32.2"
+# Cloud sync: the phone talks to the sync server itself (src/cloud.rs).
+vault-cloud = { path = "../vault-cloud" }
 vault-core = { path = "../vault-core" }
+vault-ipc = { path = "../vault-ipc" }
 vault-import = { path = "../vault-import" }
 zeroize = "1.9.1"
 

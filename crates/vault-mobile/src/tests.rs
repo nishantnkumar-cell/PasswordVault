@@ -530,3 +530,99 @@ fn deleting_moves_to_the_trash_and_edits_keep_history() {
     assert!(s.items().is_empty());
     assert!(s.item(id).is_err());
 }
+
+/// Cloud sync against a real sync server: `wrangler dev` in server/sync
+/// (CI's sync-server job), with `VAULT_SYNC_TEST_SERVER` (such as
+/// http://127.0.0.1:8787) and `VAULT_SYNC_TEST_ADMIN` (its `ADMIN_KEY`).
+/// Skipped when they are not set.
+#[test]
+fn phone_joins_cloud_sync_and_both_sides_merge() {
+    let (Ok(server), Ok(admin)) = (
+        std::env::var("VAULT_SYNC_TEST_SERVER"),
+        std::env::var("VAULT_SYNC_TEST_ADMIN"),
+    ) else {
+        eprintln!("skipped: VAULT_SYNC_TEST_SERVER is not set");
+        return;
+    };
+    use vault_cloud::{Fetched, JoinLink, Mailbox, Saved, Server};
+
+    // The computer: a vault, its mailbox, and the file on the server.
+    let computer = new_vault();
+    let pc = &computer.session;
+    pc.save_item(None, login("Example Bank", "bank.example.com"))
+        .unwrap();
+    let mailbox = vault_cloud::random_mailbox().unwrap();
+    let token = vault_cloud::random_token().unwrap();
+    Server::new(&server)
+        .unwrap()
+        .create(&mailbox, &admin, &token, "Laptop")
+        .unwrap();
+    let m = Mailbox::new(&server, &mailbox, &token, None).unwrap();
+    assert_eq!(m.put(0, &pc.to_bytes().unwrap()).unwrap(), Saved::Saved(1));
+    let link = JoinLink {
+        server: server.clone(),
+        mailbox: mailbox.clone(),
+        ticket: m.ticket().unwrap().ticket,
+        fingerprint: None,
+        shared: false,
+    }
+    .to_link();
+
+    // The phone joins with the link and opens the downloaded vault.
+    let j = cloud_join(link.to_string(), "iPhone".into()).unwrap();
+    assert_eq!(cloud_server(j.access.clone()), Some(server.clone()));
+    let phone = LockedVault::new(j.file.unwrap())
+        .unwrap()
+        .unlock_password(PW.into(), 7)
+        .unwrap();
+    assert_eq!(phone.items().len(), 1);
+    // The same link works only once.
+    assert!(cloud_join(link.to_string(), "Second phone".into()).is_err());
+
+    // Nothing new on either side: no upload.
+    let r = phone
+        .cloud_sync(j.access.clone(), j.version, false, None)
+        .unwrap();
+    assert!(!r.changed);
+    assert_eq!(r.version, 1);
+
+    // An item made on the phone reaches the computer.
+    phone
+        .save_item(None, login("Example Mail", "mail.example.com"))
+        .unwrap();
+    let r = phone
+        .cloud_sync(j.access.clone(), Some(r.version), true, None)
+        .unwrap();
+    assert_eq!(r.version, 2);
+    let Fetched::File(v, bytes) = m.get(None).unwrap() else {
+        panic!("no file on the server")
+    };
+    assert_eq!(v, 2);
+    assert!(pc.merge(bytes, None).unwrap().changed);
+    assert_eq!(pc.items().len(), 2);
+
+    // An item made on the computer reaches the phone, even when the phone
+    // saved at the same time (the server refuses the stale save; the phone
+    // reads, merges and saves again).
+    pc.save_item(None, login("Example Shop", "shop.example.com"))
+        .unwrap();
+    assert_eq!(m.put(2, &pc.to_bytes().unwrap()).unwrap(), Saved::Saved(3));
+    phone
+        .save_item(None, login("Example News", "news.example.com"))
+        .unwrap();
+    let r = phone
+        .cloud_sync(j.access.clone(), Some(2), true, None)
+        .unwrap();
+    assert!(r.changed);
+    assert_eq!(phone.items().len(), 4);
+    let Fetched::File(_, bytes) = m.get(None).unwrap() else {
+        panic!("no file on the server")
+    };
+    pc.merge(bytes, None).unwrap();
+    assert_eq!(pc.items().len(), 4);
+
+    // Leaving cuts this phone off; the computer goes on.
+    cloud_leave(j.access.clone()).unwrap();
+    assert!(phone.cloud_sync(j.access, None, false, None).is_err());
+    assert!(m.get(None).is_ok());
+}
