@@ -289,6 +289,17 @@ impl Shared {
         }
     }
 
+    /// What `vault-sync` last said went wrong for this collection, if it
+    /// said so in the last few minutes (for example that the owner removed
+    /// this person, so the server no longer takes their access).
+    fn helper_error(&self, id: &[u8; 16]) -> Option<String> {
+        let text =
+            std::fs::read_to_string(self.dir(id).join("cloud").join(vault_ipc::CLOUD_HELPER_FILE))
+                .ok()?;
+        let h = vault_ipc::HelperStatus::from_text(&text)?;
+        (now().saturating_sub(h.written) < 300).then_some(h.error).flatten()
+    }
+
     pub fn info(&self, me: &[u8; 32]) -> Vec<CollectionInfo> {
         self.open
             .iter()
@@ -303,7 +314,7 @@ impl Shared {
                     members: c.as_ref().map(members).unwrap_or_default(),
                     items: o.vault.as_ref().map_or(0, |v| v.item_ids().count()),
                     device: Some(o.joined.device.clone()),
-                    error: o.error.clone(),
+                    error: o.error.clone().or_else(|| self.helper_error(id)),
                     last_sync: o.last_sync,
                 }
             })

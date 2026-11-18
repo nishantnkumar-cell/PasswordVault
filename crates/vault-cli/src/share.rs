@@ -176,9 +176,9 @@ pub fn share(rest: &[String]) {
             println!(
                 "{}",
                 if owner {
-                    "Deleted the shared collection from the server; it is gone for everyone."
+                    "Deleted the shared collection from the server for everyone. Its items are back in your own vault."
                 } else {
-                    "Left the shared collection."
+                    "Left the shared collection. Its items are no longer on your devices."
                 }
             );
         }

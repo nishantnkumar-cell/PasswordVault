@@ -7384,6 +7384,7 @@ dependencies = [
  "base64 0.23.1",
  "cbc 0.2.1",
  "crypto-bigint 0.7.11",
+ "data-encoding",
  "getrandom 0.4.3",
  "hkdf 0.13.0",
  "nix 0.31.3",

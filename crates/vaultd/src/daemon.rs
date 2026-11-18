@@ -1462,9 +1462,31 @@ impl Daemon {
                 Ok(self.collections())
             }
             Request::CollectionLeave { id } => {
+                // The owner deleting it keeps the items: they come back
+                // into the owner's own vault first. A member leaving gives
+                // up what was never theirs.
+                let owner = self
+                    .joined()
+                    .iter()
+                    .any(|j| j.id == id && self.identity().is_some_and(|(me, _)| j.owner == me.public().fingerprint()));
+                if owner && let Ok(v) = self.shared.vault_mut(&id) {
+                    let items: Vec<_> = v.item_ids().collect();
+                    let mut moved = Vec::new();
+                    for i in &items {
+                        moved.push((*i, v.get_item(i).map_err(e)?));
+                    }
+                    let mine = self.vault.as_mut().ok_or("locked")?;
+                    for (i, data) in &moved {
+                        mine.put_item(rng, i, data).map_err(e)?;
+                    }
+                    if !moved.is_empty() {
+                        self.save_at(None)?;
+                    }
+                }
                 let mut list = self.joined();
                 list.retain(|x| x.id != id);
                 self.set_joined(&list)?;
+                let _ = std::fs::remove_dir_all(self.shared.dir(&id));
                 if let Some((me, _)) = self.identity() {
                     self.shared.load(list, &me);
                 }
