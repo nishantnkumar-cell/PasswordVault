@@ -56,6 +56,12 @@ final class TourTests: XCTestCase {
 
     private func createVault() {
         shot("welcome")
+        // Joining cloud sync with a link from a computer: the sheet, then back.
+        app.buttons["Join with a Link from My Computer"].tap()
+        XCTAssertTrue(app.buttons["Join"].waitForExistence(timeout: 10), "Cloud sync join did not open")
+        shot("cloud-join")
+        app.buttons["Cancel"].tap()
+        XCTAssertTrue(app.buttons["Create a New Vault"].waitForExistence(timeout: 10))
         app.buttons["Create a New Vault"].tap()
         type(phrase, into: app.secureTextFields["Master password"])
         type(phrase, into: app.secureTextFields["Type it again"])

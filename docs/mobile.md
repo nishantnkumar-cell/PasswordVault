@@ -91,6 +91,37 @@ The apps merge when unlocked, when they come back to the foreground, on
 pull to refresh and before each save. A copy that was re-keyed on another
 device needs the master password once (`merge(bytes, password)`).
 
+### Cloud sync (iOS)
+
+The iPhone and iPad app also joins cloud sync ([cloud-sync.md](cloud-sync.md))
+with the one-time link a computer shows. There is no `vault-sync` helper on
+a phone, so `vault-mobile` does the network part itself
+(`crates/vault-mobile/src/cloud.rs`, over `vault-cloud`, blocking, run off
+the main actor):
+
+- `cloud_join(link, name)` checks the link (a personal `#v1.` link, not a
+  shared-collection invite), fetches and pins a Docker server's own
+  certificate authority by the link's fingerprint, registers this device
+  with a fresh token, and downloads the vault.
+- `VaultSession.cloud_sync(access, known, dirty, password)` asks the server
+  whether its copy changed since version `known` (it answers 304 without the
+  file when not), merges a newer copy, and uploads when the server lacks
+  something; a save another device beat is read, merged and saved again.
+- `cloud_leave(access)` deletes this device's access on the server.
+
+The app keeps this device's access (server, mailbox, device id, token, and
+a Docker server's CA) as one text in the Keychain, shared with the AutoFill
+extension (`Shared/CloudAccess.swift`), and the last server version and a
+"has changes" flag in the App Group's preferences. It syncs when unlocked,
+on returning to the foreground, on pull to refresh and Sync Now, and
+uploads after each save. The AutoFill extension only marks changes; the app
+uploads them. There is no live push: a change made elsewhere arrives the
+next time the app syncs. `NSLocalNetworkUsageDescription` lets it reach a
+server on the home network.
+
+Android does not use cloud sync yet (Android work is parked); the same
+`vault-mobile` calls are there for it.
+
 ## AutoFill
 
 | | Android | iOS |

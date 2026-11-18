@@ -60,6 +60,24 @@ jobs:
         working-directory: server/sync
         env:
           WRANGLER_SEND_METRICS: "false"
+      # The phone apps talk to the server themselves (vault-mobile's
+      # cloud.rs): join with a link, merge both ways, a refused stale save.
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch
+        with:
+          toolchain: stable
+      - name: Phone cloud sync against the server in wrangler dev
+        working-directory: server/sync
+        env:
+          WRANGLER_SEND_METRICS: "false"
+          VAULT_SYNC_TEST_SERVER: http://127.0.0.1:8787
+          VAULT_SYNC_TEST_ADMIN: ci-admin-key-for-local-testing-only
+        run: |
+          printf 'ADMIN_KEY=%s\n' "$VAULT_SYNC_TEST_ADMIN" > .dev.vars
+          npx wrangler dev --port 8787 --ip 127.0.0.1 > "$RUNNER_TEMP/wrangler.log" 2>&1 &
+          for i in $(seq 60); do curl -fsS http://127.0.0.1:8787/ >/dev/null 2>&1 && break; sleep 1; done
+          (cd ../.. && cargo test -p vault-mobile --locked phone_joins_cloud_sync -- --nocapture 2>&1 | tee "$RUNNER_TEMP/test.log")
+          ! grep -q skipped "$RUNNER_TEMP/test.log"
+          kill %1 || true
       - name: The Docker server builds, starts and keeps its own certificate
         working-directory: server/sync
         run: |

@@ -20,7 +20,9 @@ use zeroize::Zeroizing;
 
 uniffi::setup_scaffolding!();
 
+mod cloud;
 mod manage;
+pub use cloud::{CloudJoin, CloudSync, cloud_join, cloud_leave, cloud_server};
 pub use manage::{ImportResult, KeyPublic, SshKeyKind};
 
 #[cfg(test)]

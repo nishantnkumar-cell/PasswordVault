@@ -42,6 +42,31 @@ verified developers, rolling out country by country from late 2026; this
 may later need an extra step or block sideloading in some countries. No
 vault file change.
 
+### iPhone and iPad join cloud sync
+
+- **Scan the code on your computer and you're synced.** On the computer,
+  click **Add a device** on the Sync page; on the iPhone or iPad tap **Join
+  with a Link from My Computer** (on the first screen, or in Settings under
+  **Cloud Sync**) and scan the QR code. No cloud drive app, no file to pick.
+- **No helper needed on the phone.** The app talks to your own sync server
+  (Cloudflare or Docker) itself: it sends your changes as you make them, and
+  gets the others' when you open it, pull down on the list or tap **Sync
+  Now**.
+- **A phone that already uses folder sync** can switch: Settings, Cloud
+  Sync, join with a link. The two copies are merged.
+- **Cut a phone off** from the computer's Devices list, or with **Stop Cloud
+  Sync on This Device** on the phone.
+- How to start: [Add an iPhone or iPad](user-guide/15-cloud-sync.md#add-an-iphone-or-ipad).
+
+| | iPhone and iPad | Android | Computers |
+| --- | --- | --- | --- |
+| Join cloud sync with a link | Yes | Not yet (folder sync) | Yes, as before |
+| Server at home (Docker) | Yes, after allowing local network access once | n/a | Yes |
+
+Known limits: no live updates on the phone (changes made elsewhere arrive
+the next time the app syncs). Shared family collections can't be opened on
+phones yet.
+
 ### Share some items with family
 
 - **Shared collections.** Make a collection such as "Family" and add the
@@ -120,7 +145,7 @@ files are new files that earlier versions never see.
 | `vault-sync` helper | In the `.deb` and `.tar.gz`, with systemd services | Build from source, start at sign-in | Build from source, start it yourself | Not yet |
 | Docker server | Docker Engine or Docker Desktop | Docker Desktop (WSL 2) | Docker Desktop | n/a |
 
-Known limits: phone and tablet joining comes in the next update (phones keep using folder sync until then). The Windows
+Known limits: iPhones and iPads join with the same link (see "iPhone and iPad join cloud sync" above); Android keeps using folder sync. The Windows
 installer and Mac `.pkg` don't include `vault-sync` yet. The upload to
 Cloudflare has been tested against a local copy of the Workers runtime, not
 yet against a real account. **Vault file change:** a vault with cloud sync
