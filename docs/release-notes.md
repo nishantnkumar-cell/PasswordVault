@@ -42,7 +42,7 @@ verified developers, rolling out country by country from late 2026; this
 may later need an extra step or block sideloading in some countries. No
 vault file change.
 
-### Cloud sync with your own Cloudflare account
+### Cloud sync with your own Cloudflare account or your own computer
 
 - **Sync your computers through a server in your own free Cloudflare
   account**, set up from the vault itself. `vault cloud setup` asks for your
@@ -64,17 +64,28 @@ vault file change.
   still never goes on the internet. On Linux the packages include it and its
   service: `systemctl --user enable --now vault-sync`, or
   `sudo systemctl enable --now vault-sync@$USER` next to the system service.
-- How to start: [Cloud sync with your own Cloudflare account](user-guide/15-cloud-sync.md).
+- **Or run the server on a computer of your own, with Docker.**
+  `docker compose up -d --build` in `server/sync` starts the same server
+  on your home network, with no account anywhere. It makes its own
+  certificate, and devices check it by a fingerprint that setup and the join
+  link carry: `vault cloud setup --server https://192.168.1.20:8443
+  --fingerprint …`, or **A server on my own computer** in the app.
+- **In the desktop app**: the Sync page sets cloud sync up (Cloudflare,
+  your own server, or a link from another device), shows a join link with
+  its QR code, lists and removes devices, says whether the sync helper is
+  running, and turns cloud sync off. The first-run wizard can join with a
+  link.
+- How to start: [Cloud sync with your own Cloudflare account](user-guide/15-cloud-sync.md),
+  or [with a server on your own computer](user-guide/16-cloud-sync-docker.md).
   How it works: [cloud-sync.md](cloud-sync.md).
 
 | | Linux | Windows | macOS | iPhone, iPad, Android |
 | --- | --- | --- | --- | --- |
-| `vault cloud` commands | Yes | Yes | Yes | Not yet |
+| `vault cloud` commands and the desktop app's Sync page | Yes | Yes | Yes | Not yet |
 | `vault-sync` helper | In the `.deb` and `.tar.gz`, with systemd services | Build from source, start at sign-in | Build from source, start it yourself | Not yet |
-| Desktop app screen | Not yet | Not yet | Not yet | n/a |
+| Docker server | Docker Engine or Docker Desktop | Docker Desktop (WSL 2) | Docker Desktop | n/a |
 
-Known limits: the desktop app screen and phone and tablet joining come in
-the next updates (phones keep using folder sync until then). The Windows
+Known limits: phone and tablet joining comes in the next update (phones keep using folder sync until then). The Windows
 installer and Mac `.pkg` don't include `vault-sync` yet. The upload to
 Cloudflare has been tested against a local copy of the Workers runtime, not
 yet against a real account. **Vault file change:** a vault with cloud sync

@@ -174,9 +174,12 @@ Good to know:
 ### Join a synced vault
 
 On the welcome screen choose **I already use Secret Vault on another
-device**, type the path of the vault file in your synced folder (for
-example `C:\Users\alex\OneDrive\vault.svault`) and press **Join**. Then pair
-the app with the master password you already use.
+device**. With cloud sync, paste the join link from your other device under
+**With cloud sync** and press **Join with the link** ([chapter
+15](15-cloud-sync.md#step-4-add-your-other-computers)). With folder sync,
+type the path of the vault file in your synced folder (for example
+`C:\Users\alex\OneDrive\vault.svault`) under **With a synced folder** and
+press **Join**. Then pair the app with the master password you already use.
 
 ### A vault already exists
 
@@ -632,11 +635,20 @@ hours) and press **Apply**; turning it on asks for Windows Hello once.
 ## Sync
 
 **Sync**, under Tools in the sidebar, keeps the vault in step with your
-other devices through a folder that OneDrive, Google Drive, Dropbox or
-Syncthing keeps up to date. The page shows whether sync is on (green dot),
-which file it uses and when it last synced. See
-[chapter 10](10-sync.md) for setting it up, joining from a second device
-and what to do about conflicts.
+other devices in one of two ways:
+
+- **Cloud sync**, the card at the top: through a sync server in your own
+  Cloudflare account ([chapter 15](15-cloud-sync.md)) or on a computer of
+  your own ([chapter 16](16-cloud-sync-docker.md)). The card sets it up or
+  joins with a link, shows **Add a device** (a one-time link and QR code),
+  **Devices** with **Remove**, whether the sync helper is running, and
+  **Turn off on this computer** or **Turn off everywhere…**.
+- **Folder sync**, through a folder that OneDrive, Google Drive, Dropbox or
+  Syncthing keeps up to date ([chapter 10](10-sync.md)). While cloud sync
+  is on, the folder sync card is not shown; otherwise it is under **Or:
+  folder sync**.
+
+Each shows whether sync is on (green dot) and when the vault last synced.
 
 | | Linux | Windows | macOS |
 |---|---|---|---|

@@ -113,9 +113,9 @@ Out of scope for v1. Root can read `vaultd` memory while unlocked. The vault is 
 | Feed an old or doctored synced copy (folder sync, docs/sync.md) | A synced copy is opened only under the vault key already held (header MAC) or with the user's own factor. Merging is monotone: an old copy cannot bring back deleted items or removed slots. A revoke cannot be undone by a copy under the old key: each vault records fingerprints of the keys it retired and refuses a copy under one of them, whatever epoch it claims (format.md 5.1) A copy of another vault is refused | M |
 | Swap or withhold the synced copy so devices stop seeing each other's edits | Not prevented: the folder's owner controls delivery. Each device keeps its own file and merges again when the copy changes, so nothing is lost locally | Accepted |
 
-### A7, cloud sync server, Cloudflare account or join link
+### A7, cloud sync server, Cloudflare account, Docker host or join link
 
-Cloud sync (docs/cloud-sync.md) keeps the encrypted vault file on a Worker in the user's own Cloudflare account. Actors: whoever controls that account or the API token (including Cloudflare), a stranger on the internet, someone who sees a join link, and a fault in `vault-sync`, the one program that parses network input.
+Cloud sync (docs/cloud-sync.md) keeps the encrypted vault file on a Worker in the user's own Cloudflare account, or in a Docker container on a computer of the user's own. Actors: whoever controls that account, the API token or the Docker host (including Cloudflare), a stranger on the internet or the home network, someone who sees a join link, and a fault in `vault-sync`, the one program that parses network input.
 
 | Threat | Mitigation | Status |
 | --- | --- | --- |
@@ -125,10 +125,12 @@ Cloud sync (docs/cloud-sync.md) keeps the encrypted vault file on a Worker in th
 | The server withholds, delays or deletes the file | Not prevented. Each device keeps its own file and merges again later; nothing is lost locally | Accepted |
 | Someone sees a join link | A link carries a one-time ticket valid 10 minutes, no key or password; using it adds a device that can download the encrypted file (as above) and shows in `vault cloud devices`, where it can be removed | P |
 | The Cloudflare API token leaks | It can change or delete the Worker, so it could serve old copies (refused, A5) or keep copies (as above), not read the vault. The token is used only during setup and updates, never sent to the Worker, and kept in the vault only with `--keep-token`; the guide says to delete it after setup | P |
-| The admin key leaks | It only creates mailboxes on the user's Worker (using up the free plan). It is in the encrypted vault settings | M |
+| The admin key leaks | It only creates mailboxes on the user's server (using up the free plan, or the Docker host's disk). It is in the encrypted vault settings; a Docker server also keeps it in its volume and prints it only on `docker compose exec vault-sync show`, not in the log | M |
 | A lost device keeps syncing | `vault cloud remove` deletes its token on the server and closes its connection; its own copy is protected as in A1 | M |
 | Network attacker between a device and the server | TLS with the Mozilla root store (rustls, webpki-roots); plain http only to 127.0.0.1 or localhost (local testing) | M |
-| A fault in `vault-sync` exploited through a malicious server or network | `vault-sync` holds no key and runs apart from `vaultd`. Its systemd units can write only the `cloud` folder and cannot see `vaultd`'s state (paired clients), so it cannot pair itself or edit the vault file; whatever it writes to the copy is checked like any synced copy. The system unit runs as the `vault` user, like `vaultd@`, which `PR_SET_DUMPABLE=0` keeps from being traced | P |
+| Someone on the home network pretends to be a Docker server | The server's own certificate authority is fetched from `/ca.pem` without TLS checks, but used only if its SHA-256 matches the fingerprint the user typed (from `show`) or the join link carries; then only that authority is trusted. A wrong fingerprint is refused. A user who copies the fingerprint from somewhere other than `show` loses this | M |
+| The Docker host is compromised | Same as the account holder: it holds only encrypted files, token hashes and the CA's private key, and can withhold or serve old copies (A5). It cannot read the vault | P (as A1) |
+| A fault in `vault-sync` exploited through a malicious server or network | `vault-sync` holds no key and runs apart from `vaultd`. Its systemd units can write only the `cloud` folder and cannot see `vaultd`'s state (paired clients), so it cannot pair itself or edit the vault file; whatever it writes to the copy is checked like any synced copy. The system unit `vault-sync@LOGIN` runs as that person's own account `vault-LOGIN`, like `vaultd@`, which `PR_SET_DUMPABLE=0` keeps from being traced | P |
 | Same-user malware reads `cloud/device.conf` | It gives download access to the encrypted file, which the same malware can read from disk anyway | A |
 | The server learns when devices sync, their addresses and the padded file size | Inherent to any server | Accepted |
 

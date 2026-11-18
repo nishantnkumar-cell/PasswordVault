@@ -11,7 +11,8 @@ Secret Vault any account or password for it, and the service gets no key.
 
 No cloud drive app on some of your computers (for example OneDrive or
 Google Drive on Linux)? [Chapter 15](15-cloud-sync.md) syncs through a free
-server in your own Cloudflare account instead.
+server in your own Cloudflare account instead, and [chapter
+16](16-cloud-sync-docker.md) through a server on a computer of your own.
 
 Use it when:
 
@@ -51,7 +52,8 @@ vault sync on ~/Dropbox/vault.svault
 ```
 
 or in the desktop app choose **Sync** under *Tools* in the sidebar, type
-the path in **File in the synced folder** and press **Turn on**.
+the path in **File in the synced folder** (under **Or: folder sync**, below
+the cloud sync card) and press **Turn on**.
 
 ![The Sync page with sync turned on](images/desktop-7-sync.png)
 
