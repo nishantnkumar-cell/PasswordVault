@@ -47,6 +47,8 @@ pub enum Error {
     /// The other copy is locked with a vault key this vault retired in a
     /// revoke, so it is an old copy, not news (section 5.1).
     RetiredKey,
+    /// A setting's name or value is empty or too long (section 5.2).
+    BadSetting,
 }
 
 impl fmt::Display for Error {
@@ -76,6 +78,7 @@ impl fmt::Display for Error {
             Error::RetiredKey => {
                 "the other copy uses a vault key that was revoked; it is an old copy and was not merged"
             }
+            Error::BadSetting => "setting name or value is empty or too long",
         };
         f.write_str(s)
     }

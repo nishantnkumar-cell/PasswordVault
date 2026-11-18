@@ -426,6 +426,170 @@ pub enum Request {
     /// compression preferences (new self-signatures; same key). Answers with
     /// `PublicKey`, the updated certificate to hand out again.
     UpdatePgpPreferences { id: ItemId },
+    /// Cloud sync's settings (kept in the vault, so every device has them)
+    /// and this device's own access to the server. Answers with `Cloud`.
+    CloudGet,
+    /// Store cloud sync's settings in the vault, or remove them with `None`.
+    CloudSet { settings: Option<CloudSettings> },
+    /// Give this device its access to the cloud mailbox and keep the vault in
+    /// sync with the mailbox copy that `vault-sync` mirrors (the `cloud`
+    /// folder next to the vault file). `file` is the copy just downloaded,
+    /// written there first so a new device can join from it. `None` stops
+    /// cloud sync on this device. Like `SetSync`, needs no token while no
+    /// vault exists here. Answers with `Status`.
+    CloudAttach {
+        device: Option<CloudDevice>,
+        file: Option<Vec<u8>>,
+    },
+}
+
+/// Cloud sync settings, stored in the vault under the setting name
+/// [`CLOUD_SETTING`] (docs/cloud-sync.md). They reach every device through
+/// the merge; no device keeps them anywhere else.
+#[derive(Serialize, Deserialize, Clone)]
+pub struct CloudSettings {
+    /// The server, such as `https://vault-sync.example-name.workers.dev`.
+    pub server: String,
+    /// This vault's mailbox on the server: 32 lowercase hex characters.
+    pub mailbox: String,
+    /// The Cloudflare account the server runs in; empty for a server the
+    /// user deployed by hand (`vault cloud setup --server`).
+    pub account_id: String,
+    /// The Worker's name in that account; empty for a hand-deployed server.
+    pub worker: String,
+    /// Creates mailboxes on the server; set on the Worker at setup.
+    pub admin_key: Secret,
+    /// The Cloudflare API token, kept only if the user chose to, for updating
+    /// the server later without pasting a new one.
+    pub api_token: Option<Secret>,
+    /// For a server with its own certificate authority (the Docker server,
+    /// `vault cloud setup --server URL --fingerprint FP`): that authority's
+    /// certificate, PEM. Devices trust only it for this server. `None` for
+    /// a server with a public certificate, such as Cloudflare's.
+    pub ca_cert: Option<String>,
+}
+
+/// Name of the vault setting that holds [`CloudSettings`].
+pub const CLOUD_SETTING: &str = "cloud-sync";
+
+/// One device's own access to the cloud mailbox. Never synced: each device
+/// has its own token, so a lost one can be removed on its own.
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct CloudDevice {
+    pub server: String,
+    pub mailbox: String,
+    /// This device's id on the server (16 hex characters).
+    pub device: String,
+    pub token: Secret,
+    /// The server's own certificate authority, PEM ([`CloudSettings::ca_cert`]).
+    pub ca_cert: Option<String>,
+}
+
+/// Name of the file in the cloud folder that holds a [`CloudDevice`].
+pub const CLOUD_DEVICE_FILE: &str = "device.conf";
+/// Name of the mailbox copy in the cloud folder.
+pub const CLOUD_COPY_FILE: &str = "vault.svault";
+
+impl CloudDevice {
+    /// The `key=value` text kept in [`CLOUD_DEVICE_FILE`].
+    pub fn to_text(&self) -> Secret {
+        Secret::new(format!(
+            "# Secret Vault cloud sync: this device's access to its mailbox.\n\
+             # Written by vaultd; read by vault-sync. Keep it private.\n\
+             server={}\nmailbox={}\ndevice={}\ntoken={}\n{}",
+            self.server,
+            self.mailbox,
+            self.device,
+            *self.token,
+            // One line: base64 of the PEM.
+            self.ca_cert
+                .as_ref()
+                .map(|c| format!("ca={}\n", data_encoding::BASE64.encode(c.as_bytes())))
+                .unwrap_or_default()
+        ))
+    }
+
+    /// Reads [`Self::to_text`]'s format.
+    pub fn from_text(text: &str) -> Option<CloudDevice> {
+        let get = |k: &str| {
+            text.lines()
+                .find_map(|l| l.strip_prefix(k)?.strip_prefix('='))
+                .map(|v| v.trim().to_owned())
+                .filter(|v| !v.is_empty())
+        };
+        Some(CloudDevice {
+            server: get("server")?,
+            mailbox: get("mailbox")?,
+            device: get("device")?,
+            token: Secret::new(get("token")?),
+            ca_cert: match get("ca") {
+                Some(b) => {
+                    Some(String::from_utf8(data_encoding::BASE64.decode(b.as_bytes()).ok()?).ok()?)
+                }
+                None => None,
+            },
+        })
+    }
+}
+
+/// Name of the file in the cloud folder where `vault-sync` says how it is
+/// doing ([`HelperStatus`]).
+pub const CLOUD_HELPER_FILE: &str = "helper.status";
+
+/// What `vault-sync` last said about itself, rewritten at least once a
+/// minute while it runs.
+#[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
+pub struct HelperStatus {
+    /// When it wrote this (Unix seconds); older than a few minutes means it
+    /// is not running.
+    pub written: u64,
+    /// When the server last answered; 0 if never.
+    pub reached: u64,
+    /// Whether it is listening for changes (the WebSocket is open).
+    pub watching: bool,
+    /// Why the last attempt failed, if it did.
+    pub error: Option<String>,
+}
+
+impl HelperStatus {
+    /// The text kept in [`CLOUD_HELPER_FILE`].
+    pub fn to_text(&self) -> String {
+        format!(
+            "written={}\nreached={}\nwatching={}\n{}",
+            self.written,
+            self.reached,
+            self.watching,
+            self.error
+                .as_ref()
+                .map(|e| format!("error={}\n", e.replace('\n', " ")))
+                .unwrap_or_default()
+        )
+    }
+
+    pub fn from_text(text: &str) -> Option<HelperStatus> {
+        let get = |k: &str| {
+            text.lines()
+                .find_map(|l| l.strip_prefix(k)?.strip_prefix('='))
+                .map(str::trim)
+        };
+        Some(HelperStatus {
+            written: get("written")?.parse().ok()?,
+            reached: get("reached")?.parse().ok()?,
+            watching: get("watching")? == "true",
+            error: get("error").map(|e| e.chars().take(300).collect()),
+        })
+    }
+}
+
+/// What `CloudGet` answers.
+#[derive(Serialize, Deserialize, Default, Clone)]
+pub struct CloudInfo {
+    /// The vault's cloud settings; `None` while locked or not set up.
+    pub settings: Option<CloudSettings>,
+    /// This device's access, if it has joined.
+    pub device: Option<CloudDevice>,
+    /// What the `vault-sync` helper last said, if it ever ran here.
+    pub helper: Option<HelperStatus>,
 }
 
 /// One line of the activity log (`Request::Activity`).
@@ -627,6 +791,8 @@ pub enum Response {
     History(Vec<(u64, Secret)>),
     /// The activity log, newest first.
     Activity(Vec<ActivityEntry>),
+    /// Cloud sync settings and this device's access.
+    Cloud(CloudInfo),
 }
 
 /// Write one frame: u32 little-endian length, then postcard bytes.
@@ -678,6 +844,31 @@ pub fn parse_id(s: &str) -> Option<[u8; 16]> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn cloud_device_text_round_trips() {
+        let d = super::CloudDevice {
+            server: "https://vault-sync.example-name.workers.dev".into(),
+            mailbox: "0123456789abcdef0123456789abcdef".into(),
+            device: "0011223344556677".into(),
+            token: super::Secret::new("A".repeat(43)),
+            ca_cert: None,
+        };
+        assert!(super::CloudDevice::from_text(&d.to_text()) == Some(d.clone()));
+        let own = super::CloudDevice {
+            ca_cert: Some("-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n".into()),
+            ..d
+        };
+        assert!(super::CloudDevice::from_text(&own.to_text()) == Some(own));
+        assert!(super::CloudDevice::from_text("server=x\n").is_none());
+        let h = super::HelperStatus {
+            written: 1_700_000_000,
+            reached: 1_699_999_990,
+            watching: true,
+            error: Some("could not reach the server".into()),
+        };
+        assert_eq!(super::HelperStatus::from_text(&h.to_text()), Some(h));
+    }
+
     use super::*;
 
     #[test]

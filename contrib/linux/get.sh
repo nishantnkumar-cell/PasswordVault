@@ -27,7 +27,7 @@ set -euo pipefail
 
 repo=nishantnkumar-cell/PasswordVault
 need=$((512 << 20)) # lockable memory vaultd wants (docs/vaultd.md)
-bins=(vaultd vault vault-gui vault-prompt vault-native-host vault-gpg)
+bins=(vaultd vault vault-gui vault-prompt vault-native-host vault-gpg vault-sync)
 me=$(id -un)
 home_share=${XDG_DATA_HOME:-$HOME/.local/share}
 home_state=${XDG_STATE_HOME:-$HOME/.local/state}
@@ -88,11 +88,11 @@ drop_socket_lines() { # take out what add_line added for VAULT_SOCKET
 [ "$(id -u)" != 0 ] || die "run this as yourself, not as root: it sets vaultd up for the signed-in user"
 
 if [ -n "$uninstall" ]; then
-    if user_systemd; then systemctl --user disable --now vaultd 2>/dev/null || true; fi
+    if user_systemd; then systemctl --user disable --now vault-sync vaultd 2>/dev/null || true; fi
     drop_socket_lines
     system=
     find "$home_share/icons/hicolor" -name 'dev.passwordvault.app.*' -delete 2>/dev/null || true
-    rm -f "${bins[@]/#/$HOME/.local/bin/}" "$units/vaultd.service" \
+    rm -f "${bins[@]/#/$HOME/.local/bin/}" "$units/vaultd.service" "$units/vault-sync.service" \
         "$home_share/applications/dev.passwordvault.app.desktop" "$HOME/.config/environment.d/50-secret-vault.conf"
     if { [ -f /etc/systemd/system/vaultd@.service ] || [ -e /usr/local/bin/vaultd ]; } &&
         ask "Also remove the system-wide install (vaultd@$me, /usr/local/bin; sudo)?"; then
@@ -108,10 +108,11 @@ if [ -n "$uninstall" ]; then
             ask "Remove it for everyone?" || die "kept the system-wide install; nothing else was changed for others"
         fi
         for u in "vaultd@$me.service" $instances; do
-            sudo systemctl disable --now "$u" 2>/dev/null || true
+            sudo systemctl disable --now "vault-sync@${u#vaultd@}" "$u" 2>/dev/null || true
         done
         [ ! -x /usr/local/sbin/vault-setup-user ] || sudo /usr/local/sbin/vault-setup-user stop-all
         sudo rm -f "${bins[@]/#//usr/local/bin/}" /etc/systemd/system/vaultd@.service \
+            /etc/systemd/system/vault-sync@.service \
             /etc/udev/rules.d/70-vault-fido.rules /usr/local/sbin/vault-setup-user \
             /usr/local/share/applications/dev.passwordvault.app.desktop
         sudo rm -rf /usr/local/share/secret-vault /etc/systemd/system/vaultd@.service.d
@@ -273,6 +274,7 @@ else
     sudo install -d /usr/local/bin /usr/local/sbin /usr/local/share/icons /usr/local/share/applications \
         /usr/local/share/secret-vault /etc/sysusers.d /etc/udev/rules.d /etc/systemd/system
     for b in "${bins[@]}"; do
+        [ -f "$dir/bin/$b" ] || continue # vault-sync is new in 0.2.0
         # Replace, not overwrite in place: a running vaultd keeps its old file.
         sudo install -m755 "$dir/bin/$b" "/usr/local/bin/.$b.new"
         sudo mv -f "/usr/local/bin/.$b.new" "/usr/local/bin/$b"
@@ -290,6 +292,11 @@ else
     sudo install -m644 "$work/70-vault-fido.rules" /etc/udev/rules.d/70-vault-fido.rules
     sudo udevadm control --reload 2>/dev/null && sudo udevadm trigger --subsystem-match=hidraw 2>/dev/null || true
     sudo install -m644 "$work/vaultd@.service" /etc/systemd/system/vaultd@.service
+    # Cloud sync helper (`vault cloud`); older archives do not have it.
+    if [ -f "$dir/share/vault-sync@.service" ]; then
+        sudo install -m644 "$dir/share/vault-sync@.service" /etc/systemd/system/vault-sync@.service
+    fi
+    sudo systemctl daemon-reload
 
     if user_systemd && systemctl --user -q is-enabled vaultd 2>/dev/null; then
         systemctl --user disable --now vaultd >/dev/null 2>&1 || true

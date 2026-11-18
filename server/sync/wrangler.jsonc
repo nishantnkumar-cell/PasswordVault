@@ -1,0 +1,21 @@
+// Secret Vault cloud sync server (docs/cloud-sync.md). `vault cloud setup`
+// uploads src/index.js itself; this file is for tests and hand deploys.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "vault-sync",
+  "main": "src/index.js",
+  "compatibility_date": "2026-11-01",
+  // Served on <name>.<your subdomain>.workers.dev; no domain needed.
+  "workers_dev": true,
+  "preview_urls": false,
+  "durable_objects": {
+    "bindings": [{ "name": "MAILBOX", "class_name": "Mailbox" }]
+  },
+  // SQLite-backed Durable Objects are the kind the Workers Free plan offers.
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Mailbox"] }],
+  // Nothing about requests is logged by this code; Cloudflare's own request
+  // logs stay off unless you turn them on in the dashboard.
+  "observability": { "enabled": false }
+  // ADMIN_KEY is a secret that `vault cloud setup` makes and sets; for a
+  // hand deploy: npx wrangler secret put ADMIN_KEY
+}

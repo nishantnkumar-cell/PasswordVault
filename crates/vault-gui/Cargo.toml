@@ -17,6 +17,7 @@ qrcode = { version = "0.14.1", default-features = false }
 vault-core = { path = "../vault-core" }
 vault-import = { path = "../vault-import", features = ["qr"] }
 vault-hw = { path = "../vault-hw", default-features = false, features = ["phone"] }
+vault-cloud = { path = "../vault-cloud" }
 vault-ipc = { path = "../vault-ipc" }
 zeroize = "1.9.1"
 

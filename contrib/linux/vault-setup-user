@@ -173,7 +173,7 @@ case $cmd in
     disable)
         login=${2:-}
         check_login "$login"
-        systemctl disable --now "vaultd@$login.service" >/dev/null 2>&1 || true
+        systemctl disable --now "vault-sync@$login.service" "vaultd@$login.service" >/dev/null 2>&1 || true
         say "vaultd@$login stopped. The vault in /var/lib/vault/$login and the account $(account "$login") stay."
         echo "    To delete them for good: sudo rm -r /var/lib/vault/$login && sudo userdel $(account "$login")"
         ;;
@@ -204,7 +204,7 @@ case $cmd in
         ;;
     stop-all)
         for login in $(instances); do
-            systemctl disable --now "vaultd@$login.service" >/dev/null 2>&1 || true
+            systemctl disable --now "vault-sync@$login.service" "vaultd@$login.service" >/dev/null 2>&1 || true
         done
         rm -f "$policy_out"
         rm -rf /etc/systemd/system/vaultd@.service.d/10-no-tss.conf

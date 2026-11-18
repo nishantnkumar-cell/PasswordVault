@@ -801,6 +801,53 @@ fn turns_on_sync_and_a_second_device_joins() {
 }
 
 #[test]
+fn cloud_sync_card_offers_three_ways_and_reports_an_unreachable_server() {
+    let dir = tempdir();
+    let mut h = created(&dir, Duration::from_secs(300), FakeClip::default());
+    click(&mut h, "Sync");
+    settle(&mut h);
+    assert!(h.query_by_label("Cloud sync is off").is_some());
+    assert!(h.query_by_label("My Cloudflare account").is_some());
+    assert!(
+        h.query_by_label("Join with a link from another device")
+            .is_some()
+    );
+    click(&mut h, "A server on my own computer (Docker)");
+    settle(&mut h);
+    // Nothing listens on port 9 here: the step fails with the server's
+    // address in the message, and nothing is saved in the vault.
+    type_into(
+        &mut h,
+        Role::TextInput,
+        "Server address",
+        "https://127.0.0.1:9",
+    );
+    type_into(
+        &mut h,
+        Role::PasswordInput,
+        "Admin key",
+        "example-admin-key",
+    );
+    click(&mut h, "Set up");
+    for _ in 0..200 {
+        settle(&mut h);
+        if h.query_by_label_contains("could not reach the server")
+            .is_some()
+        {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(
+        h.query_by_label_contains("could not reach the server")
+            .is_some()
+    );
+    assert!(h.query_by_label("Cloud sync is off").is_some());
+    // The folder way stays below it.
+    assert!(h.query_by_label("File in the synced folder").is_some());
+}
+
+#[test]
 fn key_shows_its_public_half_and_asks_before_use() {
     use vault_ipc::{Envelope, KeyKind, Request, Response};
     let dir = tempdir();

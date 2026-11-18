@@ -113,6 +113,25 @@ Out of scope for v1. Root can read `vaultd` memory while unlocked. The vault is 
 | Feed an old or doctored synced copy (folder sync, docs/sync.md) | A synced copy is opened only under the vault key already held (header MAC) or with the user's own factor. Merging is monotone: an old copy cannot bring back deleted items or removed slots. A revoke cannot be undone by a copy under the old key: each vault records fingerprints of the keys it retired and refuses a copy under one of them, whatever epoch it claims (format.md 5.1) A copy of another vault is refused | M |
 | Swap or withhold the synced copy so devices stop seeing each other's edits | Not prevented: the folder's owner controls delivery. Each device keeps its own file and merges again when the copy changes, so nothing is lost locally | Accepted |
 
+### A7, cloud sync server, Cloudflare account or join link
+
+Cloud sync (docs/cloud-sync.md) keeps the encrypted vault file on a Worker in the user's own Cloudflare account. Actors: whoever controls that account or the API token (including Cloudflare), a stranger on the internet, someone who sees a join link, and a fault in `vault-sync`, the one program that parses network input.
+
+| Threat | Mitigation | Status |
+| --- | --- | --- |
+| A stranger downloads the vault file to guess the password offline | Reading needs a device token (256 bits); the server stores only its SHA-256 and answers a wrong token and an unknown mailbox alike. The mailbox id is random (128 bits) | M |
+| The account holder or Cloudflare reads the stored file | Same as A1 with the file: everything is encrypted, Argon2id slows password guesses | P (as A1) |
+| The server plants, edits or rolls back the file | Same as A5: header MAC, monotone merge, retired keys, generation check. The server is never trusted for content | M |
+| The server withholds, delays or deletes the file | Not prevented. Each device keeps its own file and merges again later; nothing is lost locally | Accepted |
+| Someone sees a join link | A link carries a one-time ticket valid 10 minutes, no key or password; using it adds a device that can download the encrypted file (as above) and shows in `vault cloud devices`, where it can be removed | P |
+| The Cloudflare API token leaks | It can change or delete the Worker, so it could serve old copies (refused, A5) or keep copies (as above), not read the vault. The token is used only during setup and updates, never sent to the Worker, and kept in the vault only with `--keep-token`; the guide says to delete it after setup | P |
+| The admin key leaks | It only creates mailboxes on the user's Worker (using up the free plan). It is in the encrypted vault settings | M |
+| A lost device keeps syncing | `vault cloud remove` deletes its token on the server and closes its connection; its own copy is protected as in A1 | M |
+| Network attacker between a device and the server | TLS with the Mozilla root store (rustls, webpki-roots); plain http only to 127.0.0.1 or localhost (local testing) | M |
+| A fault in `vault-sync` exploited through a malicious server or network | `vault-sync` holds no key and runs apart from `vaultd`. Its systemd units can write only the `cloud` folder and cannot see `vaultd`'s state (paired clients), so it cannot pair itself or edit the vault file; whatever it writes to the copy is checked like any synced copy. The system unit runs as the `vault` user, like `vaultd@`, which `PR_SET_DUMPABLE=0` keeps from being traced | P |
+| Same-user malware reads `cloud/device.conf` | It gives download access to the encrypted file, which the same malware can read from disk anyway | A |
+| The server learns when devices sync, their addresses and the padded file size | Inherent to any server | Accepted |
+
 ### A6, quantum adversary
 
 The attacker copies the vault file today (for example from a sync folder or a backup) and waits for a quantum computer.
@@ -127,6 +146,7 @@ The attacker copies the vault file today (for example from a sync folder or a ba
 | OpenPGP keys | `vault pgp new --pq`: ML-DSA-65 + Ed25519, ML-KEM-768 + X25519 (RFC 9980). Classic keys, and messages encrypted to them, are not post-quantum | M with `--pq` |
 | SSH keys | Ed25519, ECDSA P-256 signatures. A signature cannot be harvested; a quantum attacker with your public key could later forge logins. Key exchange is the ssh client's (OpenSSH 10 uses ML-KEM hybrid by default) | Accepted until OpenSSH has a post-quantum key type |
 | Pairing, browser host, IPC | Random tokens over local sockets, no public keys | M |
+| Cloud sync (docs/cloud-sync.md) | Ciphertext and random tokens over TLS. A recorded TLS session could be decrypted later if its key exchange was classical (rustls offers the X25519MLKEM768 hybrid; whether it is used depends on Cloudflare's edge), but it carries only the encrypted vault file and tokens | M for the vault; tokens accepted |
 | Sharing, device enrollment, phone pairing, hybrid post-quantum release signing (release downloads already carry GitHub build attestations) | Not built. Must use hybrid PQ when built: X-Wing (ML-KEM-768 + X25519) for the reserved `RecipientHybrid` slot, ML-DSA-65 + Ed25519 for signatures (brief section 11) | Open |
 
 ## 6. Memory and process hygiene
@@ -140,7 +160,7 @@ The attacker copies the vault file today (for example from a sync folder or a ba
 - Root or kernel compromise, firmware attacks, evil-maid attacks on a running unlocked machine.
 - Same-user malware on X11.
 - Side channels (power, EM, cache timing) beyond using constant-time crates.
-- Face unlock, phone companion app, Secret Service, passkey storage, server sync, sharing. Each gets a section here before it is built. Folder sync (docs/sync.md) is covered under A5; phone passkeys under A3.
+- Face unlock, phone companion app, Secret Service, passkey storage, sharing. Each gets a section here before it is built. Folder sync (docs/sync.md) is covered under A5; cloud sync (docs/cloud-sync.md) under A5 and A7; phone passkeys under A3.
 
 ## 8. Open items
 

@@ -1083,3 +1083,70 @@ fn edits_and_revokes_use_fresh_item_keys() {
         .is_err()
     );
 }
+
+// ---- Settings (section 5.2) ----
+
+#[test]
+fn settings_round_trip_and_merge() {
+    let mut rng = TestRng(0);
+    let (f, mut a, mut b) = two_devices(&mut rng);
+    assert_eq!(a.setting("cloud"), None);
+    a.set_setting("cloud", Some(b"server one")).unwrap();
+    let reopened = unlock_pw(&a.to_bytes(&mut rng).unwrap(), &f.pw_slot).unwrap();
+    assert_eq!(reopened.setting("cloud"), Some(&b"server one"[..]));
+
+    // The other device learns it, and a later change wins everywhere.
+    let (ra, rb) = sync(&mut rng, &mut a, &mut b);
+    assert_eq!((ra.settings_updated, rb.settings_updated), (0, 1));
+    assert!(ra.other_behind && !rb.other_behind);
+    b.set_setting("cloud", Some(b"server two")).unwrap();
+    let (ra, _) = sync(&mut rng, &mut a, &mut b);
+    assert_eq!(ra.settings_updated, 1);
+    assert_eq!(a.setting("cloud"), Some(&b"server two"[..]));
+
+    // Changes at the same time settle on the same value on both devices.
+    a.set_setting("cloud", Some(b"from a")).unwrap();
+    b.set_setting("cloud", Some(b"from b")).unwrap();
+    sync(&mut rng, &mut a, &mut b);
+    assert_eq!(a.setting("cloud"), b.setting("cloud"));
+    assert_eq!(a.setting("cloud"), Some(&b"from b"[..]));
+
+    // A removal sticks: an old copy cannot bring the setting back.
+    let old = ParsedVault::parse(&a.to_bytes(&mut rng).unwrap())
+        .unwrap()
+        .open_with(&a)
+        .unwrap();
+    a.set_setting("cloud", None).unwrap();
+    assert_eq!(a.setting("cloud"), None);
+    let r = a.merge(&mut rng, &old, &ByLength).unwrap();
+    assert!(!r.changed() && r.other_behind);
+    assert_eq!(a.setting("cloud"), None);
+    let (_, rb) = sync(&mut rng, &mut a, &mut b);
+    assert_eq!(rb.settings_updated, 1);
+    assert_eq!(b.setting("cloud"), None);
+}
+
+#[test]
+fn settings_refuse_bad_names_and_values() {
+    let mut rng = TestRng(0);
+    let (_, mut a, _) = two_devices(&mut rng);
+    assert_eq!(a.set_setting("", Some(b"x")), Err(Error::BadSetting));
+    let long = "n".repeat(65);
+    assert_eq!(a.set_setting(&long, Some(b"x")), Err(Error::BadSetting));
+    let big = vec![0u8; 16 * 1024 + 1];
+    assert_eq!(a.set_setting("cloud", Some(&big)), Err(Error::BadSetting));
+}
+
+#[test]
+fn bodies_without_settings_stay_readable_by_older_versions() {
+    use crate::vault::BodyV3;
+    let mut rng = TestRng(0);
+    let (_, mut a, _) = two_devices(&mut rng);
+    // No settings: exactly the body earlier versions read ("body v3").
+    assert!(format::decode_canonical::<BodyV3>(&a.encode_body()).is_ok());
+    a.set_setting("cloud", Some(b"x")).unwrap();
+    assert!(format::decode_canonical::<BodyV3>(&a.encode_body()).is_err());
+    // A removal is still recorded, so the newer body stays.
+    a.set_setting("cloud", None).unwrap();
+    assert!(format::decode_canonical::<BodyV3>(&a.encode_body()).is_err());
+}

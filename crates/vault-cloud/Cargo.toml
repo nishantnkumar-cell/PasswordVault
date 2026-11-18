@@ -1,0 +1,24 @@
+[package]
+name = "vault-cloud"
+version.workspace = true
+description = "Cloud sync through the user's own Cloudflare Worker: deploying it, talking to it, and the vault-sync helper."
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "vault-sync"
+path = "src/bin/vault-sync.rs"
+
+[dependencies]
+data-encoding = "2"
+vault-core = { path = "../vault-core" }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1"
+sha2 = "=0.11.1"
+rustls = { version = "=0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-pki-types = { version = "1.15.1", features = ["std"] }
+tungstenite = { version = "=0.26.2", default-features = false, features = ["handshake", "rustls-tls-webpki-roots"] }
+ureq = { version = "=3.5.0", default-features = false, features = ["rustls"] }
+vault-ipc = { path = "../vault-ipc" }
+zeroize = "1.9.1"

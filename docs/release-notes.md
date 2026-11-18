@@ -42,6 +42,48 @@ verified developers, rolling out country by country from late 2026; this
 may later need an extra step or block sideloading in some countries. No
 vault file change.
 
+### Cloud sync with your own Cloudflare account
+
+- **Sync your computers through a server in your own free Cloudflare
+  account**, set up from the vault itself. `vault cloud setup` asks for your
+  Cloudflare account ID and an API token (one permission: *Workers Scripts:
+  Edit*), uploads the sync server that comes with Secret Vault, and starts
+  syncing. Changes reach your other unlocked computers within seconds, with
+  no cloud drive app and no "conflicted copy" files.
+- **The server only stores the encrypted vault file.** It never gets your
+  master password, keys or items. Its address and keys are kept inside your
+  vault, so they reach your other computers through the sync itself and are
+  in your backups. Nothing about your server is in the downloads or on
+  GitHub, so anyone who installs Secret Vault uses their own account.
+- **Add a computer with a one-time link or QR code**: `vault cloud link` on
+  one, `vault cloud join LINK` on the other, then unlock with your master
+  password. A link works once, for 10 minutes. Each device gets its own
+  access, so `vault cloud devices` and `vault cloud remove ID` cut off a
+  lost one.
+- **A small helper, `vault-sync`, does the network part**, so `vaultd`
+  still never goes on the internet. On Linux the packages include it and its
+  service: `systemctl --user enable --now vault-sync`, or
+  `sudo systemctl enable --now vault-sync@$USER` next to the system service.
+- How to start: [Cloud sync with your own Cloudflare account](user-guide/15-cloud-sync.md).
+  How it works: [cloud-sync.md](cloud-sync.md).
+
+| | Linux | Windows | macOS | iPhone, iPad, Android |
+| --- | --- | --- | --- | --- |
+| `vault cloud` commands | Yes | Yes | Yes | Not yet |
+| `vault-sync` helper | In the `.deb` and `.tar.gz`, with systemd services | Build from source, start at sign-in | Build from source, start it yourself | Not yet |
+| Desktop app screen | Not yet | Not yet | Not yet | n/a |
+
+Known limits: the desktop app screen and phone and tablet joining come in
+the next updates (phones keep using folder sync until then). The Windows
+installer and Mac `.pkg` don't include `vault-sync` yet. The upload to
+Cloudflare has been tested against a local copy of the Workers runtime, not
+yet against a real account. **Vault file change:** a vault with cloud sync
+set up stores its settings in a new field (format.md 5.2), and earlier
+versions cannot open it, so update every device (phones too, if they use
+folder sync with that vault) before running `vault cloud setup`. Vaults
+without cloud sync are written as before. Family sharing is planned
+separately.
+
 ### Linux: one package installs everything, and quick unlock with your login password
 
 - **Install everything in one go.** The `.deb` (Debian 13, Ubuntu 24.04

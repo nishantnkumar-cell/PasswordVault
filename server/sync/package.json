@@ -1,0 +1,20 @@
+{
+  "name": "vault-sync-server",
+  "private": true,
+  "description": "Secret Vault cloud sync mailbox: a Cloudflare Worker with one Durable Object per vault (docs/cloud-sync.md).",
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "check": "tsc --noEmit",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "1.5.0",
+    "@cloudflare/workers-types": "5.20261102.1",
+    "typescript": "5.9.3",
+    "vitest": "5.1.0",
+    "wrangler": "4.156.2"
+  }
+}

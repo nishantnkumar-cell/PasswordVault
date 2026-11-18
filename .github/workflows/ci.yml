@@ -40,6 +40,43 @@ jobs:
           swtpm socket --tpm2 --server type=tcp,port=2321 --ctrl type=tcp,port=2322 --tpmstate dir=/tmp/swtpm --flags startup-clear --daemon
           TCTI=swtpm:port=2321 cargo test -p vault-hw --lib --locked -- --ignored
 
+  # The cloud sync server (server/sync) in the Workers runtime, locally.
+  # `vault cloud setup` uploads server/sync/src/index.js as it is.
+  sync-server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: npm ci
+        working-directory: server/sync
+      - run: npm run check
+        working-directory: server/sync
+      - run: npm test
+        working-directory: server/sync
+      - name: Wrangler accepts the Worker (no upload)
+        run: npx wrangler deploy --dry-run --outdir "$RUNNER_TEMP/worker"
+        working-directory: server/sync
+        env:
+          WRANGLER_SEND_METRICS: "false"
+      - name: The Docker server builds, starts and keeps its own certificate
+        working-directory: server/sync
+        run: |
+          docker build -t secret-vault-sync:ci .
+          docker run -d --name sync -p 8443:8443 -e SYNC_HOSTS=sync.example.com -v sync-data:/data secret-vault-sync:ci
+          for i in $(seq 30); do docker exec sync test -s /data/run/show && break; sleep 1; done
+          sleep 2
+          docker exec sync show
+          docker cp sync:/data/tls/ca.pem "$RUNNER_TEMP/ca.pem"
+          curl -fsS --cacert "$RUNNER_TEMP/ca.pem" --resolve sync.example.com:8443:127.0.0.1 https://sync.example.com:8443/ | grep -q secret-vault-sync
+          before=$(docker exec sync show | grep fingerprint)
+          docker rm -f sync
+          docker run -d --name sync -p 8443:8443 -e SYNC_HOSTS=sync.example.com -v sync-data:/data secret-vault-sync:ci
+          sleep 5
+          test "$(docker exec sync show | grep fingerprint)" = "$before"
+          curl -fsS --cacert "$RUNNER_TEMP/ca.pem" --resolve sync.example.com:8443:127.0.0.1 https://sync.example.com:8443/ca.pem | grep -q "BEGIN CERTIFICATE"
+
   extension:
     runs-on: ubuntu-latest
     steps:

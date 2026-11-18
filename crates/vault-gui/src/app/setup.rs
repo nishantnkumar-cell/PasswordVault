@@ -342,11 +342,30 @@ impl App {
         heading(
             ui,
             "Join your vault",
-            "If your vault is synced through OneDrive, Google Drive, Dropbox or another \
-             sync app, pick the vault file in that folder. Then unlock it with the master \
-             password you already use.",
+            "Bring the vault you already use to this computer, then unlock it with the \
+             master password you already use.",
         );
         self.messages(ui);
+        ui.label(theme::bold("With cloud sync").size(14.0));
+        ui.label(
+            RichText::new(
+                "On your other computer, open Sync, Add a device (or run vault cloud link), \
+                 and paste the link here.",
+            )
+            .color(theme::MUTED),
+        );
+        if self.cloud_join_form(ui) {
+            self.cloud_join();
+        }
+        ui.add_space(14.0);
+        ui.label(theme::bold("With a synced folder").size(14.0));
+        ui.label(
+            RichText::new(
+                "If the vault is in a folder that OneDrive, Google Drive, Dropbox or another \
+                 sync app keeps up to date, pick the vault file there.",
+            )
+            .color(theme::MUTED),
+        );
         let join = self.sync_form(ui, "Join");
         if join {
             let path = self.sync_path.trim().to_owned();

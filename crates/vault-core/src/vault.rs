@@ -56,8 +56,21 @@ struct BodyV2 {
     key_epoch: u64,
 }
 
-/// The body with retired vault keys (section 5.1). Readers try this first
-/// and fall back to [`BodyV2`] and [`BodyV1`].
+/// The body with retired vault keys (section 5.1), before settings.
+#[derive(Serialize, Deserialize)]
+pub(crate) struct BodyV3 {
+    generation: u64,
+    slot_labels: Vec<(SlotId, String)>,
+    items: Vec<ItemRecord>,
+    clocks: Vec<(ItemId, Clock)>,
+    tombstones: Vec<(ItemId, Clock)>,
+    removed_slots: Vec<SlotId>,
+    key_epoch: u64,
+    retired_keys: Vec<[u8; 32]>,
+}
+
+/// The body with vault settings (section 5.2). Readers try this first and
+/// fall back to [`BodyV3`], [`BodyV2`] and [`BodyV1`].
 #[derive(Serialize, Deserialize)]
 struct Body {
     generation: u64,
@@ -68,7 +81,33 @@ struct Body {
     removed_slots: Vec<SlotId>,
     key_epoch: u64,
     retired_keys: Vec<[u8; 32]>,
+    settings: Vec<Setting>,
 }
+
+/// A named vault-wide setting, such as the cloud sync server (section 5.2).
+/// The value is opaque to this crate. An empty value means "removed" and is
+/// kept, so an older copy cannot bring the setting back.
+#[derive(Serialize, Deserialize, Clone)]
+pub(crate) struct Setting {
+    pub(crate) name: String,
+    /// +1 on every change of this setting.
+    pub(crate) stamp: u64,
+    /// The device that made this change; breaks ties between equal stamps.
+    pub(crate) device: DeviceId,
+    pub(crate) value: Zeroizing<Vec<u8>>,
+}
+
+impl Setting {
+    /// Merge order: the higher stamp, then device, then value wins.
+    pub(crate) fn rank(&self) -> (u64, DeviceId, &[u8]) {
+        (self.stamp, self.device, &self.value)
+    }
+}
+
+/// Longest setting name and value accepted.
+pub const MAX_SETTING_NAME: usize = 64;
+/// Largest setting value accepted.
+pub const MAX_SETTING_VALUE: usize = 16 * 1024;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub(crate) struct ItemRecord {
@@ -104,6 +143,8 @@ pub struct Vault {
     /// revoke, or taking a newer key in a merge), sorted. A copy under one of
     /// these keys is old and is never merged, whatever epoch it claims.
     pub(crate) retired_keys: Vec<[u8; 32]>,
+    /// Vault-wide settings by name (section 5.2), including removed ones.
+    pub(crate) settings: BTreeMap<String, Setting>,
     /// Who is editing, for the clocks. Not stored in the file.
     pub(crate) device: DeviceId,
 }
@@ -398,6 +439,21 @@ impl ParsedVault {
         let mut retired_keys = body.retired_keys;
         retired_keys.sort_unstable();
         retired_keys.dedup();
+        let mut settings: BTreeMap<String, Setting> = BTreeMap::new();
+        for st in body.settings {
+            if st.name.is_empty()
+                || st.name.len() > MAX_SETTING_NAME
+                || st.value.len() > MAX_SETTING_VALUE
+            {
+                return Err(Error::CorruptBody);
+            }
+            match settings.get(&st.name) {
+                Some(have) if have.rank() >= st.rank() => {}
+                _ => {
+                    settings.insert(st.name.clone(), st);
+                }
+            }
+        }
 
         Ok(Vault {
             vault_id,
@@ -415,6 +471,7 @@ impl ParsedVault {
             removed_slots,
             key_epoch: body.key_epoch,
             retired_keys,
+            settings,
             device: 0,
         })
     }
@@ -423,6 +480,19 @@ impl ParsedVault {
 fn decode_body(bytes: &[u8]) -> Result<Body, Error> {
     if let Ok(b) = format::decode_canonical::<Body>(bytes) {
         return Ok(b);
+    }
+    if let Ok(b) = format::decode_canonical::<BodyV3>(bytes) {
+        return Ok(Body {
+            generation: b.generation,
+            slot_labels: b.slot_labels,
+            items: b.items,
+            clocks: b.clocks,
+            tombstones: b.tombstones,
+            removed_slots: b.removed_slots,
+            key_epoch: b.key_epoch,
+            retired_keys: b.retired_keys,
+            settings: Vec::new(),
+        });
     }
     if let Ok(b) = format::decode_canonical::<BodyV2>(bytes) {
         return Ok(Body {
@@ -434,6 +504,7 @@ fn decode_body(bytes: &[u8]) -> Result<Body, Error> {
             removed_slots: b.removed_slots,
             key_epoch: b.key_epoch,
             retired_keys: Vec::new(),
+            settings: Vec::new(),
         });
     }
     let v1: BodyV1 = format::decode_canonical(bytes).map_err(|_| Error::CorruptBody)?;
@@ -446,6 +517,7 @@ fn decode_body(bytes: &[u8]) -> Result<Body, Error> {
         removed_slots: Vec::new(),
         key_epoch: 0,
         retired_keys: Vec::new(),
+        settings: Vec::new(),
     })
 }
 
@@ -465,6 +537,7 @@ impl Vault {
             removed_slots: Vec::new(),
             key_epoch: 0,
             retired_keys: Vec::new(),
+            settings: BTreeMap::new(),
             device: 0,
         })
     }
@@ -493,6 +566,73 @@ impl Vault {
     /// The vault's permanent identifier.
     pub fn vault_id(&self) -> [u8; 16] {
         self.vault_id
+    }
+
+    /// The body's plaintext encoding (section 5).
+    pub(crate) fn encode_body(&self) -> Zeroizing<Vec<u8>> {
+        let body = Body {
+            generation: self.generation,
+            slot_labels: self.slot_labels.clone(),
+            items: self.items.clone(),
+            clocks: self
+                .items
+                .iter()
+                .filter_map(|r| Some((r.item_id, self.clocks.get(&r.item_id)?.clone())))
+                .collect(),
+            tombstones: self
+                .tombstones
+                .iter()
+                .map(|(id, c)| (*id, c.clone()))
+                .collect(),
+            removed_slots: self.removed_slots.clone(),
+            key_epoch: self.key_epoch,
+            retired_keys: self.retired_keys.clone(),
+            settings: self.settings.values().cloned().collect(),
+        };
+        // Without settings, write the older body (v3), which earlier program
+        // versions still open; the settings field is added only when used.
+        Zeroizing::new(if body.settings.is_empty() {
+            format::encode(&BodyV3 {
+                generation: body.generation,
+                slot_labels: body.slot_labels,
+                items: body.items,
+                clocks: body.clocks,
+                tombstones: body.tombstones,
+                removed_slots: body.removed_slots,
+                key_epoch: body.key_epoch,
+                retired_keys: body.retired_keys,
+            })
+        } else {
+            format::encode(&body)
+        })
+    }
+
+    /// A vault-wide setting's value (section 5.2), if it is set.
+    pub fn setting(&self, name: &str) -> Option<&[u8]> {
+        self.settings
+            .get(name)
+            .map(|s| s.value.as_slice())
+            .filter(|v| !v.is_empty())
+    }
+
+    /// Set a vault-wide setting, or remove it with `None`. Merged like an
+    /// item: the latest change wins on every device (section 5.2).
+    pub fn set_setting(&mut self, name: &str, value: Option<&[u8]>) -> Result<(), Error> {
+        let value = value.unwrap_or_default();
+        if name.is_empty() || name.len() > MAX_SETTING_NAME || value.len() > MAX_SETTING_VALUE {
+            return Err(Error::BadSetting);
+        }
+        let stamp = self.settings.get(name).map_or(0, |s| s.stamp) + 1;
+        self.settings.insert(
+            name.to_owned(),
+            Setting {
+                name: name.to_owned(),
+                stamp,
+                device: self.device,
+                value: Zeroizing::new(value.to_vec()),
+            },
+        );
+        Ok(())
     }
 
     /// Write counter, for rollback detection by the caller (section 6.6).
@@ -847,25 +987,7 @@ impl Vault {
             &[&prefix, &header_bytes],
         );
 
-        let body = Body {
-            generation: self.generation,
-            slot_labels: self.slot_labels.clone(),
-            items: self.items.clone(),
-            clocks: self
-                .items
-                .iter()
-                .filter_map(|r| Some((r.item_id, self.clocks.get(&r.item_id)?.clone())))
-                .collect(),
-            tombstones: self
-                .tombstones
-                .iter()
-                .map(|(id, c)| (*id, c.clone()))
-                .collect(),
-            removed_slots: self.removed_slots.clone(),
-            key_epoch: self.key_epoch,
-            retired_keys: self.retired_keys.clone(),
-        };
-        let encoded = Zeroizing::new(format::encode(&body));
+        let encoded = self.encode_body();
         let mut plain = Zeroizing::new(vec![0u8; padded_len(8 + encoded.len())]);
         plain[..8].copy_from_slice(&(encoded.len() as u64).to_le_bytes());
         plain[8..8 + encoded.len()].copy_from_slice(&encoded);

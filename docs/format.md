@@ -220,6 +220,14 @@ struct Body {
     removed_slots: Vec<[u8; 16]>,         // every slot ever removed, sorted
     key_epoch: u64,               // +1 on every revoke (6.4)
     retired_keys: Vec<[u8; 32]>,  // fingerprints of vault keys moved on from (5.1), sorted
+    settings: Vec<Setting>,       // vault-wide settings (5.2), by name
+}
+
+struct Setting {
+    name: String,                 // 1 to 64 bytes, such as "cloud-sync"
+    stamp: u64,                   // +1 on every change of this setting
+    device: u64,                  // device ID of the writer (5.1)
+    value: Vec<u8>,               // at most 16 KiB; empty = removed
 }
 
 struct Clock(Vec<(u64, u64)>);    // (device id, edit count), sorted by device, no zero counts
@@ -236,7 +244,7 @@ struct ItemRecord {
 }
 ```
 
-Files written before sync have a body without the last four fields ("body v1"). Readers decode the full body first and, if that fails, the v1 body, treating it as having empty clocks, no tombstones, no removed slots and key epoch 0. Writers always write the full body. Both encodings are canonical postcard and cannot be confused: each leaves trailing bytes or runs short when read as the other. The file's `format_version` stays 1, since the header is unchanged and the slot AAD covers it.
+Files written before sync have a body without the fields from `clocks` on ("body v1"); files written before retired keys lack `retired_keys` and `settings` ("body v2"), and before settings lack `settings` ("body v3"). Readers decode the full body first and, if that fails, the v1 body, treating it as having empty clocks, no tombstones, no removed slots and key epoch 0. Writers always write the full body. Both encodings are canonical postcard and cannot be confused: each leaves trailing bytes or runs short when read as the other. The file's `format_version` stays 1, since the header is unchanged and the slot AAD covers it.
 
 The whole body is re-encrypted with a fresh nonce on every write. Per-item keys exist so that items can later be shared or synced individually without re-encrypting the vault.
 
@@ -261,6 +269,15 @@ Two copies of one vault (same `vault_id`), edited on different devices, merge in
 - **Different vault keys** (a revoke on one side, 6.4): the copy with the higher `key_epoch` wins, ties going to the larger `HMAC(vault_key, "vault/key-order/v1" || vault_id)`. If the other copy wins, this copy takes its vault key and its exact slot list, re-wrapping every item key; its own slots not in that list are reported as dropped. If this copy wins, it keeps its key and slots and imports the other's items. Opening a copy under a different key needs a credential for one of its slots (`ParsedVault::unlock`); `ParsedVault::open_with` reports `DifferentKey` when the header MAC does not verify under the key already held.
 - **Retired keys.** `retired_keys` lists a fingerprint, `HMAC(vault_key, "vault/retired/v1" || vault_id)`, of every vault key this vault has moved on from: the old key is added on each revoke and whenever a merge takes a newer key. It is unioned in every merge. A copy whose key is on this vault's list is an old copy and is refused (`RetiredKey`), whatever `key_epoch` it claims, so someone who holds an old file and a since-revoked factor cannot write a copy that undoes a revoke. Of two different keys neither of which is retired here, the other copy's wins when its list contains this key's fingerprint (it descends from it), and only copies that know nothing of each other (two revokes at once) fall back to the epoch rule above. Files written before this field (body v1 and v2) still open, with an empty list, and gain the field at their next write. Older program versions cannot open a file with the new field.
 - **Counters.** `generation` and `key_epoch` become the maximum of the two; the next write increments `generation` as usual.
+
+### 5.2 Settings
+
+Vault-wide settings that every device should have, such as cloud sync's server and keys (docs/cloud-sync.md), live in the encrypted body as named `Setting` records. The value is opaque to `vault-core`; callers encode it (vaultd: postcard of `vault_ipc::CloudSettings` under the name `cloud-sync`). Values are inside the body's encryption and are not wrapped per item.
+
+- **Changes.** Setting a value stores `stamp` = the previous stamp of that name + 1 and the writer's device ID. Removing it stores an empty value the same way, so the removal is kept.
+- **Merging.** For each name, the record with the higher `(stamp, device, value)` wins (compared in that order, value bytewise). Merging is commutative and idempotent; a removal beats an older value, and two changes at once settle on the same record on every device.
+- **Reading.** A reader drops duplicate names (keeping the winner) and refuses a body with an empty or over-long name or an over-long value.
+- **Versions.** A body without `settings` ("body v3") opens with no settings. Writers write that older encoding as long as the vault has no settings at all, so earlier program versions keep opening it; once any setting is stored (cloud sync), the body has the field and earlier versions cannot open the file, as with `retired_keys`.
 
 ## 6. Operations
 

@@ -2,6 +2,8 @@
 
 Keep one vault on several devices through a folder that a cloud service already syncs: OneDrive, Google Drive, Dropbox, iCloud Drive, Syncthing, or a network share. The service only ever holds the encrypted vault file; no account, server or key is shared with it.
 
+Cloud sync ([cloud-sync.md](cloud-sync.md)) uses this same mechanism: a helper, `vault-sync`, mirrors a mailbox on the user's own Cloudflare Worker to a folder, and `vaultd` syncs that folder as described here.
+
 ## Using it
 
 On the first device, with the vault unlocked:

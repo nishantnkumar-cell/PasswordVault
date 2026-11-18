@@ -127,7 +127,15 @@ pub enum Work {
     },
     /// Create a passkey on the phone and enroll it as a slot.
     PhoneEnroll { password: Secret, label: String },
+    /// A cloud sync step (vault_cloud::flows): network calls to the sync
+    /// server here, off the window's thread, plus calls to vaultd.
+    Cloud(CloudJob),
 }
+
+/// What [`Work::Cloud`] runs. Results other than vaultd's answer (a join
+/// link, the device list) go where the job's closure puts them.
+pub type CloudJob =
+    Box<dyn FnOnce(&mut vault_cloud::flows::Call<'_>) -> vault_cloud::Result<Response> + Send>;
 
 /// One call to the daemon. `op` says what the answer is for.
 pub struct Job<Op> {
@@ -162,6 +170,20 @@ impl<Op: Send + 'static> Backend<Op> {
             for job in job_rx {
                 let r = match job.work {
                     Work::Call(request) => call(&socket, &mut stream, job.token, request),
+                    Work::Cloud(run) => {
+                        let token = job.token;
+                        let mut daemon = |request: Request| match call(
+                            &socket,
+                            &mut stream,
+                            token.clone(),
+                            request,
+                        ) {
+                            Ok(r) => Ok(r),
+                            Err(Failure::Daemon(m)) => Ok(Response::Error(m)),
+                            Err(Failure::Unreachable(m)) => Err(vault_cloud::Error(m)),
+                        };
+                        run(&mut daemon).map_err(|e| Failure::Daemon(e.0))
+                    }
                     work => {
                         let w = &wake;
                         let events = |e: PhoneEvent| {
@@ -262,6 +284,7 @@ fn with_phone(
     let out = |k: HwKey| Zeroizing::new(k.expose().to_vec());
     let request = match work {
         Work::Call(r) => r,
+        Work::Cloud(_) => unreachable!("cloud jobs run in the worker loop"),
         Work::PhoneUnlock { password, pair } => {
             let Response::PasskeySlots(slots) = call(socket, stream, None, Request::PasskeySlots)?
             else {
