@@ -1,0 +1,216 @@
+#!/usr/bin/env bash
+# Set up the Secret Vault system service for one person, as root:
+#
+#   sudo vault-setup-user enable LOGIN    make the account vault-LOGIN and start vaultd@LOGIN
+#   sudo vault-setup-user disable LOGIN   stop vaultd@LOGIN (the vault and account stay)
+#   sudo vault-setup-user list            the people set up on this computer
+#   sudo vault-setup-user refresh         after an install or upgrade (the packages run it)
+#   sudo vault-setup-user stop-all        before the package is removed (the packages run it)
+#
+# Each person's vaultd runs as its own system account, vault-LOGIN, so a
+# fault in one person's daemon cannot reach another's memory or vault file.
+# All of them are in the shared group "vault", which may use FIDO2 security
+# keys (udev rule 70-vault-fido.rules), and in "tss" for the TPM.
+#
+# The .deb and the Arch package install this as /usr/sbin/vault-setup-user;
+# get.sh as /usr/local/sbin/vault-setup-user.
+set -euo pipefail
+
+here=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
+share=$here/../share/secret-vault
+policy_in=$share/dev.passwordvault.quick-unlock.policy
+policy_out=/usr/share/polkit-1/actions/dev.passwordvault.quick-unlock.policy
+comment_prefix="Secret Vault daemon for"
+# The shared account versions before 0.2.0-beta.3 used for everyone.
+legacy=vault
+
+say() { printf '==> %s\n' "$*"; }
+die() { printf 'vault-setup-user: %s\n' "$*" >&2; exit 1; }
+[ "$(id -u)" = 0 ] || die "run as root (sudo vault-setup-user ...)"
+
+account() { echo "vault-$1"; }
+# An absolute path: useradd refuses a bare name (and dpkg's PATH may differ).
+nologin() {
+    local p
+    for p in /usr/sbin/nologin /sbin/nologin /usr/bin/nologin; do
+        [ -x "$p" ] && { echo "$p"; return; }
+    done
+    echo /bin/false
+}
+has_systemd() { [ -d /run/systemd/system ] && command -v systemctl >/dev/null; }
+
+# Every vault-* account this script made, as "login account" lines.
+accounts() {
+    getent passwd | awk -F: -v p="$comment_prefix " 'index($5, p) == 1 { print substr($5, length(p) + 1), $1 }'
+}
+
+# Instances that are enabled or running, by login name.
+instances() {
+    has_systemd || return 0
+    {
+        systemctl list-units --all --plain --no-legend 'vaultd@*.service' 2>/dev/null | awk '{ print $1 }'
+        ls /etc/systemd/system/*.wants/ 2>/dev/null | grep '^vaultd@.*\.service$' || true
+    } | sed -n 's/^vaultd@\(.*\)\.service$/\1/p' | sort -u
+}
+
+check_login() {
+    local login=$1 uid
+    [ -n "$login" ] || die "give a login name"
+    case $login in */* | .* | *[[:space:]]*) die "not a login name: $login" ;; esac
+    uid=$(getent passwd "$login" | cut -d: -f3) || die "no such user: $login"
+    [ "$uid" != 0 ] || die "vaultd is not set up for root; use the login of the person who uses the vault"
+    [ ${#login} -le 26 ] || die "login names up to 26 characters only (the account is vault-LOGIN, 32 at most)"
+}
+
+ensure_groups() {
+    getent group vault >/dev/null || groupadd --system vault
+}
+
+# The account for LOGIN, made if missing.
+ensure_account() {
+    local login=$1 acct groups
+    acct=$(account "$login")
+    groups=vault
+    getent group tss >/dev/null && groups=vault,tss
+    if getent passwd "$acct" >/dev/null; then
+        usermod -a -G "$groups" "$acct"
+    else
+        useradd --system --user-group --no-create-home --home-dir "/var/lib/vault/$login" \
+            --shell "$(nologin)" --comment "$comment_prefix $login" -G "$groups" "$acct"
+        say "Made the account $acct for $login's vaultd."
+    fi
+}
+
+# Without a tss group (no TPM software installed) the unit must not ask for it.
+unit_groups() {
+    local d=/etc/systemd/system/vaultd@.service.d
+    if getent group tss >/dev/null; then
+        rm -f "$d/10-no-tss.conf"
+        rmdir "$d" 2>/dev/null || true
+    else
+        mkdir -p "$d"
+        printf '# Written by vault-setup-user: this computer has no "tss" group (no TPM).\n[Service]\nSupplementaryGroups=\nSupplementaryGroups=vault\n' >"$d/10-no-tss.conf"
+    fi
+}
+
+# polkit lets an account ask about another person's session only if the
+# action names it as an owner, so the quick unlock policy lists every
+# vault-* account.
+write_policy() {
+    [ -f "$policy_in" ] || { echo "vault-setup-user: no $policy_in; quick unlock stays off" >&2; return 0; }
+    # Made even before polkit is installed (apt may set it up after us).
+    mkdir -p "$(dirname "$policy_out")"
+    local owners
+    owners=$(accounts | awk '{ printf "%sunix-user:%s", (n++ ? " " : ""), $2 }')
+    if [ -n "$owners" ]; then
+        sed "s|<annotate key=\"org.freedesktop.policykit.owner\">[^<]*</annotate>|<annotate key=\"org.freedesktop.policykit.owner\">$owners</annotate>|" \
+            "$policy_in" >"$policy_out.tmp"
+    else
+        grep -v 'org.freedesktop.policykit.owner' "$policy_in" >"$policy_out.tmp"
+    fi
+    chmod 644 "$policy_out.tmp"
+    mv -f "$policy_out.tmp" "$policy_out"
+}
+
+# The vault folder belongs to the person's own account (it belonged to the
+# shared "vault" account before 0.2.0-beta.3).
+own_state() {
+    local login=$1 acct
+    acct=$(account "$login")
+    [ -d "/var/lib/vault/$login" ] || return 0
+    chown -R "$acct:$acct" "/var/lib/vault/$login"
+    chmod 700 "/var/lib/vault/$login"
+}
+
+# A vault the person made with the per-user service moves along (copied;
+# the original stays as a backup), with its paired apps.
+adopt_user_vault() {
+    local login=$1 acct home
+    acct=$(account "$login")
+    home=$(getent passwd "$login" | cut -d: -f6)
+    [ -f "$home/.local/share/vault/vault.svault" ] || return 0
+    [ ! -f "/var/lib/vault/$login/vault.svault" ] || return 0
+    install -d -o "$acct" -g "$acct" -m700 "/var/lib/vault/$login" "/var/lib/vault/$login/state"
+    install -o "$acct" -g "$acct" -m600 "$home/.local/share/vault/vault.svault" "/var/lib/vault/$login/vault.svault"
+    if [ -d "$home/.local/state/vault" ]; then
+        cp -r "$home/.local/state/vault/." "/var/lib/vault/$login/state/"
+        rm -f "/var/lib/vault/$login/state/vaultd.sock" "/var/lib/vault/$login/state/ssh-agent.sock"
+        chown -R "$acct:$acct" "/var/lib/vault/$login/state"
+    fi
+    say "Copied $login's vault from $home/.local/share/vault (the original stays as a backup)."
+    # Their per-user vaultd would serve the old copy; turn it off.
+    systemctl --user --machine="$login@" disable --now vaultd.service >/dev/null 2>&1 || true
+}
+
+restart_if_running() {
+    local login=$1
+    if systemctl -q is-active "vaultd@$login.service" 2>/dev/null; then
+        systemctl restart "vaultd@$login.service"
+        echo "    vaultd@$login restarted: its vault is locked until $login unlocks it again."
+    fi
+}
+
+cmd=${1:-}
+case $cmd in
+    enable)
+        login=${2:-}
+        check_login "$login"
+        has_systemd || die "the system service needs systemd"
+        ensure_groups
+        ensure_account "$login"
+        unit_groups
+        write_policy
+        own_state "$login"
+        adopt_user_vault "$login"
+        systemctl daemon-reload
+        systemctl enable "vaultd@$login.service" >/dev/null 2>&1
+        systemctl restart "vaultd@$login.service"
+        sleep 1
+        systemctl -q is-active "vaultd@$login.service" ||
+            die "vaultd@$login did not start; see: journalctl -u vaultd@$login -n 30"
+        say "vaultd@$login runs as $(account "$login") and starts with the computer."
+        ;;
+    disable)
+        login=${2:-}
+        check_login "$login"
+        systemctl disable --now "vaultd@$login.service" >/dev/null 2>&1 || true
+        say "vaultd@$login stopped. The vault in /var/lib/vault/$login and the account $(account "$login") stay."
+        echo "    To delete them for good: sudo rm -r /var/lib/vault/$login && sudo userdel $(account "$login")"
+        ;;
+    list)
+        accounts | while read -r login acct; do
+            state=$(systemctl is-active "vaultd@$login.service" 2>/dev/null || true)
+            printf '%-20s %-24s %s\n' "$login" "$acct" "${state:-unknown}"
+        done
+        ;;
+    refresh)
+        ensure_groups
+        # Instances set up before each person had an account get one now.
+        for login in $(instances); do
+            getent passwd "$login" >/dev/null || continue
+            ensure_account "$login"
+            own_state "$login"
+        done
+        unit_groups
+        write_policy
+        if has_systemd; then
+            systemctl daemon-reload
+            for login in $(instances); do restart_if_running "$login"; done
+        fi
+        if getent passwd "$legacy" | grep -q ":Secret Vault daemon:"; then
+            echo "    The shared \"$legacy\" account of older versions is no longer used;"
+            echo "    remove it with: sudo userdel $legacy"
+        fi
+        ;;
+    stop-all)
+        for login in $(instances); do
+            systemctl disable --now "vaultd@$login.service" >/dev/null 2>&1 || true
+        done
+        rm -f "$policy_out"
+        rm -rf /etc/systemd/system/vaultd@.service.d/10-no-tss.conf
+        ;;
+    -h | --help | "")
+        sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
+        ;;
+    *) die "unknown command $cmd; see --help" ;;
+esac

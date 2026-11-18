@@ -25,7 +25,7 @@ impl Paths {
     /// The same daemon as the `vault` CLI, with the app's own token file so
     /// it can be revoked separately.
     pub fn from_env() -> Paths {
-        let socket = local::endpoint().unwrap_or_default();
+        let socket = local::client_endpoint().unwrap_or_default();
         let token = match std::env::var_os("VAULT_DESKTOP_TOKEN_FILE") {
             Some(p) => p.into(),
             None => local::config_dir().join("desktop-token"),

@@ -222,9 +222,17 @@ fn main() {
     }
 
     let store = Store::open(vault, state).unwrap_or_else(|e| die(&e.to_string()));
+    #[cfg_attr(not(all(feature = "polkit", target_os = "linux")), allow(unused_mut))]
+    let mut hw = Hardware::system();
+    // Linux has no Windows Hello or Touch ID: quick unlock asks polkit, in
+    // the owner's desktop session, for their login password or fingerprint.
+    #[cfg(all(feature = "polkit", target_os = "linux"))]
+    {
+        hw.presence = Some(Arc::new(vaultd::polkit::Polkit::new(owner)));
+    }
     let daemon = Arc::new(Mutex::new(Daemon::new(
         store,
-        Hardware::system(),
+        hw,
         cost,
         Duration::from_secs(idle),
     )));

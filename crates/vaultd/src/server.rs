@@ -109,15 +109,41 @@ fn confirm_use(
 /// Quick unlock with Windows Hello or Touch ID, without holding the daemon
 /// lock while the prompt is open: an unanswered prompt must not stall
 /// every other client.
-fn quick_unlock_by_prompt(daemon: &Shared, token: Option<&ClientToken>) -> Response {
+fn quick_unlock_by_prompt(
+    daemon: &Shared,
+    token: Option<&ClientToken>,
+    pid: Option<u32>,
+) -> Response {
     let lock = || daemon.lock().unwrap_or_else(|p| p.into_inner());
     let hello = match lock().begin_quick_unlock(token) {
         Ok(Some(h)) => h,
         Ok(None) => return Response::Ok,
         Err(m) => return Response::Error(m),
     };
-    let verdict = hello.verify("Unlock Secret Vault");
+    let verdict = hello.verify_for("Unlock Secret Vault", pid);
     lock().end_quick_unlock(verdict)
+}
+
+/// Turn quick unlock on (asking Windows Hello, Touch ID or polkit first) or
+/// off, without holding the daemon lock while the prompt is open.
+fn set_quick_unlock_by_prompt(
+    daemon: &Shared,
+    token: Option<&ClientToken>,
+    hours: u32,
+    pid: Option<u32>,
+) -> Response {
+    let lock = || daemon.lock().unwrap_or_else(|p| p.into_inner());
+    // Bound first: a guard in the `match` scrutinee would be held while the
+    // prompt is open.
+    let begun = lock().begin_set_quick_unlock(token, hours);
+    let verdict = match begun {
+        Ok(None) => Ok(()),
+        Ok(Some(hello)) => hello
+            .check_available_for(pid)
+            .and_then(|()| hello.verify_for(crate::daemon::QUICK_ON_MESSAGE, pid)),
+        Err(m) => return Response::Error(m),
+    };
+    lock().end_set_quick_unlock(token, hours, verdict)
 }
 
 /// Copy passwords from the running Secret Service (Linux) without holding
@@ -166,7 +192,10 @@ pub fn connection(mut s: impl Read + Write, daemon: &Shared, pid: Option<u32>) -
             Request::ImportAppPasswords => import_app_passwords(daemon, env.token.as_ref()),
             Request::Unlock {
                 method: UnlockMethod::Hello,
-            } => quick_unlock_by_prompt(daemon, env.token.as_ref()),
+            } => quick_unlock_by_prompt(daemon, env.token.as_ref(), pid),
+            Request::SetQuickUnlock { hours } => {
+                set_quick_unlock_by_prompt(daemon, env.token.as_ref(), hours, pid)
+            }
             request => {
                 let (resp, pending) = {
                     let mut d = daemon.lock().unwrap_or_else(|p| p.into_inner());

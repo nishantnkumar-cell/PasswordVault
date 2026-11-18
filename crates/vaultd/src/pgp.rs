@@ -28,10 +28,14 @@ use pgp::crypto::aead::{AeadAlgorithm, ChunkSize};
 use pgp::crypto::ecc_curve::ECCCurve;
 use pgp::crypto::hash::HashAlgorithm;
 use pgp::crypto::sym::SymmetricKeyAlgorithm;
-use pgp::packet::PacketTrait;
+use pgp::packet::{
+    Features, PacketTrait, SignatureConfig, SignatureType, Subpacket, SubpacketData,
+};
 use pgp::ser::Serialize;
 use pgp::types::CompressionAlgorithm;
-use pgp::types::{EcdhPublicParams, KeyDetails, KeyVersion, Password, PublicParams, SigningKey};
+use pgp::types::{
+    EcdhPublicParams, KeyDetails, KeyVersion, Password, PublicParams, SigningKey, Timestamp,
+};
 use rand::rngs::OsRng;
 use vault_core::item::KeyData;
 use zeroize::Zeroizing;
@@ -93,6 +97,29 @@ fn store(k: &SignedSecretKey, confirm: bool) -> R<KeyData> {
 
 /// A new key for `user_id` ("Name <mail@example.com>").
 pub fn generate(user_id: &str, post_quantum: bool, confirm: bool) -> R<KeyData> {
+    let k = new_key(user_id, post_quantum, true)?;
+    store(&k, confirm)
+}
+
+/// The preferences new keys state, and [`update_preferences`] adds to older
+/// ones. Without them, GnuPG falls back to SHA-1 when it signs mail that it
+/// also encrypts to this key, and Thunderbird rejects SHA-1 signatures.
+const HASHES: [HashAlgorithm; 3] = [
+    HashAlgorithm::Sha512,
+    HashAlgorithm::Sha384,
+    HashAlgorithm::Sha256,
+];
+const CIPHERS: [SymmetricKeyAlgorithm; 3] = [
+    SymmetricKeyAlgorithm::AES256,
+    SymmetricKeyAlgorithm::AES192,
+    SymmetricKeyAlgorithm::AES128,
+];
+const COMPRESSION: [CompressionAlgorithm; 2] =
+    [CompressionAlgorithm::ZLIB, CompressionAlgorithm::ZIP];
+
+/// A new key; `prefs: false` makes one like those of versions before
+/// 0.2.0-beta.1, for tests.
+fn new_key(user_id: &str, post_quantum: bool, prefs: bool) -> R<SignedSecretKey> {
     if user_id.trim().is_empty() {
         return Err("give a user ID, such as \"Name <mail@example.com>\"".into());
     }
@@ -123,36 +150,139 @@ pub fn generate(user_id: &str, post_quantum: bool, confirm: bool) -> R<KeyData> 
         .can_sign(true)
         .can_encrypt(EncryptionCaps::None)
         .primary_user_id(user_id.trim().into())
-        // Without preferences, GnuPG falls back to SHA-1 when it signs mail
-        // that it also encrypts to this key, and Thunderbird rejects SHA-1
-        // signatures.
-        .preferred_hash_algorithms(
-            vec![
-                HashAlgorithm::Sha512,
-                HashAlgorithm::Sha384,
-                HashAlgorithm::Sha256,
-            ]
-            .into(),
-        )
-        .preferred_symmetric_algorithms(
-            vec![
-                SymmetricKeyAlgorithm::AES256,
-                SymmetricKeyAlgorithm::AES192,
-                SymmetricKeyAlgorithm::AES128,
-            ]
-            .into(),
-        )
-        .preferred_compression_algorithms(
-            vec![CompressionAlgorithm::ZLIB, CompressionAlgorithm::ZIP].into(),
-        )
         .subkeys(vec![sub.build().map_err(err)?]);
-    if post_quantum {
-        params.feature_seipd_v2(true).preferred_aead_algorithms(
-            vec![(SymmetricKeyAlgorithm::AES256, AeadAlgorithm::Ocb)].into(),
-        );
+    if prefs {
+        params
+            .preferred_hash_algorithms(HASHES.to_vec().into())
+            .preferred_symmetric_algorithms(CIPHERS.to_vec().into())
+            .preferred_compression_algorithms(COMPRESSION.to_vec().into());
+        if post_quantum {
+            params.feature_seipd_v2(true).preferred_aead_algorithms(
+                vec![(SymmetricKeyAlgorithm::AES256, AeadAlgorithm::Ocb)].into(),
+            );
+        }
     }
-    let k = params.build().map_err(err)?.generate(OsRng).map_err(err)?;
-    store(&k, confirm)
+    params.build().map_err(err)?.generate(OsRng).map_err(err)
+}
+
+/// The self-signatures that state a key's preferences: the direct-key
+/// signature on v6 keys, each user ID's newest self-signature on v4 keys.
+fn preference_signatures(k: &SignedSecretKey) -> Vec<&pgp::packet::Signature> {
+    if k.primary_key.version() == KeyVersion::V6 {
+        newest(&k.details.direct_signatures).into_iter().collect()
+    } else {
+        k.details
+            .users
+            .iter()
+            .filter_map(|u| newest(&u.signatures))
+            .collect()
+    }
+}
+
+fn newest(sigs: &[pgp::packet::Signature]) -> Option<&pgp::packet::Signature> {
+    sigs.iter().max_by_key(|s| s.created().map(|t| t.as_secs()))
+}
+
+/// Whether the key says which hash algorithms it wants. Keys made by vault
+/// versions before 0.2.0-beta.1 do not (`update_preferences`).
+pub fn has_preferences(tsk: &[u8]) -> R<bool> {
+    let k = secret(tsk)?;
+    let sigs = preference_signatures(&k);
+    Ok(!sigs.is_empty() && sigs.iter().all(|s| !s.preferred_hash_algs().is_empty()))
+}
+
+/// Add hash, cipher and compression preferences to a key that has none, by
+/// making fresh self-signatures (same flags, user IDs and expiry, newer
+/// date). `None`: the key already states them; nothing changes. The new
+/// certificate must reach correspondents again (export the public key).
+pub fn update_preferences(tsk: &[u8]) -> R<Option<Vec<u8>>> {
+    if has_preferences(tsk)? {
+        return Ok(None);
+    }
+    let mut k = secret(tsk)?;
+    let mut rng = OsRng;
+    let pw = Password::empty();
+    let public = k.primary_key.public_key().clone();
+    let v6 = k.primary_key.version() == KeyVersion::V6;
+    let fingerprint = k.fingerprint();
+    let prefs = |old: Option<&pgp::packet::Signature>| -> R<Vec<Subpacket>> {
+        let mut p = vec![
+            Subpacket::regular(SubpacketData::SignatureCreationTime(Timestamp::now())),
+            Subpacket::regular(SubpacketData::IssuerFingerprint(fingerprint.clone())),
+            Subpacket::regular(SubpacketData::KeyFlags(
+                old.map(|s| s.key_flags()).unwrap_or_default(),
+            )),
+            Subpacket::regular(SubpacketData::Features(
+                old.and_then(|s| s.features().cloned())
+                    .unwrap_or_else(|| Features::from(&[1u8][..])),
+            )),
+            Subpacket::regular(SubpacketData::PreferredSymmetricAlgorithms(
+                CIPHERS.to_vec().into(),
+            )),
+            Subpacket::regular(SubpacketData::PreferredHashAlgorithms(
+                HASHES.to_vec().into(),
+            )),
+            Subpacket::regular(SubpacketData::PreferredCompressionAlgorithms(
+                COMPRESSION.to_vec().into(),
+            )),
+        ];
+        if let Some(aead) = old
+            .map(|s| s.preferred_aead_algs())
+            .filter(|a| !a.is_empty())
+        {
+            p.push(Subpacket::regular(SubpacketData::PreferredAeadAlgorithms(
+                aead.iter().copied().collect(),
+            )));
+        } else if v6 {
+            p.push(Subpacket::regular(SubpacketData::PreferredAeadAlgorithms(
+                [(SymmetricKeyAlgorithm::AES256, AeadAlgorithm::Ocb)]
+                    .into_iter()
+                    .collect(),
+            )));
+        }
+        if let Some(t) = old.and_then(|s| s.key_expiration_time()) {
+            p.push(Subpacket::regular(SubpacketData::KeyExpirationTime(t)));
+        }
+        p.into_iter().collect::<Result<_, _>>().map_err(err)
+    };
+    if v6 {
+        let old = newest(&k.details.direct_signatures).cloned();
+        let mut config = SignatureConfig::v6(
+            &mut rng,
+            SignatureType::Key,
+            k.primary_key.algorithm(),
+            k.primary_key.hash_alg(),
+        )
+        .map_err(err)?;
+        config.hashed_subpackets = prefs(old.as_ref())?;
+        let sig = config.sign_key(&k.primary_key, &pw, &public).map_err(err)?;
+        k.details.direct_signatures.push(sig);
+    } else {
+        let mut users = std::mem::take(&mut k.details.users);
+        for user in &mut users {
+            let old = newest(&user.signatures).cloned();
+            let mut config =
+                SignatureConfig::from_key(&mut rng, &k.primary_key, SignatureType::CertPositive)
+                    .map_err(err)?;
+            config.hashed_subpackets = prefs(old.as_ref())?;
+            if old.as_ref().is_some_and(|s| s.is_primary()) {
+                config
+                    .hashed_subpackets
+                    .push(Subpacket::regular(SubpacketData::IsPrimary(true)).map_err(err)?);
+            }
+            config.unhashed_subpackets = vec![
+                Subpacket::regular(SubpacketData::IssuerKeyId(k.primary_key.legacy_key_id()))
+                    .map_err(err)?,
+            ];
+            let sig = config
+                .sign_certification(&k.primary_key, &public, &pw, user.id.tag(), &user.id)
+                .map_err(err)?;
+            user.signatures.push(sig);
+        }
+        k.details.users = users;
+    }
+    k.verify_bindings().map_err(err)?;
+    k.to_bytes().map(Some).map_err(err)
 }
 
 /// Read a secret key, removing its passphrase (the vault protects it).
@@ -207,6 +337,20 @@ pub fn describe(tsk: &[u8]) -> R<String> {
         k.primary_key.algorithm(),
         k.fingerprint()
     ))
+}
+
+/// The note `vault pgp ls` and the desktop app show for a key that states
+/// no preferences.
+pub const NO_PREFERENCES: &str = "no algorithm preferences: run `vault pgp update-prefs`";
+
+/// [`describe`], with [`NO_PREFERENCES`] where it applies.
+pub fn describe_with_note(tsk: &[u8]) -> R<String> {
+    let d = describe(tsk)?;
+    Ok(if has_preferences(tsk)? {
+        d
+    } else {
+        format!("{d} ({NO_PREFERENCES})")
+    })
 }
 
 /// The signing key: a subkey bound for signing, else the primary.
@@ -633,6 +777,63 @@ mod tests {
                 panic!("{kind:?} was accepted")
             };
             assert!(e.contains("keys are not"), "{kind:?}: {e}");
+        }
+    }
+
+    fn prefs_of(tsk: &[u8]) -> Vec<Vec<HashAlgorithm>> {
+        preference_signatures(&secret(tsk).unwrap())
+            .iter()
+            .map(|s| s.preferred_hash_algs().to_vec())
+            .collect()
+    }
+
+    fn older_key_gets_preferences(post_quantum: bool) {
+        let old = new_key("Alex Example <alex@example.com>", post_quantum, false).unwrap();
+        let old = old.to_bytes().unwrap();
+        assert!(!has_preferences(&old).unwrap());
+        assert!(describe_with_note(&old).unwrap().contains("update-prefs"));
+
+        let new = update_preferences(&old).unwrap().expect("changed");
+        assert!(has_preferences(&new).unwrap());
+        assert!(prefs_of(&new).iter().all(|p| p == &HASHES));
+        assert_eq!(describe(&new).unwrap(), describe(&old).unwrap());
+        assert!(!describe_with_note(&new).unwrap().contains("update-prefs"));
+        // Same key: the fingerprint and the user ID stay; a second run is a no-op.
+        assert_eq!(
+            secret(&new).unwrap().fingerprint(),
+            secret(&old).unwrap().fingerprint()
+        );
+        assert!(update_preferences(&new).unwrap().is_none());
+
+        // The certificate others get is valid, and the key still signs and
+        // decrypts as before.
+        let cert = certificate(public_armored(&new).unwrap().as_bytes()).unwrap();
+        let sig = sign(&new, b"release", true, false).unwrap();
+        assert!(verify(std::slice::from_ref(&cert), b"release", &sig).is_ok());
+        let ct = encrypt(std::slice::from_ref(&cert), b"hi", true, None).unwrap();
+        assert_eq!(&**decrypt(&new, &ct).unwrap(), b"hi");
+        // Key flags survive: still a signing primary with an encryption subkey.
+        let k = secret(&new).unwrap();
+        let flags = preference_signatures(&k)[0].key_flags();
+        assert!(flags.sign() && flags.certify());
+    }
+
+    #[test]
+    fn classic_older_key_gets_preferences() {
+        older_key_gets_preferences(false);
+    }
+
+    #[test]
+    fn post_quantum_older_key_gets_preferences() {
+        older_key_gets_preferences(true);
+    }
+
+    #[test]
+    fn new_keys_have_preferences() {
+        for pq in [false, true] {
+            let k = tsk(generate("Alex Example <alex@example.com>", pq, true).unwrap());
+            assert!(has_preferences(&k).unwrap());
+            assert!(update_preferences(&k).unwrap().is_none());
         }
     }
 }

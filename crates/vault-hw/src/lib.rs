@@ -66,8 +66,10 @@ pub const DEVICE_CHIP_NAME: &str = if cfg!(target_os = "macos") {
 /// What this system calls its presence check, for messages.
 pub const PRESENCE_NAME: &str = if cfg!(target_os = "macos") {
     "Touch ID"
-} else {
+} else if cfg!(windows) {
     "Windows Hello"
+} else {
+    "your login password or fingerprint"
 };
 
 pub const MAC_SE_HINT: &str =
@@ -104,13 +106,26 @@ pub trait Tpm: Send {
 }
 
 /// The operating system's own check that the user is at the computer
-/// (Windows Hello, or Touch ID on macOS). It yields no secret, so it only approves a quick unlock
+/// (Windows Hello, Touch ID on macOS, or polkit on Linux, which `vaultd`
+/// supplies). It yields no secret, so it only approves a quick unlock
 /// of a key the daemon still holds; it never opens a vault on its own.
 pub trait Presence: Send + Sync {
     /// Whether the check is set up and usable for this user.
     fn check_available(&self) -> HwResult<()>;
     /// Ask the user, showing `message`. Ok only if the OS verified them.
     fn verify(&self, message: &str) -> HwResult<()>;
+    /// [`Presence::check_available`] for a request from the client process
+    /// `peer`. Checks tied to the desktop (Windows Hello, Touch ID) ignore
+    /// it; polkit on Linux asks in that process's session.
+    fn check_available_for(&self, peer: Option<u32>) -> HwResult<()> {
+        let _ = peer;
+        self.check_available()
+    }
+    /// [`Presence::verify`] for a request from the client process `peer`.
+    fn verify_for(&self, message: &str, peer: Option<u32>) -> HwResult<()> {
+        let _ = peer;
+        self.verify(message)
+    }
 }
 
 /// The factors this daemon can use.

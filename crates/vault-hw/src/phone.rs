@@ -128,9 +128,9 @@ mod linux {
         Ctap2CredentialType, Ctap2PublicKeyCredentialDescriptor, Ctap2PublicKeyCredentialRpEntity,
         Ctap2PublicKeyCredentialType, Ctap2PublicKeyCredentialUserEntity,
     };
-    use libwebauthn::transport::cable::channel::{CableChannel, CableUpdate, CableUxUpdate};
-    use libwebauthn::transport::cable::qr_code_device::{
-        CableQrCodeDevice, CableTransports, QrCodeOperationHint,
+    use libwebauthn::transport::hybrid::channel::{HybridChannel, HybridUxUpdate, PxpUpdate};
+    use libwebauthn::transport::hybrid::qr_code_device::{
+        PxpQrCodeDevice, PxpTransports, QrCodeOperationHint,
     };
     use libwebauthn::transport::{Channel as _, ChannelSettings, Device as _};
     use libwebauthn::webauthn::{WebAuthn as _, WebAuthnError};
@@ -165,7 +165,7 @@ mod linux {
     }
 
     pub fn check_available() -> HwResult<()> {
-        if runtime()?.block_on(libwebauthn::transport::cable::is_available()) {
+        if runtime()?.block_on(libwebauthn::transport::hybrid::is_available()) {
             Ok(())
         } else {
             Err(
@@ -183,16 +183,16 @@ mod linux {
         }
     }
 
-    fn status(u: &CableUxUpdate) -> Option<String> {
+    fn status(u: &HybridUxUpdate) -> Option<String> {
         match u {
-            CableUxUpdate::CableUpdate(c) => Some(match c {
-                CableUpdate::ProximityCheck => "Waiting for your phone (keep Bluetooth on)".into(),
-                CableUpdate::Connecting => "Connecting to your phone".into(),
-                CableUpdate::Authenticating => "Confirm on your phone".into(),
-                CableUpdate::Connected => "Connected; confirm on your phone".into(),
-                CableUpdate::Error(e) => format!("Phone connection failed: {e}"),
+            HybridUxUpdate::PxpUpdate(c) => Some(match c {
+                PxpUpdate::ProximityCheck => "Waiting for your phone (keep Bluetooth on)".into(),
+                PxpUpdate::Connecting => "Connecting to your phone".into(),
+                PxpUpdate::Authenticating => "Confirm on your phone".into(),
+                PxpUpdate::Connected => "Connected; confirm on your phone".into(),
+                PxpUpdate::Error(e) => format!("Phone connection failed: {e}"),
             }),
-            CableUxUpdate::UvUpdate(_) => None,
+            HybridUxUpdate::UvUpdate(_) => None,
         }
     }
 
@@ -203,18 +203,18 @@ mod linux {
         op: F,
     ) -> HwResult<T>
     where
-        F: AsyncFnOnce(&mut CableChannel) -> HwResult<T>,
+        F: AsyncFnOnce(&mut HybridChannel) -> HwResult<T>,
     {
         // Cloud-assisted only: older Google Play services reject a QR code
         // that also offers the local channel.
-        let mut device = CableQrCodeDevice::new_transient(hint, CableTransports::CloudAssistedOnly)
+        let mut device = PxpQrCodeDevice::new_transient(hint, PxpTransports::CloudAssistedOnly)
             .map_err(|e| format!("phone: {e:?}"))?;
         events(PhoneEvent::Qr(device.qr_code.to_string()));
         let mut channel = device
             .channel(ChannelSettings::default())
             .await
             .map_err(|e| describe("phone", e))?;
-        let mut rx: Receiver<CableUxUpdate> = channel.get_ux_update_receiver();
+        let mut rx: Receiver<HybridUxUpdate> = channel.get_ux_update_receiver();
         let fut = op(&mut channel);
         tokio::pin!(fut);
         loop {
@@ -269,6 +269,7 @@ mod linux {
                 ..Default::default()
             }),
             attestation: None,
+            attestation_formats: vec![],
             timeout: timeout(),
         };
         runtime()?.block_on(with_phone(

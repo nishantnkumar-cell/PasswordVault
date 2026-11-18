@@ -1,0 +1,6 @@
+#!/bin/sh
+set -e
+# @HOOKS@
+if [ "$1" = remove ]; then
+    vault_before_remove /usr/sbin/vault-setup-user
+fi

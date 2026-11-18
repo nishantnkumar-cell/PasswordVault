@@ -116,8 +116,23 @@ project is tested with the latest stable release.
 **"cannot reach vaultd ... Is it running?"**
 Start the daemon: `vaultd`, `systemctl --user start vaultd`, or
 `vaultw.exe` on Windows (or sign out and back in, if it starts at sign-in).
-On Windows, `%LOCALAPPDATA%\vault\state\vaultd.log` says why it stopped. If it runs as the Linux system user, set
-`VAULT_SOCKET=/run/vault/$USER/vaultd.sock`.
+On Windows, `%LOCALAPPDATA%\vault\state\vaultd.log` says why it stopped. If it runs as the Linux system
+service, check it with `systemctl status vaultd@$USER` and start it with
+`sudo vault-setup-user enable $USER`; programs find its socket by
+themselves unless `VAULT_SOCKET` points somewhere else.
+
+**Quick unlock on Linux says "no password dialog could be shown"**
+Your desktop's polkit agent is not running, or you are signed in over SSH,
+where there is no desktop to ask in. Unlock with your master password. On
+a desktop without its own agent (some window managers), start one such as
+`lxpolkit` or `polkit-gnome-authentication-agent-1` at sign-in.
+
+**Quick unlock on Linux says "polkit does not know dev.passwordvault.quick-unlock"**
+The policy file is missing: reinstall the package, run `get.sh` again, or
+copy `contrib/polkit/dev.passwordvault.quick-unlock.policy` to
+`/usr/share/polkit-1/actions/`. If it says polkit "does not let this
+vaultd ask", run `sudo vault-setup-user refresh`, which lists every
+`vault-<login>` account in that file.
 
 **Add code says "no QR code found" or "not for an authenticator app"**
 
@@ -321,8 +336,9 @@ the daemon would still accept a copy of that token.
   security > Device encryption). vaultd keeps keys out of the page file and
   crash reports itself, but hibernation and a blue screen write all of memory
   to disk, and only disk encryption protects those files.
-- **Linux, stronger setup:** run `vaultd` as its own system user
-  (`contrib/systemd/vaultd@.service`) so programs running as you cannot read
+- **Linux, stronger setup:** run `vaultd` as its own system account
+  (the .deb and Arch packages and `get.sh` do; or
+  `contrib/systemd/vaultd@.service`) so programs running as you cannot read
   its memory.
 
 ## Licence

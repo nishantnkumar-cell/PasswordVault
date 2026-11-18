@@ -1,23 +1,28 @@
-# System service: vaultd runs as the dedicated "vault" user, so processes
-# running as you cannot read its memory (threat model A3). One instance per
-# person; the instance name is your login name.
+# System service: vaultd runs as its own system account for each person,
+# vault-<login>, so processes running as you cannot read its memory (threat
+# model A3), and one person's vaultd cannot reach another's. One instance per
+# person; the instance name is your login name. The .deb, the Arch package
+# and get.sh set it up; by hand:
 #
 #   sudo install -m644 contrib/sysusers.d/vault.conf /etc/sysusers.d/ && sudo systemd-sysusers
 #   sudo install -m644 contrib/udev/70-vault-fido.rules /etc/udev/rules.d/ && sudo udevadm control --reload && sudo udevadm trigger
 #   sudo install -m755 target/release/vaultd /usr/local/bin/
 #   sudo install -m644 contrib/systemd/vaultd@.service /etc/systemd/system/
-#   sudo systemctl enable --now vaultd@$USER
-#   export VAULT_SOCKET=/run/vault/$USER/vaultd.sock   # in your shell profile
+#   sudo install -Dm644 contrib/polkit/dev.passwordvault.quick-unlock.policy /usr/local/share/secret-vault/
+#   sudo install -m755 contrib/linux/vault-setup-user /usr/local/sbin/
+#   sudo vault-setup-user enable $USER
+#
+# Clients find the socket, /run/vault/<login>/vaultd.sock, by themselves.
 
 [Unit]
 Description=Secret Vault daemon for %i
 After=systemd-logind.service
 
 [Service]
-User=vault
-Group=vault
-# tss: /dev/tpmrm0. FIDO2 keys are given to group vault by the udev rule.
-SupplementaryGroups=tss
+User=vault-%i
+Group=vault-%i
+# vault: FIDO2 keys (given to group vault by the udev rule). tss: /dev/tpmrm0.
+SupplementaryGroups=vault tss
 ExecStart=/usr/local/bin/vaultd --owner-user %i --vault /var/lib/vault/%i/vault.svault --state-dir /var/lib/vault/%i/state --socket /run/vault/%i/vaultd.sock
 StateDirectory=vault/%i
 StateDirectoryMode=0700

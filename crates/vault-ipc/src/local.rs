@@ -84,6 +84,76 @@ pub fn endpoint() -> io::Result<PathBuf> {
     }
 }
 
+/// Where clients connect: [`endpoint`], except that on Linux, with
+/// `VAULT_SOCKET` unset and no daemon of your own at the default place, the
+/// system service's socket `/run/vault/<your login>/vaultd.sock` is used
+/// when it exists. So programs find `vaultd@you` (installed by the .deb, the
+/// Arch package or `get.sh`) without any setting. Only root can make folders
+/// in `/run/vault`, so nobody else can put a socket there for you.
+pub fn client_endpoint() -> io::Result<PathBuf> {
+    let own = endpoint()?;
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("VAULT_SOCKET").is_none()
+        && !own.exists()
+        && let Some(sys) = system_service_dir().map(|d| d.join("vaultd.sock"))
+        && sys.exists()
+    {
+        return Ok(sys);
+    }
+    Ok(own)
+}
+
+/// [`ssh_agent_endpoint`] for clients, with the same fallback to the
+/// system service as [`client_endpoint`].
+pub fn client_ssh_agent_endpoint() -> io::Result<PathBuf> {
+    let own = ssh_agent_endpoint()?;
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("VAULT_SOCKET").is_none()
+        && std::env::var_os("VAULT_SSH_AGENT").is_none()
+        && !endpoint()?.exists()
+        && let Some(dir) = system_service_dir()
+        && dir.join("vaultd.sock").exists()
+    {
+        return Ok(dir.join("ssh-agent.sock"));
+    }
+    Ok(own)
+}
+
+/// `/run/vault/<login>`, the system service's runtime folder for this user.
+#[cfg(target_os = "linux")]
+fn system_service_dir() -> Option<PathBuf> {
+    let name = login_name()?;
+    // A login name is one path component; anything else is not ours.
+    if name.is_empty() || name.contains('/') || name.starts_with('.') {
+        return None;
+    }
+    Some(PathBuf::from("/run/vault").join(name))
+}
+
+/// This process's login name: from /etc/passwd by its real UID, else `$USER`.
+#[cfg(target_os = "linux")]
+fn login_name() -> Option<String> {
+    let status = std::fs::read_to_string("/proc/self/status").ok()?;
+    let uid = status
+        .lines()
+        .find_map(|l| l.strip_prefix("Uid:"))?
+        .split_whitespace()
+        .next()?
+        .to_owned();
+    let passwd = std::fs::read_to_string("/etc/passwd").unwrap_or_default();
+    passwd_name(&passwd, &uid).or_else(|| std::env::var("USER").ok())
+}
+
+/// The name of `uid` in a passwd file's text.
+#[cfg(any(target_os = "linux", all(test, unix)))]
+fn passwd_name(passwd: &str, uid: &str) -> Option<String> {
+    passwd.lines().find_map(|l| {
+        let mut f = l.split(':');
+        let (name, _, id) = (f.next()?, f.next()?, f.next()?);
+        (id == uid).then(|| name.to_owned())
+    })
+}
+
 /// Where `vaultd` serves the ssh-agent protocol (point `SSH_AUTH_SOCK`
 /// here): `VAULT_SSH_AGENT` if set; else, with `VAULT_SOCKET` set, next to
 /// that socket (`ssh-agent.sock` in its folder, or `<pipe>-ssh` on
@@ -195,5 +265,24 @@ mod tests {
             ssh_agent_for(Path::new("/tmp/scratch/run/vaultd.sock")),
             PathBuf::from("/tmp/scratch/run/ssh-agent.sock")
         );
+    }
+
+    #[test]
+    fn login_name_from_passwd() {
+        let passwd = "root:x:0:0::/root:/bin/sh\nalex:x:1000:1000:Alex Example:/home/alex:/bin/bash\n\
+                      vault-alex:x:998:998:Secret Vault daemon for alex:/var/lib/vault/alex:/usr/sbin/nologin\n";
+        assert_eq!(passwd_name(passwd, "1000").as_deref(), Some("alex"));
+        assert_eq!(passwd_name(passwd, "998").as_deref(), Some("vault-alex"));
+        assert_eq!(passwd_name(passwd, "5"), None);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn clients_use_their_own_socket_when_set() {
+        // VAULT_SOCKET wins over the system service fallback.
+        if std::env::var_os("VAULT_SOCKET").is_some() {
+            assert_eq!(client_endpoint().unwrap(), endpoint().unwrap());
+        }
+        assert!(system_service_dir().is_some_and(|d| d.starts_with("/run/vault/")));
     }
 }

@@ -7,11 +7,13 @@
 # against the release's SHA256SUMS.txt and sets everything up. Run it again
 # to upgrade: your vault and settings stay.
 #
-# By default vaultd runs as its own "vault" system user (vaultd@you), so
-# programs running as you cannot read its memory, and its memory is always
-# kept out of swap. That needs your password once (sudo). In that mode there
+# By default vaultd runs as its own system account, vault-you (vaultd@you),
+# so programs running as you cannot read its memory, and its memory is always
+# kept out of swap. Each person on the computer gets their own account. That needs your password once (sudo). In that mode there
 # is no approval window: pair programs with your password (`vault pair`),
 # and keys that ask before each use and Secret Service are not available.
+# Debian, Ubuntu and Arch users can install the .deb or Arch package from the
+# release instead, which sets up the same system service.
 # --user-service installs into ~/.local without root instead, with those.
 #
 # Options:
@@ -30,7 +32,6 @@ me=$(id -un)
 home_share=${XDG_DATA_HOME:-$HOME/.local/share}
 home_state=${XDG_STATE_HOME:-$HOME/.local/state}
 units=${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user
-sock=/run/vault/$me/vaultd.sock
 
 mode=system version= from= yes= uninstall=
 while [ $# -gt 0 ]; do
@@ -109,8 +110,11 @@ if [ -n "$uninstall" ]; then
         for u in "vaultd@$me.service" $instances; do
             sudo systemctl disable --now "$u" 2>/dev/null || true
         done
+        [ ! -x /usr/local/sbin/vault-setup-user ] || sudo /usr/local/sbin/vault-setup-user stop-all
         sudo rm -f "${bins[@]/#//usr/local/bin/}" /etc/systemd/system/vaultd@.service \
-            /etc/udev/rules.d/70-vault-fido.rules
+            /etc/udev/rules.d/70-vault-fido.rules /usr/local/sbin/vault-setup-user \
+            /usr/local/share/applications/dev.passwordvault.app.desktop
+        sudo rm -rf /usr/local/share/secret-vault /etc/systemd/system/vaultd@.service.d
         sudo find /usr/local/share/icons/hicolor -name 'dev.passwordvault.app.*' -delete 2>/dev/null || true
         sudo systemctl daemon-reload
         system=1
@@ -118,15 +122,19 @@ if [ -n "$uninstall" ]; then
     say "Secret Vault removed."
     [ ! -f "$home_share/vault/vault.svault" ] || echo "    Your vault is kept in $home_share/vault."
     if [ -n "$system" ]; then
-        echo "    Kept: the vaults in /var/lib/vault (yours is $me/), the \"vault\" system user and"
-        echo "    /etc/sysusers.d/vault.conf (other people on this computer may use them)."
-        echo "    To delete your vault for good: sudo rm -r /var/lib/vault/$me"
+        echo "    Kept: the vaults in /var/lib/vault (yours is $me/), each person's vault-<login>"
+        echo "    account and /etc/sysusers.d/vault.conf (other people may use them again)."
+        echo "    To delete your vault for good: sudo rm -r /var/lib/vault/$me && sudo userdel vault-$me"
     elif [ -d /var/lib/vault ]; then
         echo "    The system service is still installed; run again and answer yes to remove it."
     fi
     exit 0
 fi
 
+if { command -v dpkg-query >/dev/null && dpkg-query -W -f '${Status}' secret-vault 2>/dev/null | grep -q 'ok installed'; } ||
+    { command -v pacman >/dev/null && pacman -Q secret-vault >/dev/null 2>&1; }; then
+    die "Secret Vault is installed as a package here; upgrade or remove it with your package manager (apt or pacman)"
+fi
 [ "$(uname -s)" = Linux ] || die "this script is for Linux; see the user guide for Windows and macOS"
 [ "$(uname -m)" = x86_64 ] || die "the Linux download is for 64-bit Intel/AMD (x86_64); on $(uname -m), build from source (user guide, chapter 1)"
 for t in tar sha256sum; do command -v $t >/dev/null || die "$t is needed"; done
@@ -186,12 +194,14 @@ dir=$(find "$work/x" -mindepth 1 -maxdepth 1 -type d | head -n1)
 version=$(cat "$dir/VERSION")
 
 # Files for the system service. Archives from 0.2.0-beta.3 on carry them;
-# older ones get them from the same release tag on GitHub.
+# older ones get them from the same release tag on GitHub, or from main for
+# files that release did not have yet.
 system_file() { # NAME (path under contrib/)
     if [ -f "$dir/share/$(basename "$1")" ]; then
         cp "$dir/share/$(basename "$1")" "$work/$(basename "$1")"
     else
         fetch "https://raw.githubusercontent.com/$repo/v$version/contrib/$1" "$work/$(basename "$1")" ||
+            fetch "https://raw.githubusercontent.com/$repo/main/contrib/$1" "$work/$(basename "$1")" ||
             die "could not download contrib/$1 for $version"
     fi
 }
@@ -242,77 +252,59 @@ if [ $mode = user ]; then
         fi
     fi
 else
-    # 2s. As the "vault" system user, one instance per person: vaultd@you.
+    # 2s. As a system service, one instance per person: vaultd@you, running
+    # as its own account vault-you (vault-setup-user makes it).
     system_file systemd/vaultd@.service
     system_file sysusers.d/vault.conf
     system_file udev/70-vault-fido.rules
-    getent group tss >/dev/null || sed -i '/^SupplementaryGroups=tss/d' "$work/vaultd@.service"
+    system_file linux/vault-setup-user
+    system_file polkit/dev.passwordvault.quick-unlock.policy
 
     say "Setting up the system service (sudo asks for your password)..."
     sudo -v
     ! sudo test -f "/var/lib/vault/$me/vault.svault" || had_vault=1
     ! systemctl -q is-active "vaultd@$me" 2>/dev/null || was_running=1
-    # A vault made earlier by the user service moves along, with its paired apps.
-    old_vault=$home_share/vault/vault.svault
-    move=
-    if [ -f "$old_vault" ] && ! sudo test -f "/var/lib/vault/$me/vault.svault"; then
-        echo "You have a vault in $home_share/vault. The system service keeps it in /var/lib/vault/$me."
-        ask "Move it there (a copy stays where it is, as a backup)?" && move=1
-    fi
+    [ -n "$had_vault" ] || [ ! -f "$home_share/vault/vault.svault" ] || {
+        echo "Your vault in $home_share/vault is copied to /var/lib/vault/$me, where the system"
+        echo "service keeps it (the original stays where it is, as a backup)."
+        had_vault=1
+    }
 
-    sudo install -d /usr/local/bin /usr/local/share/icons /etc/sysusers.d /etc/udev/rules.d /etc/systemd/system
+    sudo install -d /usr/local/bin /usr/local/sbin /usr/local/share/icons /usr/local/share/applications \
+        /usr/local/share/secret-vault /etc/sysusers.d /etc/udev/rules.d /etc/systemd/system
     for b in "${bins[@]}"; do
         # Replace, not overwrite in place: a running vaultd keeps its old file.
         sudo install -m755 "$dir/bin/$b" "/usr/local/bin/.$b.new"
         sudo mv -f "/usr/local/bin/.$b.new" "/usr/local/bin/$b"
     done
+    sudo install -m755 "$work/vault-setup-user" /usr/local/sbin/vault-setup-user
+    sudo install -m644 "$work/dev.passwordvault.quick-unlock.policy" /usr/local/share/secret-vault/
     sudo cp -r "$dir/share/hicolor" /usr/local/share/icons/
+    sudo install -m644 "$dir/share/applications/dev.passwordvault.app.desktop" /usr/local/share/applications/
     sudo install -m644 "$work/vault.conf" /etc/sysusers.d/vault.conf
     if command -v systemd-sysusers >/dev/null; then
         sudo systemd-sysusers /etc/sysusers.d/vault.conf
-    elif ! getent passwd vault >/dev/null; then
-        sudo useradd --system --home-dir /var/lib/vault --no-create-home --shell /usr/sbin/nologin vault
+    elif ! getent group vault >/dev/null; then
+        sudo groupadd --system vault
     fi
     sudo install -m644 "$work/70-vault-fido.rules" /etc/udev/rules.d/70-vault-fido.rules
     sudo udevadm control --reload 2>/dev/null && sudo udevadm trigger --subsystem-match=hidraw 2>/dev/null || true
     sudo install -m644 "$work/vaultd@.service" /etc/systemd/system/vaultd@.service
-    sudo systemctl daemon-reload
 
     if user_systemd && systemctl --user -q is-enabled vaultd 2>/dev/null; then
         systemctl --user disable --now vaultd >/dev/null 2>&1 || true
         say "Turned off the per-user vaultd service (the system service replaces it)."
     fi
-    if [ -n "$move" ]; then
-        sudo systemctl stop "vaultd@$me" 2>/dev/null || true
-        sudo install -d -o vault -g vault -m700 "/var/lib/vault/$me" "/var/lib/vault/$me/state"
-        sudo install -o vault -g vault -m600 "$old_vault" "/var/lib/vault/$me/vault.svault"
-        if [ -d "$home_state/vault" ]; then
-            sudo cp -r "$home_state/vault/." "/var/lib/vault/$me/state/"
-            sudo chown -R vault:vault "/var/lib/vault/$me/state"
-        fi
-        say "Moved your vault to /var/lib/vault/$me (the old copy is still in $home_share/vault)."
-        had_vault=1
-    fi
-    sudo systemctl enable "vaultd@$me" >/dev/null 2>&1
-    sudo systemctl restart "vaultd@$me"
-    sleep 1
-    sudo systemctl -q is-active "vaultd@$me" || die "vaultd did not start; see: sudo journalctl -u vaultd@$me -n 30"
-    say "vaultd runs as the vault user and starts with the computer."
+    # Moves older installs to one account per person, then sets you up.
+    sudo /usr/local/sbin/vault-setup-user refresh
+    sudo /usr/local/sbin/vault-setup-user enable "$me"
     limit=$(sudo awk '/^Max locked memory/ { print $4 }' "/proc/$(systemctl show -p MainPID --value "vaultd@$me")/limits" 2>/dev/null || true)
     if limit_ok "$limit"; then say "vaultd keeps its memory out of swap."; fi
 
-    # Clients find this daemon through VAULT_SOCKET: terminals, the desktop
-    # session (environment.d) and the app menu entry.
-    touch "$HOME/.profile"
-    for rc in "$HOME/.profile" "$HOME/.bashrc" "$HOME/.zshrc"; do
-        add_line "$rc" "export VAULT_SOCKET=$sock"
-    done
-    mkdir -p "$HOME/.config/environment.d" "$home_share/applications"
-    echo "VAULT_SOCKET=$sock" >"$HOME/.config/environment.d/50-secret-vault.conf"
-    sed "s|^Exec=vault-gui|Exec=env VAULT_SOCKET=$sock /usr/local/bin/vault-gui|" \
-        "$dir/share/applications/dev.passwordvault.app.desktop" \
-        >"$home_share/applications/dev.passwordvault.app.desktop"
-    export VAULT_SOCKET=$sock
+    # Programs find /run/vault/$me/vaultd.sock by themselves now; settings
+    # older versions of this script added are no longer needed.
+    drop_socket_lines
+    rm -f "$home_share/applications/dev.passwordvault.app.desktop"
 fi
 
 echo
@@ -322,9 +314,5 @@ if [ -n "$had_vault" ]; then
 else
     say "Secret Vault $version is installed."
     echo "    Open \"Secret Vault\" from your app menu to create your vault, or run: vault init"
-fi
-if [ $mode = system ] && [ -z "$was_running" ]; then
-    echo "    Open a new terminal first (it needs VAULT_SOCKET), and sign out and in once"
-    echo "    so the app menu entry and other apps see it too."
 fi
 echo "    Browser autofill, SSH keys and app passwords: see the user guide."
