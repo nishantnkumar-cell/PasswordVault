@@ -9,10 +9,12 @@
 #![deny(missing_docs)]
 
 mod clock;
+pub mod collection;
 mod crypto;
 mod error;
 mod format;
 pub mod generator;
+pub mod identity;
 pub mod item;
 mod merge;
 pub mod origin;
@@ -21,6 +23,7 @@ mod rng;
 mod secret;
 pub mod totp;
 mod vault;
+pub mod xwing;
 
 pub use clock::DeviceId;
 pub use error::Error;

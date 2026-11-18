@@ -13,6 +13,7 @@ use crate::format::{
     self, AEAD_XCHACHA20POLY1305, Argon2Params, FORMAT_VERSION, Factor, Header, KdfCost, Keyslot,
     KeyslotMeta, MAX_HEADER_LEN, MAX_SLOTS, ParsedVault, SealedBody, SlotId, arr48,
 };
+use crate::identity::Identity;
 use crate::recovery::RecoveryCode;
 use crate::rng::{self, SecureRandom};
 use crate::secret::{HwKey, Key};
@@ -33,6 +34,12 @@ pub enum Unlock<'a> {
     Recovery {
         /// Recovery code, with or without hyphens.
         code: &'a str,
+    },
+    /// For a member slot of a shared collection: the member's own sharing
+    /// identity, from their personal vault.
+    Member {
+        /// The member's identity.
+        identity: &'a Identity,
     },
 }
 
@@ -226,6 +233,19 @@ fn derive_kek(meta: &KeyslotMeta, cred: &Unlock<'_>) -> Result<Key, Error> {
             let secret = RecoveryCode::decode(code)?;
             Ok(recovery_kek(&secret, meta))
         }
+        (
+            Unlock::Member { identity },
+            Factor::RecipientHybrid {
+                member,
+                encapsulated,
+            },
+        ) => {
+            if identity.public().fingerprint() != *member {
+                return Err(Error::FactorMismatch);
+            }
+            let ss = identity.kem().decapsulate(encapsulated)?;
+            Ok(recipient_kek(&ss, meta))
+        }
         _ => Err(Error::FactorMismatch),
     }
 }
@@ -238,7 +258,19 @@ fn recovery_kek(secret: &Key, meta: &KeyslotMeta) -> Key {
     )
 }
 
-fn wrap_slot(
+pub(crate) fn recipient_kek(ss: &[u8; 32], meta: &KeyslotMeta) -> Key {
+    let member = match &meta.factor {
+        Factor::RecipientHybrid { member, .. } => member.as_slice(),
+        _ => &[],
+    };
+    crypto::hkdf(
+        ss,
+        Some(&meta.salt),
+        &[b"vault/kek-recipient/v1", &meta.id, member],
+    )
+}
+
+pub(crate) fn wrap_slot(
     rng: &mut dyn SecureRandom,
     vault_id: &[u8; 16],
     kek: &Key,
@@ -673,7 +705,7 @@ impl Vault {
         hw_key: Option<&HwKey>,
         label: &str,
     ) -> Result<SlotId, Error> {
-        if !factor.is_daily_use() {
+        if !factor.is_daily_use() || self.is_collection() {
             return Err(Error::FactorMismatch);
         }
         self.check_room()?;
@@ -740,7 +772,7 @@ impl Vault {
             .slots
             .iter()
             .enumerate()
-            .filter(|(i, s)| *i != pos && s.meta.factor.is_daily_use())
+            .filter(|(i, s)| *i != pos && s.meta.factor.opens_vault())
             .count();
         if daily_left == 0 {
             return Err(Error::LastSlot);
@@ -785,6 +817,31 @@ impl Vault {
         // Fresh item keys as well: the old ones may be in the hands of whoever
         // the revoke is about, and edits made later must not be readable with
         // them.
+        let items = self.rewrap_items(rng, &new_key)?;
+
+        let removed: Vec<SlotId> = self
+            .slots
+            .iter()
+            .map(|s| s.meta.id)
+            .filter(|id| !kept.iter().any(|k| &k.meta.id == id))
+            .collect();
+        self.slot_labels.retain(|(i, _)| !removed.contains(i));
+        self.note_removed(&removed);
+        self.slots = kept;
+        self.items = items;
+        self.retire_key();
+        self.vault_key = new_key;
+        self.key_epoch = self.key_epoch.saturating_add(1);
+        Ok(removed)
+    }
+
+    /// Every item with a fresh item key wrapped under `new_key`, for a key
+    /// rotation.
+    pub(crate) fn rewrap_items(
+        &self,
+        rng: &mut dyn SecureRandom,
+        new_key: &Key,
+    ) -> Result<Vec<ItemRecord>, Error> {
         let mut items = Vec::with_capacity(self.items.len());
         for rec in &self.items {
             let old_key = self.unwrap_item_key(rec)?;
@@ -799,7 +856,7 @@ impl Vault {
             let item_key = Key::from_bytes(rng::array(rng)?);
             let sealed = crypto::seal(
                 rng,
-                &new_key,
+                new_key,
                 &item_key_aad(&self.vault_id, &rec.item_id),
                 item_key.as_bytes(),
             )?;
@@ -818,21 +875,7 @@ impl Vault {
             rec.data_ciphertext = fresh.ciphertext;
             items.push(rec);
         }
-
-        let removed: Vec<SlotId> = self
-            .slots
-            .iter()
-            .map(|s| s.meta.id)
-            .filter(|id| !kept.iter().any(|k| &k.meta.id == id))
-            .collect();
-        self.slot_labels.retain(|(i, _)| !removed.contains(i));
-        self.note_removed(&removed);
-        self.slots = kept;
-        self.items = items;
-        self.retire_key();
-        self.vault_key = new_key;
-        self.key_epoch = self.key_epoch.saturating_add(1);
-        Ok(removed)
+        Ok(items)
     }
 
     /// Fingerprint of a vault key. Only a holder of the key can compute it.
@@ -967,7 +1010,7 @@ impl Vault {
     /// The caller writes them atomically (section 6.5) and should then
     /// test-unlock any slot it just enrolled.
     pub fn to_bytes(&mut self, rng: &mut dyn SecureRandom) -> Result<Vec<u8>, Error> {
-        if !self.slots.iter().any(|s| s.meta.factor.is_daily_use()) {
+        if !self.slots.iter().any(|s| s.meta.factor.opens_vault()) {
             return Err(Error::LastSlot);
         }
         self.generation = self.generation.checked_add(1).ok_or(Error::Malformed)?;
