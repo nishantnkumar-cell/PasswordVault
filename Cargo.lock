@@ -5427,6 +5427,7 @@ version = "0.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "65c9fb96cbc91e3478eaae79a69fcd3f1ae4ad052e471fe6732fff548984b4af"
 dependencies = [
+ "chacha20 0.10.2",
  "getrandom 0.4.3",
  "rand_core 0.10.1",
 ]
@@ -7306,7 +7307,7 @@ dependencies = [
  "objc2-app-kit 0.3.2",
  "objc2-foundation 0.3.2",
  "objc2-local-authentication",
- "rand 0.8.8",
+ "rand 0.10.3",
  "rpassword",
  "rsa",
  "serde_bytes",
@@ -7355,7 +7356,7 @@ version = "0.2.0"
 dependencies = [
  "getrandom 0.4.3",
  "pgp",
- "rand 0.8.8",
+ "rand 0.10.3",
  "ssh-key",
  "thiserror 2.0.21",
  "uniffi",
@@ -7392,7 +7393,7 @@ dependencies = [
  "nix 0.31.3",
  "pgp",
  "postcard",
- "rand 0.8.8",
+ "rand 0.10.3",
  "serde",
  "sha2 0.11.1",
  "signal-hook",
