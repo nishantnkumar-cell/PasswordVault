@@ -86,7 +86,7 @@ jobs:
       # built by this workflow from this tag. Check a download with
       # `gh attestation verify FILE --repo OWNER/REPO` (docs/user-guide/11-versions-and-upgrades.md).
       - name: Attest the downloads
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: "dist/*"
       - name: Create the release
