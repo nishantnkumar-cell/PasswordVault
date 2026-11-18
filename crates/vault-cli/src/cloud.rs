@@ -3,10 +3,10 @@
 //! keeps the settings in the vault and syncs the folder `vault-sync` mirrors.
 
 use std::io::{self, Write};
-use std::time::{Duration, Instant};
 
-use vault_cloud::{Cloudflare, Fetched, JoinLink, Mailbox, OwnCa, Server};
-use vault_ipc::{CloudDevice, CloudInfo, CloudSettings, Request, Response, Secret};
+use vault_cloud::flows::{self, Host};
+use vault_cloud::{OwnCa, Server};
+use vault_ipc::{CloudInfo, CloudSettings, Request, Response, Secret};
 use zeroize::Zeroizing;
 
 use crate::{Client, die, line_from_stdin, load_token, print_qr, secret, unix_now};
@@ -31,27 +31,10 @@ fn need_unlocked(c: &mut Client) {
     }
 }
 
-fn device(i: &CloudInfo) -> &CloudDevice {
-    i.device
-        .as_ref()
-        .unwrap_or_else(|| die("cloud sync is not set up on this device; see `vault cloud setup` or `vault cloud join`"))
-}
-
 fn settings(i: &CloudInfo) -> &CloudSettings {
     i.settings.as_ref().unwrap_or_else(|| {
         die("the vault has no cloud sync settings (is it unlocked? was `vault cloud setup` run?)")
     })
-}
-
-/// This computer's name, for the device list.
-fn host_name() -> String {
-    std::env::var("COMPUTERNAME")
-        .ok()
-        .or_else(|| std::fs::read_to_string("/etc/hostname").ok())
-        .or_else(|| std::env::var("HOSTNAME").ok())
-        .map(|s| s.trim().to_owned())
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "computer".into())
 }
 
 fn flag(rest: &[String], name: &str) -> Option<String> {
@@ -93,11 +76,7 @@ pub fn cloud(rest: &[String]) {
                 .unwrap_or_else(|| die("usage: vault cloud remove DEVICE-ID"));
             let mut c = Client::connect();
             let i = info(&mut c);
-            let m = ok(Mailbox::from_device(device(&i)));
-            if device(&i).device == *id {
-                die("that is this device; use `vault cloud off` here instead");
-            }
-            ok(m.remove_device(id));
+            ok(flows::remove(&i, id));
             println!("Removed. That device can no longer read or save the vault on the server.");
             println!(
                 "It keeps its own copy of the vault; to also lock its unlock methods out, see `vault revoke`."
@@ -106,10 +85,7 @@ pub fn cloud(rest: &[String]) {
         "update" => update(),
         "forget-token" => {
             let mut c = Client::connect();
-            need_unlocked(&mut c);
-            let mut s = settings(&info(&mut c)).clone();
-            s.api_token = None;
-            c.call(Request::CloudSet { settings: Some(s) });
+            ok(flows::forget_token(&mut call(&mut c)));
             println!("The Cloudflare API token is no longer kept in the vault.");
             println!(
                 "`vault cloud update` will ask for one. You can also delete the token in the Cloudflare dashboard."
@@ -192,105 +168,51 @@ fn status() {
     }
 }
 
+fn call(c: &mut Client) -> impl FnMut(Request) -> vault_cloud::Result<Response> + '_ {
+    |r| Ok(c.try_call(r))
+}
+
 fn setup(rest: &[String]) {
     let mut c = Client::connect();
     need_unlocked(&mut c);
-    let i = info(&mut c);
-    if i.settings.is_some() {
+    if info(&mut c).settings.is_some() {
         die(
             "cloud sync is already set up for this vault; see `vault cloud status`, or `vault cloud join` on another device",
         );
     }
-    let name = flag(rest, "--name").unwrap_or_else(host_name);
+    let name = flag(rest, "--name").unwrap_or_else(flows::host_name);
     let keep = rest.iter().any(|a| a == "--keep-token");
     let fingerprint = flag(rest, "--fingerprint");
     if fingerprint.is_some() && flag(rest, "--server").is_none() {
         die("--fingerprint goes with --server (a server on your own computer)");
     }
-    let (url, account, worker, admin_key, token) = match flag(rest, "--server") {
+    let host = match flag(rest, "--server") {
         // A server run by hand: in Docker on your own computer, or deployed
         // with `npx wrangler deploy` in server/sync. Nothing to upload.
-        Some(url) => {
-            let admin_key = secret(
-                "The server's admin key (`docker compose exec vault-sync show`, or its ADMIN_KEY secret): ",
-            );
-            (
-                url.trim().trim_end_matches('/').to_owned(),
-                String::new(),
-                String::new(),
-                admin_key,
-                None,
-            )
-        }
-        None => {
-            let worker =
-                flag(rest, "--worker").unwrap_or_else(|| vault_cloud::DEFAULT_WORKER.into());
-            let account =
-                flag(rest, "--account").unwrap_or_else(|| prompt_line("Cloudflare account ID: "));
-            let token = secret("Cloudflare API token (Workers Scripts: Edit): ");
-            let cf = ok(Cloudflare::new(&account, &token));
-            eprintln!("Checking your Cloudflare account...");
-            let sub = ok(cf.subdomain());
-            let admin_key = ok(vault_cloud::random_token());
-            eprintln!("Uploading the sync server as the Worker \"{worker}\"...");
-            ok(cf.deploy(&worker, &admin_key));
-            let url = vault_cloud::worker_url(&worker, &sub);
-            (
-                url,
-                account.trim().to_owned(),
-                worker,
-                admin_key,
-                Some(token),
-            )
-        }
+        Some(server) => Host::Own {
+            server,
+            fingerprint,
+            admin_key: Secret::new(
+                secret(
+                    "The server's admin key (`docker compose exec vault-sync show`, or its ADMIN_KEY secret): ",
+                )
+                .to_string(),
+            ),
+        },
+        None => Host::Cloudflare {
+            worker: flag(rest, "--worker").unwrap_or_default(),
+            account: flag(rest, "--account")
+                .unwrap_or_else(|| prompt_line("Cloudflare account ID: ")),
+            token: Secret::new(
+                secret("Cloudflare API token (Workers Scripts: Edit): ").to_string(),
+            ),
+            keep_token: keep,
+        },
     };
-    let s_hand = account.is_empty();
-    // A server with its own certificate: fetch its authority and check it
-    // against the fingerprint the user copied from the server.
-    let ca = fingerprint.map(|f| {
-        eprintln!("Checking the server's certificate...");
-        ok(OwnCa::fetch(&url, &f))
-    });
-    let ca_pem = ca.as_ref().map(|c| c.pem().to_owned());
-    let server = ok(Server::with_ca(&url, ca_pem.as_deref()));
-    eprintln!("Waiting for {url} to answer (a new address can take a minute)...");
-    let start = Instant::now();
-    loop {
-        match server.info() {
-            Ok(_) => break,
-            Err(e) if start.elapsed() > Duration::from_secs(120) => die(format!(
-                "the server did not come up: {e}. Run `vault cloud setup` again in a few minutes"
-            )),
-            Err(_) => std::thread::sleep(Duration::from_secs(3)),
-        }
-    }
-
-    let mailbox = ok(vault_cloud::random_mailbox());
-    let device_token = ok(vault_cloud::random_token());
-    let device_id = ok(server.create(&mailbox, &admin_key, &device_token, &name));
-    c.call(Request::CloudSet {
-        settings: Some(CloudSettings {
-            server: url.clone(),
-            mailbox: mailbox.clone(),
-            account_id: account,
-            worker,
-            admin_key,
-            api_token: token
-                .filter(|_| keep)
-                .map(|t| Secret::new(t.trim().to_owned())),
-            ca_cert: ca_pem.clone(),
-        }),
-    });
-    c.call(Request::CloudAttach {
-        device: Some(CloudDevice {
-            server: url.clone(),
-            mailbox,
-            device: device_id,
-            token: device_token,
-            ca_cert: ca_pem,
-        }),
-        file: None,
-    });
+    let own = matches!(host, Host::Own { .. });
+    let url = ok(flows::setup(&mut call(&mut c), host, &name, &|p| {
+        eprintln!("{p}")
+    }));
     println!("Cloud sync is set up on {url}.");
     println!();
     println!("Next:");
@@ -301,7 +223,7 @@ fn setup(rest: &[String]) {
     println!(
         "  2. On each other device: run `vault cloud link` here and `vault cloud join LINK` there."
     );
-    if !keep && !s_hand {
+    if !keep && !own {
         println!(
             "  3. The API token was not kept. You can delete it in the Cloudflare dashboard now;"
         );
@@ -314,25 +236,12 @@ fn setup(rest: &[String]) {
 fn link() {
     let mut c = Client::connect();
     let i = info(&mut c);
-    let d = device(&i);
-    let t = ok(ok(Mailbox::from_device(d)).ticket());
-    let link = JoinLink {
-        server: d.server.clone(),
-        mailbox: d.mailbox.clone(),
-        ticket: t.ticket,
-        fingerprint: d
-            .ca_cert
-            .as_deref()
-            .and_then(|p| OwnCa::from_pem(p).ok())
-            .map(|c| c.fingerprint()),
-    }
-    .to_link();
+    let (link, minutes) = ok(flows::link(&i));
     print_qr(&link);
     println!("{}", *link);
     eprintln!();
     eprintln!(
-        "On the new device run `vault cloud join '<link>'` or scan the code in the app. It works once, for {} minutes.",
-        t.expires.saturating_sub(unix_now()).div_ceil(60)
+        "On the new device run `vault cloud join '<link>'` or paste it in the app's Cloud sync page. It works once, for {minutes} minutes."
     );
     eprintln!(
         "Anyone with this link can download the encrypted vault, so share it only with your own devices."
@@ -344,41 +253,11 @@ fn join(rest: &[String]) {
         Some(l) if !l.starts_with("--") => Zeroizing::new(l.clone()),
         _ => secret("Join link: "),
     };
-    let link = ok(JoinLink::parse(&text));
-    let name = flag(rest, "--name").unwrap_or_else(host_name);
-    let ca_pem = link
-        .fingerprint
-        .as_ref()
-        .map(|f| ok(OwnCa::fetch(&link.server, f)).pem().to_owned());
-    let server = ok(Server::with_ca(&link.server, ca_pem.as_deref()));
-    ok(server.info());
-    let token = ok(vault_cloud::random_token());
-    let device_id = ok(server.join(&link, &token, &name));
-    let m = ok(Mailbox::new(
-        &link.server,
-        &link.mailbox,
-        &token,
-        ca_pem.as_deref(),
-    ));
-    let file = match ok(m.get(None)) {
-        Fetched::File(_, bytes) => Some(bytes),
-        Fetched::Empty(_) | Fetched::Unchanged => None,
-    };
+    let name = flag(rest, "--name").unwrap_or_else(flows::host_name);
     let mut c = Client::connect();
     let paired = load_token().is_some();
-    let Response::Status(s) = c.call(Request::CloudAttach {
-        device: Some(CloudDevice {
-            server: link.server.clone(),
-            mailbox: link.mailbox.clone(),
-            device: device_id,
-            token,
-            ca_cert: ca_pem,
-        }),
-        file,
-    }) else {
-        die("unexpected response")
-    };
-    println!("Joined cloud sync on {}.", link.server);
+    let (server, s) = ok(flows::join(&mut call(&mut c), &text, &name));
+    println!("Joined cloud sync on {server}.");
     if let Some(sync) = &s.sync {
         crate::print_sync(sync);
     }
@@ -395,7 +274,7 @@ fn join(rest: &[String]) {
 fn devices() {
     let mut c = Client::connect();
     let i = info(&mut c);
-    let list = ok(ok(Mailbox::from_device(device(&i))).devices());
+    let list = ok(flows::devices(&i));
     println!("{:<18} {:<24} {:<16} LAST SEEN", "ID", "NAME", "ADDED");
     for d in list {
         println!(
@@ -415,52 +294,31 @@ fn update() {
     let mut c = Client::connect();
     need_unlocked(&mut c);
     let s = settings(&info(&mut c)).clone();
-    if s.account_id.is_empty() {
-        die(
-            "this server was set up by hand: for Docker, `git pull` and `docker compose up -d --build` in server/sync; otherwise `npx wrangler deploy` there",
-        );
-    }
-    let token = match &s.api_token {
-        Some(t) => t.clone(),
-        None => secret("Cloudflare API token (Workers Scripts: Edit): "),
+    let token = match (&s.api_token, s.account_id.is_empty()) {
+        (None, false) => Some(Secret::new(
+            secret("Cloudflare API token (Workers Scripts: Edit): ").to_string(),
+        )),
+        _ => None,
     };
-    let cf = ok(Cloudflare::new(&s.account_id, &token));
     eprintln!(
         "Uploading revision {} of the sync server...",
         vault_cloud::worker_revision()
     );
-    ok(cf.deploy(&s.worker, &s.admin_key));
-    println!("Updated {}. Mailboxes and devices are unchanged.", s.server);
+    let server = ok(flows::update(&mut call(&mut c), token));
+    println!("Updated {server}. Mailboxes and devices are unchanged.");
 }
 
 fn off(everywhere: bool) {
     let mut c = Client::connect();
-    let i = info(&mut c);
+    ok(flows::off(&mut call(&mut c), everywhere));
     if everywhere {
-        need_unlocked(&mut c);
-        let i = info(&mut c);
-        settings(&i);
-        if let Some(d) = &i.device {
-            ok(ok(Mailbox::from_device(d)).delete());
-        }
-        c.call(Request::CloudSet { settings: None });
         println!(
             "Deleted the vault and every device's access from the server, and the settings from the vault."
         );
         println!(
             "The Worker stays in your Cloudflare account; delete it there if you no longer want it."
         );
-    } else {
-        let d = device(&i);
-        // Best effort: a device that was already removed cannot remove itself.
-        if let Ok(m) = Mailbox::from_device(d) {
-            let _ = m.remove_device(&d.device);
-        }
     }
-    c.call(Request::CloudAttach {
-        device: None,
-        file: None,
-    });
     println!("Cloud sync is off on this device. Its own vault file is unchanged.");
     if !everywhere {
         println!("Other devices keep syncing. Join again later with a new link from one of them.");

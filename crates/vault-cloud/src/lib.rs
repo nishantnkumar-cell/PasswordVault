@@ -29,6 +29,8 @@ use ureq::Agent;
 use vault_core::{OsRandom, SecureRandom};
 use vault_ipc::Secret;
 
+pub mod flows;
+
 /// The sync server, uploaded as it is by [`Cloudflare::deploy`].
 pub const WORKER_JS: &str = include_str!("../../../server/sync/src/index.js");
 /// The Workers compatibility date the server is written for.
