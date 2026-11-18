@@ -1,0 +1,22 @@
+# Secret Vault sync server on your own computer (user guide chapter 16).
+#
+#   1. Put the names or addresses your other devices use to reach this
+#      computer in SYNC_HOSTS below.
+#   2. docker compose up -d --build
+#   3. docker compose exec vault-sync show
+services:
+  vault-sync:
+    build: .
+    image: secret-vault-sync:local
+    restart: unless-stopped
+    environment:
+      # Comma-separated: this computer's name on your network and/or its
+      # fixed IP address, such as "vault-sync.local,192.168.1.20".
+      SYNC_HOSTS: "192.168.1.20"
+    ports:
+      - "8443:8443"
+    volumes:
+      - vault-sync-data:/data
+
+volumes:
+  vault-sync-data:

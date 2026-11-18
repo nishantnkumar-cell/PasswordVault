@@ -5,7 +5,10 @@ export default defineConfig({
   plugins: [
     cloudflareTest({
       wrangler: { configPath: "./wrangler.jsonc" },
-      miniflare: { bindings: { ADMIN_KEY: "test-admin-key" } },
+      miniflare: { bindings: {
+        ADMIN_KEY: "test-admin-key",
+        CA_PEM: "-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----\n",
+      } },
     }),
   ],
 });

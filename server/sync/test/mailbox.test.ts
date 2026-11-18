@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 const MAX_FILE = 4 * 1024 * 1024;
 const MAX_TICKETS = 5;
 const MAX_WRITES_PER_MINUTE = 60;
-const REVISION = 1;
+const REVISION = 2;
 
 const ORIGIN = "https://sync.example.com";
 const BASE = `${ORIGIN}/v1/m/`;
@@ -69,6 +69,12 @@ describe("the server", () => {
     expect(await r.json()).toEqual({ service: "secret-vault-sync", api: 1, revision: REVISION });
     const page = await exports.default.fetch(new Request(`${ORIGIN}/join`));
     expect(await page.text()).toContain("Join a Secret Vault");
+  });
+
+  it("serves the certificate authority of a self-hosted server", async () => {
+    const r = await exports.default.fetch(new Request(`${ORIGIN}/ca.pem`));
+    expect(r.status).toBe(200);
+    expect(await r.text()).toBe("-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----\n");
   });
 
   it("refuses plain http", async () => {

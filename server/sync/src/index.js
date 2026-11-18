@@ -27,6 +27,8 @@
 //   DELETE /v1/m/<id>/devices/<dev>   remove a device (a lost phone)
 //   GET    /v1/m/<id>/watch           WebSocket: {"version":n} on connect and
 //                                     after every save; "ping" -> "pong"
+//   GET    /ca.pem                    a self-hosted server's own certificate
+//                                     authority (404 on Cloudflare)
 //   GET    /join                      a page telling a person who opened a join
 //                                     link in a browser what to do with it
 
@@ -38,7 +40,7 @@ import { DurableObject } from "cloudflare:workers";
 
 /** Bumped whenever this file changes, so `vault cloud status` can tell that
  * the deployed server is older than the program's copy. */
-const REVISION = 1;
+const REVISION = 2;
 
 /** Largest vault file accepted. Vaults with thousands of items are < 1 MiB. */
 const MAX_FILE = 4 * 1024 * 1024;
@@ -64,6 +66,9 @@ const TOKEN_RE = /^[A-Za-z0-9_-]{43,128}$/;
  * @typedef {object} Env
  * @property {DurableObjectNamespace} MAILBOX
  * @property {string} [ADMIN_KEY] needed to create a mailbox; set by `vault cloud setup`
+ * @property {string} [CA_PEM] the certificate authority of a self-hosted server's own
+ *   certificate (server/sync/docker); served at /ca.pem so a joining device can fetch it
+ *   and check it against the fingerprint in its join link
  */
 
 const enc = new TextEncoder();
@@ -148,6 +153,10 @@ export default {
     if (url.protocol !== "https:" && !loopback) return text(400, "use https");
     if (url.pathname === "/" || url.pathname === "/v1") {
       return json({ service: "secret-vault-sync", api: 1, revision: REVISION });
+    }
+    if (url.pathname === "/ca.pem") {
+      if (!env.CA_PEM) return text(404, "this server uses a public certificate");
+      return new Response(env.CA_PEM, { headers: { "content-type": "application/x-pem-file" } });
     }
     if (url.pathname === "/join") {
       return new Response(JOIN_PAGE, { headers: { "content-type": "text/html; charset=utf-8" } });

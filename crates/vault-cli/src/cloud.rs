@@ -5,7 +5,7 @@
 use std::io::{self, Write};
 use std::time::{Duration, Instant};
 
-use vault_cloud::{Cloudflare, Fetched, JoinLink, Mailbox, Server};
+use vault_cloud::{Cloudflare, Fetched, JoinLink, Mailbox, OwnCa, Server};
 use vault_ipc::{CloudDevice, CloudInfo, CloudSettings, Request, Response, Secret};
 use zeroize::Zeroizing;
 
@@ -149,6 +149,12 @@ fn status() {
                 s.worker, s.account_id
             );
         }
+        if let Some(ca) = s.ca_cert.as_deref().and_then(|p| OwnCa::from_pem(p).ok()) {
+            println!(
+                "certificate: the server's own (fingerprint {})",
+                ca.fingerprint()
+            );
+        }
         println!(
             "API token:  {}",
             if s.api_token.is_some() {
@@ -164,7 +170,7 @@ fn status() {
                 println!("server:     {}", d.server);
             }
             println!("this device: {} (joined)", d.device);
-            if let Ok(srv) = Server::new(&d.server) {
+            if let Ok(srv) = Server::with_ca(&d.server, d.ca_cert.as_deref()) {
                 match srv.info() {
                     Ok(si) if si.revision < vault_cloud::worker_revision() => println!(
                         "server code: revision {}, older than this program's {}; run `vault cloud update`",
@@ -197,11 +203,17 @@ fn setup(rest: &[String]) {
     }
     let name = flag(rest, "--name").unwrap_or_else(host_name);
     let keep = rest.iter().any(|a| a == "--keep-token");
+    let fingerprint = flag(rest, "--fingerprint");
+    if fingerprint.is_some() && flag(rest, "--server").is_none() {
+        die("--fingerprint goes with --server (a server on your own computer)");
+    }
     let (url, account, worker, admin_key, token) = match flag(rest, "--server") {
-        // A server deployed by hand (`npx wrangler deploy` in server/sync,
-        // with its ADMIN_KEY secret set): nothing to upload.
+        // A server run by hand: in Docker on your own computer, or deployed
+        // with `npx wrangler deploy` in server/sync. Nothing to upload.
         Some(url) => {
-            let admin_key = secret("The server's admin key (its ADMIN_KEY secret): ");
+            let admin_key = secret(
+                "The server's admin key (`docker compose exec vault-sync show`, or its ADMIN_KEY secret): ",
+            );
             (
                 url.trim().trim_end_matches('/').to_owned(),
                 String::new(),
@@ -233,7 +245,14 @@ fn setup(rest: &[String]) {
         }
     };
     let s_hand = account.is_empty();
-    let server = ok(Server::new(&url));
+    // A server with its own certificate: fetch its authority and check it
+    // against the fingerprint the user copied from the server.
+    let ca = fingerprint.map(|f| {
+        eprintln!("Checking the server's certificate...");
+        ok(OwnCa::fetch(&url, &f))
+    });
+    let ca_pem = ca.as_ref().map(|c| c.pem().to_owned());
+    let server = ok(Server::with_ca(&url, ca_pem.as_deref()));
     eprintln!("Waiting for {url} to answer (a new address can take a minute)...");
     let start = Instant::now();
     loop {
@@ -259,6 +278,7 @@ fn setup(rest: &[String]) {
             api_token: token
                 .filter(|_| keep)
                 .map(|t| Secret::new(t.trim().to_owned())),
+            ca_cert: ca_pem.clone(),
         }),
     });
     c.call(Request::CloudAttach {
@@ -267,6 +287,7 @@ fn setup(rest: &[String]) {
             mailbox,
             device: device_id,
             token: device_token,
+            ca_cert: ca_pem,
         }),
         file: None,
     });
@@ -299,6 +320,11 @@ fn link() {
         server: d.server.clone(),
         mailbox: d.mailbox.clone(),
         ticket: t.ticket,
+        fingerprint: d
+            .ca_cert
+            .as_deref()
+            .and_then(|p| OwnCa::from_pem(p).ok())
+            .map(|c| c.fingerprint()),
     }
     .to_link();
     print_qr(&link);
@@ -320,11 +346,20 @@ fn join(rest: &[String]) {
     };
     let link = ok(JoinLink::parse(&text));
     let name = flag(rest, "--name").unwrap_or_else(host_name);
-    let server = ok(Server::new(&link.server));
+    let ca_pem = link
+        .fingerprint
+        .as_ref()
+        .map(|f| ok(OwnCa::fetch(&link.server, f)).pem().to_owned());
+    let server = ok(Server::with_ca(&link.server, ca_pem.as_deref()));
     ok(server.info());
     let token = ok(vault_cloud::random_token());
     let device_id = ok(server.join(&link, &token, &name));
-    let m = ok(Mailbox::new(&link.server, &link.mailbox, &token));
+    let m = ok(Mailbox::new(
+        &link.server,
+        &link.mailbox,
+        &token,
+        ca_pem.as_deref(),
+    ));
     let file = match ok(m.get(None)) {
         Fetched::File(_, bytes) => Some(bytes),
         Fetched::Empty(_) | Fetched::Unchanged => None,
@@ -337,6 +372,7 @@ fn join(rest: &[String]) {
             mailbox: link.mailbox.clone(),
             device: device_id,
             token,
+            ca_cert: ca_pem,
         }),
         file,
     }) else {
@@ -381,7 +417,7 @@ fn update() {
     let s = settings(&info(&mut c)).clone();
     if s.account_id.is_empty() {
         die(
-            "this server was deployed by hand; update it with `npx wrangler deploy` in server/sync",
+            "this server was set up by hand: for Docker, `git pull` and `docker compose up -d --build` in server/sync; otherwise `npx wrangler deploy` there",
         );
     }
     let token = match &s.api_token {

@@ -130,6 +130,7 @@ CLOUD SYNC                     through your own free Cloudflare account (user gu
   cloud                        show cloud sync state
   cloud setup [--account ID] [--worker NAME] [--keep-token] [--name DEVICE]
   cloud setup --server URL     use a sync server you deployed yourself (asks for its admin key)
+      [--fingerprint FP]       for a server with its own certificate (Docker): its fingerprint
                                put the sync server in your Cloudflare account and start
                                syncing; asks for an API token (Workers Scripts: Edit)
   cloud link                   a one-time link and QR code (10 minutes) to add a device

@@ -7,12 +7,21 @@
 //! - The `vault-sync` binary mirrors the mailbox to the folder `vaultd`
 //!   already keeps in sync, so `vaultd` itself never touches the network.
 //!
+//! A server can also run on the user's own computer, in Docker
+//! (`server/sync/Dockerfile`). It has its own certificate authority, which
+//! [`OwnCa`] pins by its SHA-256 fingerprint.
+//!
 //! The server only ever holds the encrypted vault file; everything here
 //! moves ciphertext and access tokens, never a vault key.
 
 use std::fmt;
 use std::io::Read;
+use std::net::TcpStream;
+use std::sync::Arc;
 use std::time::Duration;
+
+use rustls_pki_types::CertificateDer;
+use rustls_pki_types::pem::PemObject;
 
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -56,8 +65,15 @@ fn err(s: impl Into<String>) -> Error {
     Error(s.into())
 }
 
-fn agent() -> Agent {
+fn agent(ca: Option<&OwnCa>) -> Agent {
+    let mut tls = ureq::tls::TlsConfig::builder();
+    if let Some(ca) = ca {
+        tls = tls.root_certs(ureq::tls::RootCerts::Specific(Arc::new(vec![
+            ureq::tls::Certificate::from_der(ca.der.as_ref()).to_owned(),
+        ])));
+    }
     Agent::config_builder()
+        .tls_config(tls.build())
         .timeout_global(Some(Duration::from_secs(60)))
         .http_status_as_error(false)
         .user_agent(concat!("secret-vault/", env!("CARGO_PKG_VERSION")))
@@ -110,6 +126,117 @@ pub fn digest(bytes: &[u8]) -> [u8; 32] {
     Sha256::digest(bytes).into()
 }
 
+// ---- A server's own certificate authority ----
+
+/// The certificate authority of a server with its own certificate (the
+/// Docker server). When a server has one, only it is trusted for that
+/// server: not the public authorities.
+#[derive(Clone)]
+pub struct OwnCa {
+    pem: String,
+    der: CertificateDer<'static>,
+}
+
+impl OwnCa {
+    /// Reads a PEM certificate (the first one in `pem`).
+    pub fn from_pem(pem: &str) -> Result<OwnCa> {
+        let der = CertificateDer::from_pem_slice(pem.as_bytes())
+            .map_err(|_| err("that is not a PEM certificate"))?;
+        let pem = format!(
+            "-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n",
+            data_encoding::BASE64
+                .encode(der.as_ref())
+                .as_bytes()
+                .chunks(64)
+                .map(|c| std::str::from_utf8(c).unwrap_or_default())
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+        Ok(OwnCa { pem, der })
+    }
+
+    pub fn pem(&self) -> &str {
+        &self.pem
+    }
+
+    /// base64url SHA-256 of the certificate (43 characters), as the server's
+    /// `show` command prints it and join links carry it.
+    pub fn fingerprint(&self) -> String {
+        data_encoding::BASE64URL_NOPAD.encode(&digest(self.der.as_ref()))
+    }
+
+    /// Downloads the server's authority from `<server>/ca.pem` and keeps it
+    /// only if it has `fingerprint`. The download itself cannot be checked
+    /// (it is how this computer learns what to trust), so the fingerprint,
+    /// which the user copied from the server or a join link, is what makes
+    /// it safe.
+    pub fn fetch(server: &str, fingerprint: &str) -> Result<OwnCa> {
+        let base = server.trim().trim_end_matches('/');
+        if !is_server_address(base) {
+            return Err(err("the server address must start with https://"));
+        }
+        let fingerprint = fingerprint.trim();
+        if !is_fingerprint(fingerprint) {
+            return Err(err(
+                "the fingerprint is 43 characters, as `docker compose exec vault-sync show` prints it",
+            ));
+        }
+        let unchecked: Agent = Agent::config_builder()
+            .tls_config(
+                ureq::tls::TlsConfig::builder()
+                    .disable_verification(true)
+                    .build(),
+            )
+            .timeout_global(Some(Duration::from_secs(30)))
+            .http_status_as_error(false)
+            .build()
+            .into();
+        let mut r = unchecked
+            .get(&format!("{base}/ca.pem"))
+            .call()
+            .map_err(net)?;
+        if r.status() == 404 {
+            return Err(err(
+                "this server has a public certificate; leave out the fingerprint",
+            ));
+        }
+        if r.status() != 200 {
+            return Err(refused("getting the server's certificate", &mut r));
+        }
+        let ca = OwnCa::from_pem(&read_text(&mut r))?;
+        if ca.fingerprint() != fingerprint {
+            return Err(err(
+                "the server's certificate does not have that fingerprint: check the address and the fingerprint (someone on the network may be pretending to be the server)",
+            ));
+        }
+        Ok(ca)
+    }
+
+    fn rustls(&self) -> Result<rustls::ClientConfig> {
+        let mut roots = rustls::RootCertStore::empty();
+        roots
+            .add(self.der.clone())
+            .map_err(|e| err(format!("unusable certificate: {e}")))?;
+        Ok(rustls::ClientConfig::builder_with_provider(Arc::new(
+            rustls::crypto::ring::default_provider(),
+        ))
+        .with_safe_default_protocol_versions()
+        .map_err(|e| err(e.to_string()))?
+        .with_root_certificates(roots)
+        .with_no_client_auth())
+    }
+}
+
+fn is_fingerprint(s: &str) -> bool {
+    s.len() == 43
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+}
+
+fn own_ca(pem: Option<&str>) -> Result<Option<OwnCa>> {
+    pem.map(OwnCa::from_pem).transpose()
+}
+
 // ---- Join links ----
 
 /// What a join link carries: where the server is, which mailbox, and a
@@ -119,18 +246,26 @@ pub struct JoinLink {
     pub server: String,
     pub mailbox: String,
     pub ticket: Secret,
+    /// The fingerprint of the server's own certificate authority, for a
+    /// server that has one ([`OwnCa`]).
+    pub fingerprint: Option<String>,
 }
 
 impl JoinLink {
-    /// `https://<server>/join#v1.<mailbox>.<ticket>`. Browsers never send
-    /// the part after `#`, so the ticket stays out of server logs even if
-    /// someone opens the link in a browser (which shows how to use it).
+    /// `https://<server>/join#v1.<mailbox>.<ticket>[.<fingerprint>]`.
+    /// Browsers never send the part after `#`, so the ticket stays out of
+    /// server logs even if someone opens the link in a browser (which shows
+    /// how to use it).
     pub fn to_link(&self) -> Secret {
         Secret::new(format!(
-            "{}/join#v1.{}.{}",
+            "{}/join#v1.{}.{}{}",
             self.server.trim_end_matches('/'),
             self.mailbox,
-            *self.ticket
+            *self.ticket,
+            self.fingerprint
+                .as_ref()
+                .map(|f| format!(".{f}"))
+                .unwrap_or_default()
         ))
     }
 
@@ -143,11 +278,18 @@ impl JoinLink {
         };
         let (base, frag) = link.trim().split_once("/join#").ok_or_else(bad)?;
         let mut parts = frag.split('.');
-        let (Some("v1"), Some(mailbox), Some(ticket), None) =
-            (parts.next(), parts.next(), parts.next(), parts.next())
-        else {
+        let (Some("v1"), Some(mailbox), Some(ticket), fingerprint, None) = (
+            parts.next(),
+            parts.next(),
+            parts.next(),
+            parts.next(),
+            parts.next(),
+        ) else {
             return Err(bad());
         };
+        if fingerprint.is_some_and(|f| !is_fingerprint(f)) {
+            return Err(bad());
+        }
         if !is_server_address(base) {
             return Err(bad());
         }
@@ -158,6 +300,7 @@ impl JoinLink {
             server: base.to_owned(),
             mailbox: mailbox.to_owned(),
             ticket: Secret::new(ticket.to_owned()),
+            fingerprint: fingerprint.map(str::to_owned),
         })
     }
 }
@@ -168,6 +311,7 @@ impl JoinLink {
 pub struct Server {
     agent: Agent,
     base: String,
+    ca: Option<OwnCa>,
 }
 
 /// What `GET /` says.
@@ -211,14 +355,23 @@ fn refused(what: &str, resp: &mut ureq::http::Response<ureq::Body>) -> Error {
 }
 
 impl Server {
+    /// A server with a public certificate (Cloudflare's).
     pub fn new(base: &str) -> Result<Server> {
+        Server::with_ca(base, None)
+    }
+
+    /// A server that, if `ca` is given, is trusted only with that
+    /// certificate authority (PEM).
+    pub fn with_ca(base: &str, ca: Option<&str>) -> Result<Server> {
         let base = base.trim().trim_end_matches('/');
         if !is_server_address(base) {
             return Err(err("the server address must start with https://"));
         }
+        let ca = own_ca(ca)?;
         Ok(Server {
-            agent: agent(),
+            agent: agent(ca.as_ref()),
             base: base.to_owned(),
+            ca,
         })
     }
 
@@ -342,10 +495,12 @@ struct TicketJson {
 }
 
 /// One mailbox, as one device.
+#[derive(Clone)]
 pub struct Mailbox {
     agent: Agent,
     url: String,
     token: Secret,
+    ca: Option<OwnCa>,
 }
 
 fn version_of(resp: &ureq::http::Response<ureq::Body>) -> Result<u64> {
@@ -357,8 +512,9 @@ fn version_of(resp: &ureq::http::Response<ureq::Body>) -> Result<u64> {
 }
 
 impl Mailbox {
-    pub fn new(server: &str, mailbox: &str, token: &str) -> Result<Mailbox> {
-        let s = Server::new(server)?;
+    /// `ca`: the server's own certificate authority (PEM), if it has one.
+    pub fn new(server: &str, mailbox: &str, token: &str, ca: Option<&str>) -> Result<Mailbox> {
+        let s = Server::with_ca(server, ca)?;
         if !is_hex(mailbox, 32) || !is_token(token) {
             return Err(err("malformed mailbox id or device token"));
         }
@@ -366,11 +522,12 @@ impl Mailbox {
             agent: s.agent,
             url: format!("{}/v1/m/{mailbox}", s.base),
             token: Secret::new(token.to_owned()),
+            ca: s.ca,
         })
     }
 
     pub fn from_device(d: &vault_ipc::CloudDevice) -> Result<Mailbox> {
-        Mailbox::new(&d.server, &d.mailbox, &d.token)
+        Mailbox::new(&d.server, &d.mailbox, &d.token, d.ca_cert.as_deref())
     }
 
     fn auth(&self) -> String {
@@ -500,6 +657,33 @@ impl Mailbox {
         );
         Ok(req)
     }
+
+    /// Opens the WebSocket that watches for changes, trusting only the
+    /// server's own authority if it has one. Reads give up after
+    /// `read_timeout` (a time to send a ping).
+    pub fn watch(
+        &self,
+        read_timeout: Duration,
+    ) -> Result<tungstenite::WebSocket<tungstenite::stream::MaybeTlsStream<TcpStream>>> {
+        let req = self.watch_request()?;
+        let uri = req.uri();
+        let host = uri.host().ok_or_else(|| err("bad server address"))?;
+        let host = host.trim_start_matches('[').trim_end_matches(']');
+        let tls = uri.scheme_str() == Some("wss");
+        let port = uri.port_u16().unwrap_or(if tls { 443 } else { 80 });
+        let stream = TcpStream::connect((host, port))
+            .map_err(|e| err(format!("could not reach the server: {e}")))?;
+        stream
+            .set_read_timeout(Some(read_timeout))
+            .map_err(|e| err(e.to_string()))?;
+        let connector = match (&self.ca, tls) {
+            (Some(ca), true) => Some(tungstenite::Connector::Rustls(Arc::new(ca.rustls()?))),
+            _ => None,
+        };
+        let (ws, _) = tungstenite::client_tls_with_config(req, stream, None, connector)
+            .map_err(|e| err(format!("could not watch the mailbox: {e}")))?;
+        Ok(ws)
+    }
 }
 
 // ---- Cloudflare ----
@@ -555,7 +739,7 @@ impl Cloudflare {
             return Err(err("paste the API token as Cloudflare shows it"));
         }
         Ok(Cloudflare {
-            agent: agent(),
+            agent: agent(None),
             account: account.to_owned(),
             token: Secret::new(token.to_owned()),
         })
@@ -745,21 +929,50 @@ mod tests {
             server: "https://vault-sync.example-name.workers.dev".into(),
             mailbox: "0123456789abcdef0123456789abcdef".into(),
             ticket: Secret::new("T".repeat(43)),
+            fingerprint: None,
         };
         let text = l.to_link();
         assert!(text.starts_with("https://vault-sync.example-name.workers.dev/join#v1."));
         assert!(JoinLink::parse(&text).unwrap() == l);
         assert!(JoinLink::parse(&format!("  {}\n", *text)).unwrap() == l);
+        let own = JoinLink {
+            server: "https://192.168.1.20:8443".into(),
+            fingerprint: Some("F".repeat(43)),
+            ..l.clone()
+        };
+        assert!(JoinLink::parse(&own.to_link()).unwrap() == own);
         for bad in [
             "http://x.example.com/join#v1.0123456789abcdef0123456789abcdef.TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT",
             "https://x.example.com/join#v2.0123456789abcdef0123456789abcdef.TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT",
             "https://x.example.com/join#v1.XYZ.TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT",
             "https://x.example.com/join#v1.0123456789abcdef0123456789abcdef.short",
             "https://x.example.com/join#v1.0123456789abcdef0123456789abcdef.TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT.extra",
+            "https://x.example.com/join#v1.0123456789abcdef0123456789abcdef.TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT.FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF.more",
             "not a link",
         ] {
             assert!(JoinLink::parse(bad).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn own_certificate_authorities_are_pinned_by_fingerprint() {
+        // A throwaway authority (openssl req -x509), with the fingerprint
+        // the Docker server's `show` prints for it.
+        let pem = include_str!("testdata/example-ca.pem");
+        let ca = OwnCa::from_pem(&format!("some text before\n{pem}")).unwrap();
+        assert_eq!(
+            ca.fingerprint(),
+            "tbCvXr6N001Lm6NUgBwIgyL5MjAWEOiHLXJ0gQT5dRQ"
+        );
+        assert!(is_fingerprint(&ca.fingerprint()));
+        assert_eq!(
+            OwnCa::from_pem(ca.pem()).unwrap().fingerprint(),
+            ca.fingerprint()
+        );
+        assert!(ca.rustls().is_ok());
+        assert!(OwnCa::from_pem("not a certificate").is_err());
+        assert!(Server::with_ca("https://192.168.1.20:8443", Some(pem)).is_ok());
+        assert!(Server::with_ca("https://192.168.1.20:8443", Some("junk")).is_err());
     }
 
     #[test]

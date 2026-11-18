@@ -60,6 +60,22 @@ jobs:
         working-directory: server/sync
         env:
           WRANGLER_SEND_METRICS: "false"
+      - name: The Docker server builds, starts and keeps its own certificate
+        working-directory: server/sync
+        run: |
+          docker build -t secret-vault-sync:ci .
+          docker run -d --name sync -p 8443:8443 -e SYNC_HOSTS=sync.example.com -v sync-data:/data secret-vault-sync:ci
+          for i in $(seq 30); do docker exec sync test -s /data/run/show && break; sleep 1; done
+          sleep 2
+          docker exec sync show
+          docker cp sync:/data/tls/ca.pem "$RUNNER_TEMP/ca.pem"
+          curl -fsS --cacert "$RUNNER_TEMP/ca.pem" --resolve sync.example.com:8443:127.0.0.1 https://sync.example.com:8443/ | grep -q secret-vault-sync
+          before=$(docker exec sync show | grep fingerprint)
+          docker rm -f sync
+          docker run -d --name sync -p 8443:8443 -e SYNC_HOSTS=sync.example.com -v sync-data:/data secret-vault-sync:ci
+          sleep 5
+          test "$(docker exec sync show | grep fingerprint)" = "$before"
+          curl -fsS --cacert "$RUNNER_TEMP/ca.pem" --resolve sync.example.com:8443:127.0.0.1 https://sync.example.com:8443/ca.pem | grep -q "BEGIN CERTIFICATE"
 
   extension:
     runs-on: ubuntu-latest

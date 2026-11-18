@@ -1,0 +1,9 @@
+{
+  "name": "vault-sync-server-docker",
+  "private": true,
+  "description": "The Workers runtime (workerd) that runs the Secret Vault sync server in Docker (docs/cloud-sync.md).",
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "dependencies": {
+    "workerd": "1.20261102.1"
+  }
+}

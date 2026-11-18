@@ -462,6 +462,11 @@ pub struct CloudSettings {
     /// The Cloudflare API token, kept only if the user chose to, for updating
     /// the server later without pasting a new one.
     pub api_token: Option<Secret>,
+    /// For a server with its own certificate authority (the Docker server,
+    /// `vault cloud setup --server URL --fingerprint FP`): that authority's
+    /// certificate, PEM. Devices trust only it for this server. `None` for
+    /// a server with a public certificate, such as Cloudflare's.
+    pub ca_cert: Option<String>,
 }
 
 /// Name of the vault setting that holds [`CloudSettings`].
@@ -476,6 +481,8 @@ pub struct CloudDevice {
     /// This device's id on the server (16 hex characters).
     pub device: String,
     pub token: Secret,
+    /// The server's own certificate authority, PEM ([`CloudSettings::ca_cert`]).
+    pub ca_cert: Option<String>,
 }
 
 /// Name of the file in the cloud folder that holds a [`CloudDevice`].
@@ -489,8 +496,16 @@ impl CloudDevice {
         Secret::new(format!(
             "# Secret Vault cloud sync: this device's access to its mailbox.\n\
              # Written by vaultd; read by vault-sync. Keep it private.\n\
-             server={}\nmailbox={}\ndevice={}\ntoken={}\n",
-            self.server, self.mailbox, self.device, *self.token
+             server={}\nmailbox={}\ndevice={}\ntoken={}\n{}",
+            self.server,
+            self.mailbox,
+            self.device,
+            *self.token,
+            // One line: base64 of the PEM.
+            self.ca_cert
+                .as_ref()
+                .map(|c| format!("ca={}\n", data_encoding::BASE64.encode(c.as_bytes())))
+                .unwrap_or_default()
         ))
     }
 
@@ -507,6 +522,12 @@ impl CloudDevice {
             mailbox: get("mailbox")?,
             device: get("device")?,
             token: Secret::new(get("token")?),
+            ca_cert: match get("ca") {
+                Some(b) => {
+                    Some(String::from_utf8(data_encoding::BASE64.decode(b.as_bytes()).ok()?).ok()?)
+                }
+                None => None,
+            },
         })
     }
 }
@@ -779,8 +800,14 @@ mod tests {
             mailbox: "0123456789abcdef0123456789abcdef".into(),
             device: "0011223344556677".into(),
             token: super::Secret::new("A".repeat(43)),
+            ca_cert: None,
         };
-        assert!(super::CloudDevice::from_text(&d.to_text()) == Some(d));
+        assert!(super::CloudDevice::from_text(&d.to_text()) == Some(d.clone()));
+        let own = super::CloudDevice {
+            ca_cert: Some("-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n".into()),
+            ..d
+        };
+        assert!(super::CloudDevice::from_text(&own.to_text()) == Some(own));
         assert!(super::CloudDevice::from_text("server=x\n").is_none());
     }
 

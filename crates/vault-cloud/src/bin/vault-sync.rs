@@ -205,18 +205,13 @@ enum Notice {
 /// Listens on the mailbox's WebSocket and reports changes, reconnecting
 /// with growing waits. Stops when `stop` is dropped.
 fn watch(mailbox: &Mailbox, tx: Sender<Notice>) {
-    let Ok(req) = mailbox.watch_request() else {
-        return;
-    };
+    let mailbox = mailbox.clone();
     thread::spawn(move || {
         let mut wait = Duration::from_secs(5);
         loop {
-            match tungstenite::connect(req.clone()) {
-                Ok((mut ws, _)) => {
+            match mailbox.watch(Duration::from_secs(50)) {
+                Ok(mut ws) => {
                     wait = Duration::from_secs(5);
-                    if let tungstenite::stream::MaybeTlsStream::Rustls(s) = ws.get_mut() {
-                        let _ = s.sock.set_read_timeout(Some(Duration::from_secs(50)));
-                    }
                     if tx.send(Notice::Connected).is_err() {
                         return;
                     }

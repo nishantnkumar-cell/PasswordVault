@@ -7218,6 +7218,8 @@ name = "vault-cloud"
 version = "0.2.0"
 dependencies = [
  "data-encoding",
+ "rustls",
+ "rustls-pki-types",
  "serde",
  "serde_json",
  "sha2 0.11.1",
@@ -7332,6 +7334,7 @@ dependencies = [
 name = "vault-ipc"
 version = "0.2.0"
 dependencies = [
+ "data-encoding",
  "postcard",
  "serde",
  "vault-core",
