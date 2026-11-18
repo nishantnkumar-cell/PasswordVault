@@ -30,6 +30,7 @@ use vault_core::{OsRandom, SecureRandom};
 use vault_ipc::Secret;
 
 pub mod flows;
+pub mod share;
 
 /// The sync server, uploaded as it is by [`Cloudflare::deploy`].
 pub const WORKER_JS: &str = include_str!("../../../server/sync/src/index.js");
@@ -251,6 +252,9 @@ pub struct JoinLink {
     /// The fingerprint of the server's own certificate authority, for a
     /// server that has one ([`OwnCa`]).
     pub fingerprint: Option<String>,
+    /// An invite to a shared collection (`#s1.`) rather than a link to
+    /// this person's own vault (`#v1.`).
+    pub shared: bool,
 }
 
 impl JoinLink {
@@ -260,8 +264,9 @@ impl JoinLink {
     /// how to use it).
     pub fn to_link(&self) -> Secret {
         Secret::new(format!(
-            "{}/join#v1.{}.{}{}",
+            "{}/join#{}.{}.{}{}",
             self.server.trim_end_matches('/'),
+            if self.shared { "s1" } else { "v1" },
             self.mailbox,
             *self.ticket,
             self.fingerprint
@@ -280,7 +285,7 @@ impl JoinLink {
         };
         let (base, frag) = link.trim().split_once("/join#").ok_or_else(bad)?;
         let mut parts = frag.split('.');
-        let (Some("v1"), Some(mailbox), Some(ticket), fingerprint, None) = (
+        let (Some(kind @ ("v1" | "s1")), Some(mailbox), Some(ticket), fingerprint, None) = (
             parts.next(),
             parts.next(),
             parts.next(),
@@ -303,6 +308,7 @@ impl JoinLink {
             mailbox: mailbox.to_owned(),
             ticket: Secret::new(ticket.to_owned()),
             fingerprint: fingerprint.map(str::to_owned),
+            shared: kind == "s1",
         })
     }
 }
@@ -932,6 +938,7 @@ mod tests {
             mailbox: "0123456789abcdef0123456789abcdef".into(),
             ticket: Secret::new("T".repeat(43)),
             fingerprint: None,
+            shared: false,
         };
         let text = l.to_link();
         assert!(text.starts_with("https://vault-sync.example-name.workers.dev/join#v1."));
@@ -943,6 +950,12 @@ mod tests {
             ..l.clone()
         };
         assert!(JoinLink::parse(&own.to_link()).unwrap() == own);
+        let invite = JoinLink {
+            shared: true,
+            ..own.clone()
+        };
+        assert!(invite.to_link().contains("/join#s1."));
+        assert!(JoinLink::parse(&invite.to_link()).unwrap() == invite);
         for bad in [
             "http://x.example.com/join#v1.0123456789abcdef0123456789abcdef.TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT",
             "https://x.example.com/join#v2.0123456789abcdef0123456789abcdef.TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT",

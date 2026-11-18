@@ -863,6 +863,8 @@ pub enum Response {
         card: String,
         /// Six groups of four digits to compare when adding.
         safety: String,
+        /// Fingerprint of this person's sharing identity.
+        fingerprint: [u8; 32],
     },
     /// The shared collections this vault belongs to.
     Collections(Vec<CollectionInfo>),

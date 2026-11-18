@@ -243,6 +243,7 @@ pub fn link(i: &CloudInfo) -> Result<(Secret, u64)> {
             .as_deref()
             .and_then(|p| OwnCa::from_pem(p).ok())
             .map(|c| c.fingerprint()),
+        shared: false,
     };
     Ok((link.to_link(), t.expires.saturating_sub(now).div_ceil(60)))
 }
@@ -251,6 +252,11 @@ pub fn link(i: &CloudInfo) -> Result<(Secret, u64)> {
 /// downloaded vault file to `vaultd`. Returns `vaultd`'s status after.
 pub fn join(call: &mut Call<'_>, link: &str, name: &str) -> Result<(String, StatusInfo)> {
     let link = JoinLink::parse(link)?;
+    if link.shared {
+        return Err(err(
+            "this is an invite to a shared collection: use it on the Sharing page, or with `vault share join`",
+        ));
+    }
     let ca_pem = match &link.fingerprint {
         Some(f) => Some(OwnCa::fetch(&link.server, f)?.pem().to_owned()),
         None => None,

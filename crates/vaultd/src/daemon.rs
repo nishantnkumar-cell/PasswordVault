@@ -1390,6 +1390,7 @@ impl Daemon {
                 Ok(Response::SharingCard {
                     card: card(&name, &pk),
                     safety: pk.safety_code(),
+                    fingerprint: pk.fingerprint(),
                     name,
                 })
             }

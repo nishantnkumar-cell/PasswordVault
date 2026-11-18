@@ -4,6 +4,10 @@
 //! device's access token, never a key, so `vaultd` keeps its no-network
 //! sandbox.
 //!
+//! It also mirrors every shared collection this person belongs to: each has
+//! its own `cloud` folder under `shared/<id>/` next to the vault file
+//! (docs/sharing.md), watched by a thread of its own.
+//!
 //! Usage: vault-sync [--dir DIR] [--once]
 
 use std::fs;
@@ -70,7 +74,32 @@ fn main() {
         }
         return;
     }
-    run(&dir);
+    if let Some(root) = dir.parent().map(|p| p.join("shared")) {
+        thread::spawn(move || shared(&root));
+    }
+    run(&dir, false);
+}
+
+/// Start a mirror for every shared collection's `cloud` folder as it
+/// appears; each stops when its folder goes (the person left).
+fn shared(root: &Path) {
+    let mut started: std::collections::BTreeSet<PathBuf> = Default::default();
+    loop {
+        if let Ok(entries) = fs::read_dir(root) {
+            for e in entries.flatten() {
+                let dir = e.path().join("cloud");
+                if dir.join(CLOUD_DEVICE_FILE).exists() && started.insert(dir.clone()) {
+                    log(&format!(
+                        "syncing the shared collection in {}",
+                        dir.display()
+                    ));
+                    thread::spawn(move || run(&dir, true));
+                }
+            }
+        }
+        started.retain(|d| d.exists());
+        thread::sleep(Duration::from_secs(10));
+    }
 }
 
 fn read_device(dir: &Path) -> Option<CloudDevice> {
@@ -252,10 +281,13 @@ fn watch(mailbox: &Mailbox, tx: Sender<Notice>) {
     });
 }
 
-fn run(dir: &Path) {
+fn run(dir: &Path, stop_when_gone: bool) {
     let mut waiting_said = false;
     loop {
         let Some(device) = read_device(dir) else {
+            if stop_when_gone {
+                return;
+            }
             if !waiting_said {
                 log(&format!(
                     "waiting for {} (run `vault cloud setup` or `vault cloud join`)",
