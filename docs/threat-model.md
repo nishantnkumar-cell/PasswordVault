@@ -149,7 +149,27 @@ The attacker copies the vault file today (for example from a sync folder or a ba
 | SSH keys | Ed25519, ECDSA P-256 signatures. A signature cannot be harvested; a quantum attacker with your public key could later forge logins. Key exchange is the ssh client's (OpenSSH 10 uses ML-KEM hybrid by default) | Accepted until OpenSSH has a post-quantum key type |
 | Pairing, browser host, IPC | Random tokens over local sockets, no public keys | M |
 | Cloud sync (docs/cloud-sync.md) | Ciphertext and random tokens over TLS. A recorded TLS session could be decrypted later if its key exchange was classical (rustls offers the X25519MLKEM768 hybrid; whether it is used depends on Cloudflare's edge), but it carries only the encrypted vault file and tokens | M for the vault; tokens accepted |
-| Sharing, device enrollment, phone pairing, hybrid post-quantum release signing (release downloads already carry GitHub build attestations) | Not built. Must use hybrid PQ when built: X-Wing (ML-KEM-768 + X25519) for the reserved `RecipientHybrid` slot, ML-DSA-65 + Ed25519 for signatures (brief section 11) | Open |
+| Shared collections (docs/sharing.md) | Collection key wrapped per member with X-Wing (ML-KEM-768 + X25519); member list signed with ML-DSA-65 + Ed25519, both halves required. Breaking one of the two algorithms is not enough | M |
+| Device enrollment, phone pairing, hybrid post-quantum release signing (release downloads already carry GitHub build attestations) | Not built. Must use hybrid PQ when built: X-Wing for key transport, ML-DSA-65 + Ed25519 for signatures (brief section 11) | Open |
+
+### A8, members of a shared collection
+
+Family sharing (docs/sharing.md) adds people who are trusted with some items
+and not others. Actors: a member (or a member's compromised device), a person
+who has been removed, someone who swaps a sharing card on its way, and the
+owner's sync server, as in A7.
+
+| Threat | Mitigation | Status |
+| --- | --- | --- |
+| A member reads items in the person's own vault | Their identity opens only `RecipientHybrid` slots in collection files. A person's own vault never has such a slot, and items moved into a collection are the only ones written there | M |
+| A member adds a person, or puts their own keys in as owner | The member list is signed by the owner and must name exactly the header's slots; each reader pinned the owner's fingerprint when joining. A list a member signs names the wrong owner and is refused | M |
+| A member breaks the collection for everyone (junk slot, bad list, deleting items) | A bad file is refused, not trusted, and each device keeps its last good copy; deleted items stay in the trash 30 days. A determined member can still keep the collection from syncing, so the owner removes them | P |
+| Someone swaps a sharing card or invite link on its way | The safety code is the fingerprint of the keys actually used. The guide has both people read theirs aloud, in person or on a call, before anything goes in; a swapped card shows a different code. People who skip the check are not protected | P (needs the voice check) |
+| A removed member keeps reading | The key is rotated and every item re-encrypted; the old key is retired, so a copy under it is refused. The owner's app deletes every server access that is not a current member's. They keep whatever they had already synced | M for new data; accepted for old |
+| A member copies the collection key or items out of the app | Anyone who can read an item can copy it. Not preventable by design | Accepted |
+| A member's device is stolen | Same as A1 for that person's own vault: the sharing identity is inside it, so the thief needs that person's master password or unlock method | M (as A1) |
+| The owner's sync server or its host | As A7: it holds only encrypted files and token hashes. It also learns how many people use each collection and when | P (as A7) |
+| One member's sharing identity is used for a long time | One identity per person, kept in their own vault. There is no rotation yet; leaving and re-joining with a new identity is the workaround | Open |
 
 ## 6. Memory and process hygiene
 
@@ -162,7 +182,7 @@ The attacker copies the vault file today (for example from a sync folder or a ba
 - Root or kernel compromise, firmware attacks, evil-maid attacks on a running unlocked machine.
 - Same-user malware on X11.
 - Side channels (power, EM, cache timing) beyond using constant-time crates.
-- Face unlock, phone companion app, Secret Service, passkey storage, sharing. Each gets a section here before it is built. Folder sync (docs/sync.md) is covered under A5; cloud sync (docs/cloud-sync.md) under A5 and A7; phone passkeys under A3.
+- Face unlock, phone companion app, Secret Service, passkey storage. Each gets a section here before it is built. Shared collections are covered under A8. Folder sync (docs/sync.md) is covered under A5; cloud sync (docs/cloud-sync.md) under A5 and A7; phone passkeys under A3.
 
 ## 8. Open items
 

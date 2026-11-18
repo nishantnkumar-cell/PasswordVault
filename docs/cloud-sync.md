@@ -12,7 +12,8 @@ password, key or item. Folder sync keeps working and stays the default.
 
 The step-by-step guides are [user guide, chapter 15](user-guide/15-cloud-sync.md)
 (Cloudflare) and [chapter 16](user-guide/16-cloud-sync-docker.md) (Docker).
-This page is how it works.
+This page is how it works. Shared collections for family travel over the
+same servers; see [sharing.md](sharing.md).
 
 ## Parts
 

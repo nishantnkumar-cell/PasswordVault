@@ -1785,3 +1785,139 @@ fn quick_unlock_asks_for_the_requesting_program() {
     other.ok(Request::Unlock { method: pw() });
     assert_eq!(status(&mut other).quick_unlock.hours, 0);
 }
+
+fn init(c: &mut C) {
+    let Response::Initialized { token, .. } = c.ok(Request::Init {
+        password: s(PW),
+        client_name: "cli".into(),
+    }) else {
+        unreachable!()
+    };
+    c.token = Some(token);
+}
+
+fn collections(c: &mut C) -> Vec<vault_ipc::CollectionInfo> {
+    match c.ok(Request::Collections) {
+        Response::Collections(v) => v,
+        _ => unreachable!(),
+    }
+}
+
+fn mailbox_access(device: &str) -> vault_ipc::CloudDevice {
+    vault_ipc::CloudDevice {
+        server: "https://vault-sync.example.com".into(),
+        mailbox: "0123456789abcdef0123456789abcdef".into(),
+        device: device.into(),
+        token: s(&"t".repeat(43)),
+        ca_cert: None,
+    }
+}
+
+#[test]
+fn a_family_shares_a_collection() {
+    let (dir_a, dir_b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let long = Duration::from_secs(600);
+    let mut a = C::new(&start(dir_a.path(), server::current_user(), long));
+    let mut b = C::new(&start(dir_b.path(), server::current_user(), long));
+    init(&mut a);
+    init(&mut b);
+
+    // Each person makes a sharing card; Sam sends theirs to Alex.
+    let Response::SharingCard { .. } = a.ok(Request::SharingIdentity {
+        name: Some("Alex".into()),
+    }) else {
+        unreachable!()
+    };
+    let Response::SharingCard { card, safety, .. } = b.ok(Request::SharingIdentity {
+        name: Some("Sam".into()),
+    }) else {
+        unreachable!()
+    };
+
+    // Alex makes the collection, adds Sam and moves an item in.
+    let Response::Collections(cs) = a.ok(Request::CollectionCreate {
+        name: "Family".into(),
+        device: mailbox_access("00000000000000aa"),
+    }) else {
+        unreachable!()
+    };
+    let cid = cs[0].id;
+    assert!(cs[0].owner);
+    let Response::Collections(cs) = a.ok(Request::CollectionAddMember {
+        id: cid,
+        name: String::new(),
+        card: card.clone(),
+    }) else {
+        unreachable!()
+    };
+    assert_eq!(cs[0].members[1].name, "Sam");
+    assert_eq!(cs[0].members[1].safety, safety);
+    let wifi = put(&mut a, None, "Home wifi");
+    put(&mut a, None, "Alex only");
+    a.ok(Request::MoveItem {
+        id: wifi,
+        to: Some(cid),
+    });
+
+    // The "server": copy the cloud copy from one person to the other.
+    let hex = data_encoding::HEXLOWER.encode(&cid);
+    let copy = |d: &tempfile::TempDir| {
+        d.path()
+            .join("data/shared")
+            .join(&hex)
+            .join("cloud/vault.svault")
+    };
+    let file = std::fs::read(copy(&dir_a)).unwrap();
+    let Response::Collections(cs) = b.ok(Request::CollectionJoin {
+        device: mailbox_access("00000000000000bb"),
+        file,
+    }) else {
+        unreachable!()
+    };
+    assert!(!cs[0].owner);
+    assert_eq!(cs[0].members[0].name, "Alex");
+    let Response::Items(items) = b.ok(Request::ListItems) else {
+        unreachable!()
+    };
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].title, "Home wifi");
+    assert_eq!(items[0].collection, Some((cid, "Family".to_owned())));
+
+    // Sam edits it; Alex gets the change.
+    put(&mut b, Some(wifi), "Home wifi 5G");
+    std::fs::copy(copy(&dir_b), copy(&dir_a)).unwrap();
+    a.ok(Request::SyncNow);
+    assert_eq!(titles(&mut a), ["Alex only", "Home wifi 5G"]);
+
+    // Sam cannot change who is in it.
+    assert!(
+        b.err(Request::CollectionRemoveMember {
+            id: cid,
+            member: cs[0].members[0].fingerprint,
+        })
+        .contains("only the person who made")
+    );
+
+    // Alex removes Sam: the key is rotated and Sam's copy no longer opens
+    // what Alex writes from now on.
+    let sam = collections(&mut a)[0].members[1].fingerprint;
+    a.ok(Request::CollectionRemoveMember {
+        id: cid,
+        member: sam,
+    });
+    put(&mut a, Some(wifi), "New wifi password");
+    std::fs::copy(copy(&dir_a), copy(&dir_b)).unwrap();
+    b.ok(Request::SyncNow);
+    let c = &collections(&mut b)[0];
+    assert!(
+        c.error.as_deref().unwrap().contains("no longer a member"),
+        "{:?}",
+        c.error
+    );
+    assert!(!titles(&mut b).contains(&"New wifi password".to_owned()));
+
+    // Moving an item back out of the collection.
+    a.ok(Request::MoveItem { id: wifi, to: None });
+    assert_eq!(collections(&mut a)[0].items, 0);
+    assert_eq!(titles(&mut a), ["Alex only", "New wifi password"]);
+}

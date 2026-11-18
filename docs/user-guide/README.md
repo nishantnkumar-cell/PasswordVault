@@ -68,6 +68,9 @@ random program on your computer cannot just ask for your passwords.
 16. [Cloud sync with a server on your own computer](16-cloud-sync-docker.md):
     the same sync with the server in Docker on a computer at home, for
     Linux, Windows and macOS.
+17. [Sharing with family](17-family-sharing.md): share some items with the
+    people you live with in a shared collection, while the rest of your
+    vault stays private.
 
 ## What works where
 
@@ -90,6 +93,7 @@ random program on your computer cannot just ask for your passwords.
 | `vault-gpg` for `pass` | Yes | Not applicable | Should work; untested |
 | Thunderbird with a vault key (through GPGME) | Yes (not yet clicked through in Thunderbird itself) | Should work with Gpg4win; untested | Should work with Homebrew's GPGME; untested |
 | Sync through OneDrive, Google Drive, Dropbox | Yes | Yes | Yes, and iCloud Drive |
+| Shared collections for family (desktop and `vault share`; not on phones yet) | Yes | Yes | Yes |
 | Apps keep passwords in the vault (Secret Service) | Yes, opt-in | Not applicable | Not applicable |
 | Locks on screen lock and suspend | Yes | Yes | Yes, and on a switch to another account |
 | App hidden from screenshots and screen sharing | Not yet | Yes | Not yet |
@@ -105,4 +109,4 @@ The guide covers how to use each feature. For the technical details behind
 it, see [`vaultd.md`](../vaultd.md), [`windows.md`](../windows.md),
 [`browser.md`](../browser.md), [`desktop.md`](../desktop.md),
 [`items.md`](../items.md), [`mobile.md`](../mobile.md), [`ssh.md`](../ssh.md), [`pgp.md`](../pgp.md),
-[`format.md`](../format.md) and the [threat model](../threat-model.md).
+[`format.md`](../format.md), [`sharing.md`](../sharing.md) and the [threat model](../threat-model.md).

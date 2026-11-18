@@ -255,12 +255,12 @@ impl Vault {
             .slots
             .iter()
             .chain(&new)
-            .any(|s| s.meta.factor.is_daily_use() && !removed(&s.meta.id));
+            .any(|s| s.meta.factor.opens_vault() && !removed(&s.meta.id));
         let before = self.slots.len();
         let keep: Vec<_> = self
             .slots
             .iter()
-            .filter(|s| !removed(&s.meta.id) || (!daily_left && s.meta.factor.is_daily_use()))
+            .filter(|s| !removed(&s.meta.id) || (!daily_left && s.meta.factor.opens_vault()))
             .cloned()
             .collect();
         if keep.len() + new.len() > MAX_SLOTS {

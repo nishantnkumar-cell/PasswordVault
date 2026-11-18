@@ -441,6 +441,65 @@ pub enum Request {
         device: Option<CloudDevice>,
         file: Option<Vec<u8>>,
     },
+    /// This person's sharing card, for others to add them to a shared
+    /// collection. Makes the sharing identity first, named `name`, if the
+    /// vault has none yet. Answers with `SharingCard`.
+    SharingIdentity { name: Option<String> },
+    /// The shared collections this vault belongs to. Answers with `Collections`.
+    Collections,
+    /// Make a shared collection with this person as its owner. `device` is
+    /// the access to its mailbox, which `vault-cloud` just made on the cloud
+    /// sync server. Answers with `Collections`.
+    CollectionCreate { name: String, device: CloudDevice },
+    /// Add the person whose sharing card this is (owner only). Answers with
+    /// `Collections`.
+    CollectionAddMember {
+        id: [u8; 16],
+        name: String,
+        card: String,
+    },
+    /// Remove a member and rotate the collection's key (owner only).
+    /// Answers with `Collections`.
+    CollectionRemoveMember { id: [u8; 16], member: [u8; 32] },
+    /// Join a shared collection from a copy just downloaded with an invite
+    /// link. Answers with `Collections`; the app then shows the owner's
+    /// safety code to compare.
+    CollectionJoin { device: CloudDevice, file: Vec<u8> },
+    /// Stop using a shared collection on this person's devices. Answers with
+    /// `Collections`.
+    CollectionLeave { id: [u8; 16] },
+    /// Move an item into a shared collection, or back to this person's own
+    /// vault with `None`. Answers with `ItemSaved` (the item keeps its ID).
+    MoveItem { id: ItemId, to: Option<[u8; 16]> },
+}
+
+/// A member of a shared collection, as `Collections` lists it.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct MemberInfo {
+    pub name: String,
+    /// Fingerprint of the member's sharing identity.
+    pub fingerprint: [u8; 32],
+    /// Six groups of four digits to compare with the member.
+    pub safety: String,
+}
+
+/// A shared collection this vault belongs to.
+#[derive(Serialize, Deserialize, Clone)]
+pub struct CollectionInfo {
+    pub id: [u8; 16],
+    pub name: String,
+    /// Whether this person made it (and so can add and remove members).
+    pub owner: bool,
+    /// Every member, owner first.
+    pub members: Vec<MemberInfo>,
+    /// Items in it.
+    pub items: usize,
+    /// This person's access to the collection's mailbox.
+    pub device: Option<CloudDevice>,
+    /// Why it could not be opened or synced, if so.
+    pub error: Option<String>,
+    /// When it last merged a copy from the server (Unix seconds).
+    pub last_sync: Option<u64>,
 }
 
 /// Cloud sync settings, stored in the vault under the setting name
@@ -673,6 +732,10 @@ pub struct ItemSummary {
     pub key: Option<String>,
     /// Whether each use of the item's key needs the user's approval.
     pub key_confirm: bool,
+    /// The shared collection the item is in (ID and name); `None` for this
+    /// person's own vault.
+    #[serde(default)]
+    pub collection: Option<([u8; 16], String)>,
 }
 
 /// Daemon state.
@@ -793,6 +856,18 @@ pub enum Response {
     Activity(Vec<ActivityEntry>),
     /// Cloud sync settings and this device's access.
     Cloud(CloudInfo),
+    /// This person's sharing card (`SharingIdentity`).
+    SharingCard {
+        name: String,
+        /// The text to send to the collection's owner.
+        card: String,
+        /// Six groups of four digits to compare when adding.
+        safety: String,
+        /// Fingerprint of this person's sharing identity.
+        fingerprint: [u8; 32],
+    },
+    /// The shared collections this vault belongs to.
+    Collections(Vec<CollectionInfo>),
 }
 
 /// Write one frame: u32 little-endian length, then postcard bytes.

@@ -156,8 +156,15 @@ pub enum Factor {
     PasswordDevice,
     /// Reserved for a later format version.
     PasswordPhone,
-    /// Reserved for a later format version.
-    RecipientHybrid,
+    /// A member of a shared collection (section 3.2): the KEK comes from an
+    /// X-Wing shared secret for that member's sharing identity. Files with
+    /// such a slot do not open in versions before family sharing.
+    RecipientHybrid {
+        /// Fingerprint of the member's public identity.
+        member: [u8; 32],
+        /// X-Wing ciphertext, 1120 bytes.
+        encapsulated: Vec<u8>,
+    },
 }
 
 /// TPM PCR policy for a [`Factor::PasswordTpm`] slot.
@@ -178,9 +185,16 @@ impl Factor {
         )
     }
 
-    /// Whether a v1 reader can unlock this kind of slot.
+    /// Whether this reader can unlock this kind of slot.
     pub fn is_supported(&self) -> bool {
-        self.is_daily_use() || matches!(self, Factor::Recovery)
+        self.is_daily_use() || matches!(self, Factor::Recovery | Factor::RecipientHybrid { .. })
+    }
+
+    /// Whether the slot is enough to open the vault day to day: a daily-use
+    /// slot in a person's own vault, a member slot in a shared collection.
+    /// A vault is never written without one.
+    pub fn opens_vault(&self) -> bool {
+        self.is_daily_use() || matches!(self, Factor::RecipientHybrid { .. })
     }
 
     /// Whether the KEK mixes in a hardware secret.
@@ -204,6 +218,9 @@ impl Factor {
                 blob.len() <= MAX_TPM_BLOB
                     && pcr_policy.as_ref().is_none_or(|p| p.pcrs.len() <= MAX_PCRS)
             }
+            Factor::RecipientHybrid { encapsulated, .. } => {
+                encapsulated.len() == crate::xwing::CIPHERTEXT_LEN
+            }
             _ => true,
         };
         if ok { Ok(()) } else { Err(Error::Malformed) }
@@ -214,8 +231,8 @@ impl KeyslotMeta {
     pub(crate) fn validate(&self) -> Result<(), Error> {
         self.factor.check_lengths()?;
         match (&self.factor, &self.kdf) {
-            (Factor::Recovery, None) => Ok(()),
-            (Factor::Recovery, Some(_)) => Err(Error::Malformed),
+            (Factor::Recovery | Factor::RecipientHybrid { .. }, None) => Ok(()),
+            (Factor::Recovery | Factor::RecipientHybrid { .. }, Some(_)) => Err(Error::Malformed),
             (f, None) if f.is_daily_use() => Err(Error::Malformed),
             _ => Ok(()),
         }

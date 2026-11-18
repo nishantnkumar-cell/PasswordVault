@@ -529,7 +529,10 @@ fn reserved_factor_slots_are_rejected() {
     for f in [
         Factor::Recovery,
         Factor::PasswordDevice,
-        Factor::RecipientHybrid,
+        Factor::RecipientHybrid {
+            member: [0; 32],
+            encapsulated: vec![0; crate::xwing::CIPHERTEXT_LEN],
+        },
     ] {
         let r = v.add_password_slot(&mut TestRng(1), f, COST, PW, None, "");
         assert_eq!(r.err(), Some(Error::FactorMismatch));
@@ -1149,4 +1152,182 @@ fn bodies_without_settings_stay_readable_by_older_versions() {
     // A removal is still recorded, so the newer body stays.
     a.set_setting("cloud", None).unwrap();
     assert!(format::decode_canonical::<BodyV3>(&a.encode_body()).is_err());
+}
+
+mod collections {
+    use super::*;
+    use crate::collection::opens;
+    use crate::identity::Identity;
+
+    fn people() -> (Identity, Identity, Identity) {
+        (
+            Identity::from_seed([11; 32]),
+            Identity::from_seed([12; 32]),
+            Identity::from_seed([13; 32]),
+        )
+    }
+
+    fn reopen(bytes: &[u8], who: &Identity) -> Result<Vault, Error> {
+        let v = ParsedVault::parse(bytes)?.unlock_member(who)?;
+        v.collection()?;
+        Ok(v)
+    }
+
+    #[test]
+    fn owner_adds_and_members_open() {
+        let mut rng = TestRng(100);
+        let (alex, sam, _) = people();
+        let mut v = Vault::new_collection(&mut rng, &alex, "Alex", "Family").unwrap();
+        v.add_member(&mut rng, &alex, "Sam", &sam.public()).unwrap();
+        let id = v.new_item_id(&mut rng).unwrap();
+        v.put_item(&mut rng, &id, b"wifi password").unwrap();
+        let bytes = v.to_bytes(&mut rng).unwrap();
+
+        let s = reopen(&bytes, &sam).unwrap();
+        assert_eq!(&*s.get_item(&id).unwrap(), b"wifi password");
+        let c = s.collection().unwrap();
+        assert_eq!(c.name, "Family");
+        assert_eq!(c.owner, alex.public().fingerprint());
+        assert_eq!(
+            c.members
+                .iter()
+                .map(|m| m.name.as_str())
+                .collect::<Vec<_>>(),
+            ["Alex", "Sam"]
+        );
+        assert!(
+            ParsedVault::parse(&bytes)
+                .unwrap()
+                .has_member(&sam.public().fingerprint())
+        );
+        assert_eq!(
+            v.add_member(&mut rng, &alex, "Sam again", &sam.public())
+                .err(),
+            Some(Error::AlreadyMember)
+        );
+    }
+
+    #[test]
+    fn only_the_owner_changes_members() {
+        let mut rng = TestRng(200);
+        let (alex, sam, eve) = people();
+        let mut v = Vault::new_collection(&mut rng, &alex, "Alex", "Family").unwrap();
+        v.add_member(&mut rng, &alex, "Sam", &sam.public()).unwrap();
+        let bytes = v.to_bytes(&mut rng).unwrap();
+        let mut s = reopen(&bytes, &sam).unwrap();
+        assert_eq!(
+            s.add_member(&mut rng, &sam, "Eve", &eve.public()).err(),
+            Some(Error::NotOwner)
+        );
+        assert_eq!(
+            s.remove_member(&mut rng, &sam, &alex.public().fingerprint())
+                .err(),
+            Some(Error::NotOwner)
+        );
+        assert_eq!(
+            s.rename_collection(&sam, "Mine").err(),
+            Some(Error::NotOwner)
+        );
+
+        // Sam adds a slot for Eve behind the owner's back: every reader
+        // refuses the file, and Eve's slot is not trusted.
+        s.push_member_slot_for_test(&mut rng, &eve.public());
+        let forged = s.to_bytes(&mut rng).unwrap();
+        assert_eq!(
+            reopen(&forged, &alex).err(),
+            Some(Error::MembershipNotSigned)
+        );
+        assert_eq!(
+            reopen(&forged, &sam).err(),
+            Some(Error::MembershipNotSigned)
+        );
+
+        // Sam signs a member list of their own: refused too.
+        let mut s = reopen(&bytes, &sam).unwrap();
+        s.sign_as_for_test(&sam);
+        let forged = s.to_bytes(&mut rng).unwrap();
+        let opened = ParsedVault::parse(&forged)
+            .unwrap()
+            .unlock_member(&alex)
+            .unwrap();
+        assert_eq!(
+            opened
+                .collection_owned_by(&alex.public().fingerprint())
+                .err(),
+            Some(Error::MembershipNotSigned)
+        );
+    }
+
+    #[test]
+    fn removing_rotates_the_key() {
+        let mut rng = TestRng(300);
+        let (alex, sam, kim) = people();
+        let mut v = Vault::new_collection(&mut rng, &alex, "Alex", "Family").unwrap();
+        v.add_member(&mut rng, &alex, "Sam", &sam.public()).unwrap();
+        v.add_member(&mut rng, &alex, "Kim", &kim.public()).unwrap();
+        let id = v.new_item_id(&mut rng).unwrap();
+        v.put_item(&mut rng, &id, b"door code").unwrap();
+        let before = v.to_bytes(&mut rng).unwrap();
+        let old_sam = reopen(&before, &sam).unwrap();
+
+        v.remove_member(&mut rng, &alex, &sam.public().fingerprint())
+            .unwrap();
+        v.put_item(&mut rng, &id, b"new door code").unwrap();
+        let after = v.to_bytes(&mut rng).unwrap();
+
+        assert_eq!(reopen(&after, &sam).err(), Some(Error::NotFound));
+        assert!(!opens(&v, &sam));
+        let k = reopen(&after, &kim).unwrap();
+        assert_eq!(&*k.get_item(&id).unwrap(), b"new door code");
+        assert_eq!(k.collection().unwrap().members.len(), 2);
+        // Sam's old key no longer opens the new file.
+        assert!(
+            ParsedVault::parse(&after)
+                .unwrap()
+                .open_with(&old_sam)
+                .is_err()
+        );
+        // A copy under Sam's old key is refused as old.
+        let mut k = k;
+        assert_eq!(
+            k.merge(&mut rng, &old_sam, &ByLength).err(),
+            Some(Error::RetiredKey)
+        );
+        assert_eq!(
+            v.remove_member(&mut rng, &alex, &alex.public().fingerprint())
+                .err(),
+            Some(Error::LastSlot)
+        );
+    }
+
+    #[test]
+    fn members_edit_and_merge() {
+        let mut rng = TestRng(400);
+        let (alex, sam, _) = people();
+        let mut v = Vault::new_collection(&mut rng, &alex, "Alex", "Family").unwrap();
+        v.set_device(1);
+        v.add_member(&mut rng, &alex, "Sam", &sam.public()).unwrap();
+        let bytes = v.to_bytes(&mut rng).unwrap();
+        let mut s = reopen(&bytes, &sam).unwrap();
+        s.set_device(2);
+        let a = v.new_item_id(&mut rng).unwrap();
+        let b = v.new_item_id(&mut rng).unwrap();
+        v.put_item(&mut rng, &a, b"from alex").unwrap();
+        s.put_item(&mut rng, &b, b"from sam").unwrap();
+        v.rename_collection(&alex, "Home").unwrap();
+        v.merge(&mut rng, &s, &ByLength).unwrap();
+        s.merge(&mut rng, &v, &ByLength).unwrap();
+        for x in [&v, &s] {
+            assert_eq!(x.collection().unwrap().name, "Home");
+            assert_eq!(&*x.get_item(&a).unwrap(), b"from alex");
+            assert_eq!(&*x.get_item(&b).unwrap(), b"from sam");
+        }
+        // A personal vault cannot get member slots, nor a collection
+        // password slots.
+        assert_eq!(
+            v.add_password_slot(&mut rng, Factor::PasswordOnly, COST, PW, None, "")
+                .err(),
+            Some(Error::FactorMismatch)
+        );
+    }
 }

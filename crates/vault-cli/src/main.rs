@@ -4,6 +4,7 @@
 
 mod cloud;
 mod health;
+mod share;
 
 use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::PathBuf;
@@ -140,6 +141,17 @@ CLOUD SYNC                     through your own free Cloudflare account (user gu
   cloud update                 upload this program's newer sync server code
   cloud forget-token           stop keeping the Cloudflare API token in the vault
   cloud off [--everywhere]     stop on this device; --everywhere also deletes the server copy
+  share card [--name NAME]     your sharing card, to send to whoever makes a shared collection
+  share list                   shared collections you belong to, with members and safety codes
+  share create NAME            make a shared collection on your cloud sync server
+  share add COLLECTION CARD [--name NAME]
+                               add someone (you made it); prints a one-time invite link for them
+  share invite COLLECTION      a new invite link for someone you added
+  share join LINK              join with an invite link (the owner added your card first)
+  share remove COLLECTION MEMBER
+                               remove someone (you made it); the collection gets a new key
+  share leave COLLECTION       leave it; if you made it, delete it for everyone
+  share move ITEM COLLECTION   move an item into a shared collection (--mine moves it back)
 
 APP PASSWORDS (Linux)          what apps keep through the Secret Service (vaultd --secret-service)
   apps                         programs allowed to use them since vaultd started
@@ -998,13 +1010,18 @@ fn main() {
                     continue;
                 }
                 let totp = if i.has_totp { "  [totp]" } else { "" };
+                let shared = i
+                    .collection
+                    .as_ref()
+                    .map(|(_, n)| format!("  [shared: {n}]"))
+                    .unwrap_or_default();
                 let kind = if i.key.is_some() {
                     "key"
                 } else {
                     i.kind.name()
                 };
                 println!(
-                    "{}  {:<8} {:<28} {:<24} {}{totp}",
+                    "{}  {:<8} {:<28} {:<24} {}{totp}{shared}",
                     short(&i.id),
                     kind,
                     i.title,
@@ -1419,6 +1436,7 @@ fn main() {
         }
         "apps" => apps(rest),
         "cloud" => cloud::cloud(rest),
+        "share" => share::share(rest),
         "code" | "codes" => code(rest),
         "ssh" => ssh(rest),
         "pgp" => pgp(rest),

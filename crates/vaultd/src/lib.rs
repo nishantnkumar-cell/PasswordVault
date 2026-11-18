@@ -20,6 +20,7 @@ pub mod polkit;
 #[cfg(all(feature = "secret-service", target_os = "linux"))]
 pub mod secret_service;
 pub mod server;
+pub mod shared;
 pub mod ssh;
 pub mod store;
 pub mod sync;

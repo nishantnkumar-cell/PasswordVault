@@ -1522,3 +1522,48 @@ fn adds_codes_from_a_key_a_link_and_a_qr_screenshot() {
             .contains("not for an authenticator")
     );
 }
+
+#[test]
+fn sharing_page_makes_a_card_and_explains_what_it_needs() {
+    let dir = tempdir();
+    let clip = FakeClip::default();
+    let mut h = created(&dir, Duration::from_secs(300), clip.clone());
+    click(&mut h, "Sharing");
+    settle(&mut h);
+    // No card yet: the page asks for a name instead of showing an error.
+    assert!(
+        h.query_by_label_contains("first make your sharing card")
+            .is_some()
+    );
+    type_into(&mut h, Role::TextInput, "Your name", "Alex Example");
+    click(&mut h, "Make my sharing card");
+    settle(&mut h);
+    assert!(h.query_by_label("Alex Example").is_some());
+    assert!(h.query_by_label("Safety code").is_some());
+    click(&mut h, "Copy my card");
+    let card = clip.0.lock().unwrap().clone().unwrap_or_default();
+    assert!(card.starts_with("svcard1."), "{card}");
+    // Making a collection needs this computer's own cloud sync.
+    assert!(
+        h.query_by_label_contains("needs cloud sync set up on this computer")
+            .is_some()
+    );
+    // A personal join link is not an invite.
+    type_into(
+        &mut h,
+        Role::PasswordInput,
+        "Invite link",
+        "https://sync.example.com/join#v1.00112233445566778899aabbccddeeff.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    );
+    click(&mut h, "Join");
+    let mut said = false;
+    for _ in 0..200 {
+        settle(&mut h);
+        said = h.query_by_label_contains("not an invite").is_some();
+        if said {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(said, "no error for a personal link");
+}

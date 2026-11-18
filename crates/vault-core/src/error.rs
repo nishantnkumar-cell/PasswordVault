@@ -49,6 +49,13 @@ pub enum Error {
     RetiredKey,
     /// A setting's name or value is empty or too long (section 5.2).
     BadSetting,
+    /// Only the person who made the shared collection can change who is in it.
+    NotOwner,
+    /// A shared collection's member list is missing, not signed by its
+    /// owner, or does not match the file's slots (section 5.3).
+    MembershipNotSigned,
+    /// That person is already a member of the shared collection.
+    AlreadyMember,
 }
 
 impl fmt::Display for Error {
@@ -79,6 +86,13 @@ impl fmt::Display for Error {
                 "the other copy uses a vault key that was revoked; it is an old copy and was not merged"
             }
             Error::BadSetting => "setting name or value is empty or too long",
+            Error::NotOwner => {
+                "only the person who made this shared collection can change its members"
+            }
+            Error::MembershipNotSigned => {
+                "this shared collection's member list is not signed by its owner; it was not opened"
+            }
+            Error::AlreadyMember => "that person is already a member",
         };
         f.write_str(s)
     }
