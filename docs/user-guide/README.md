@@ -65,6 +65,9 @@ random program on your computer cannot just ask for your passwords.
 15. [Cloud sync with your own Cloudflare account](15-cloud-sync.md): sync
     your computers through a free sync server that Secret Vault sets up in
     your own Cloudflare account, and add a computer with a one-time link.
+16. [Cloud sync with a server on your own computer](16-cloud-sync-docker.md):
+    the same sync with the server in Docker on a computer at home, for
+    Linux, Windows and macOS.
 
 ## What works where
 
