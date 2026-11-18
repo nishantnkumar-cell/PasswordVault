@@ -24,6 +24,7 @@ mod cloud;
 mod codes;
 mod keys;
 mod setup;
+mod sharing;
 
 /// How long a copied secret stays on the clipboard.
 pub const CLIPBOARD_CLEAR: Duration = Duration::from_secs(30);
@@ -166,6 +167,14 @@ enum Op {
     CloudInfo,
     /// A cloud sync step; the text is the notice when it worked.
     Cloud(&'static str),
+    /// This person's sharing card (SharingIdentity).
+    SharingCard,
+    /// The shared collections (Collections).
+    Collections,
+    /// A sharing step; the text is the notice when it worked.
+    Sharing(&'static str),
+    /// Move an item into a shared collection, or back with `None`.
+    MoveItem(Option<[u8; 16]>),
     QuickUnlock,
     /// An unlock method added from the first-run wizard.
     SetupSlot(setup::Extra),
@@ -202,6 +211,8 @@ pub enum View {
     Import,
     Slots,
     Sync,
+    /// Shared collections for family.
+    Sharing,
     /// Encrypt, decrypt, sign and verify with OpenPGP keys.
     Pgp,
     /// Passwords apps keep through the Secret Service (Linux).
@@ -725,6 +736,7 @@ pub struct App {
 
     sync_path: String,
     cloud: cloud::CloudPage,
+    sharing: sharing::SharingPage,
     /// Programs allowed to use app passwords, from the last listing.
     app_approvals: Vec<vault_ipc::AppApproval>,
     /// Items in the trash, from the last listing.
@@ -797,6 +809,7 @@ impl App {
             confirm_remove: None,
             sync_path: String::new(),
             cloud: cloud::CloudPage::default(),
+            sharing: sharing::SharingPage::default(),
             app_approvals: Vec::new(),
             trash: Vec::new(),
             quick_hours: None,
@@ -875,6 +888,7 @@ impl App {
         self.palette = None;
         self.pending_copy = None;
         self.cloud.wipe();
+        self.sharing.wipe();
         self.clear_clipboard();
     }
 
@@ -957,6 +971,9 @@ impl App {
                 return;
             }
             Err(Failure::Daemon(m)) => {
+                if self.on_sharing_error(op, &m) {
+                    return;
+                }
                 self.on_key_error(op, &m);
                 if m.contains("locked") && self.screen == Screen::Unlocked {
                     self.refresh();
@@ -992,6 +1009,11 @@ impl App {
             (Op::ListItems, Response::Items(mut items)) => {
                 items.sort_by_key(|i| i.title.to_lowercase());
                 self.items = items;
+                // The Move to row on items needs the shared collections.
+                if self.sharing.list.is_none() {
+                    self.sharing.list = Some(Vec::new());
+                    self.send(Op::Collections, Request::Collections);
+                }
             }
             (Op::OpenItem(_), Response::Item { id, item }) => {
                 if self.selected == Some(id) {
@@ -1106,6 +1128,9 @@ impl App {
                 self.on_status(s);
             }
             (op @ (Op::CloudInfo | Op::Cloud(_)), r) => self.on_cloud_result(op, r),
+            (op @ (Op::SharingCard | Op::Collections | Op::Sharing(_) | Op::MoveItem(_)), r) => {
+                self.on_sharing_result(op, r)
+            }
             (Op::AppApprovals, Response::AppApprovals(list)) => self.app_approvals = list,
             (Op::ListTrash, Response::Trash(list)) => self.trash = list,
             (Op::TrashAction(what), Response::Ok) => {
@@ -2020,6 +2045,14 @@ impl App {
                     });
                 });
             }
+            View::Sharing => {
+                egui::CentralPanel::default().frame(page).show(ui, |ui| {
+                    self.messages(ui);
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        self.sharing_page(ui);
+                    });
+                });
+            }
             View::Pgp => {
                 egui::CentralPanel::default().frame(page).show(ui, |ui| {
                     self.messages(ui);
@@ -2069,6 +2102,10 @@ impl App {
         }
         if v == View::Sync {
             self.cloud_refresh();
+        }
+        if v == View::Sharing {
+            self.cloud_refresh();
+            self.sharing_refresh();
         }
     }
 
@@ -2351,7 +2388,7 @@ impl App {
         let mut go = None;
         // The version and hints at the bottom keep their room; on a short
         // window the categories and tools scroll instead of running under them.
-        let footer = if sync.is_some() { 96.0 } else { 76.0 };
+        let footer = if sync.is_some() { 124.0 } else { 88.0 };
         egui::ScrollArea::vertical()
             .id_salt("sidebar")
             .max_height((ui.available_height() - footer).max(80.0))
@@ -2375,6 +2412,7 @@ impl App {
                     (View::Import, Icon::Import, "Import"),
                     (View::Slots, Icon::Shield, "Unlock methods"),
                     (View::Sync, Icon::Sync, "Sync"),
+                    (View::Sharing, Icon::Identity, "Sharing"),
                     (View::Pgp, Icon::Mail, "Encrypt and sign"),
                     (View::Apps, Icon::Key, "App passwords"),
                     (View::Trash, Icon::Trash, "Trash"),
@@ -2488,6 +2526,9 @@ impl App {
                     }
                     if i.key.is_some() {
                         tags.push("Key");
+                    }
+                    if i.collection.is_some() {
+                        tags.push("Shared");
                     }
                     let on = self.selected == Some(i.id);
                     if theme::item_row(ui, on, &i.title, &i.subtitle, &tags).clicked() {
@@ -2999,6 +3040,10 @@ impl App {
         }
         if let Some((text, what)) = copy {
             self.copy(&text, &what);
+        }
+        if self.open.as_ref().is_some_and(|(o, _)| *o == id) {
+            ui.add_space(12.0);
+            self.move_to(ui, id);
         }
     }
 

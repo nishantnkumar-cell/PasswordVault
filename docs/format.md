@@ -47,7 +47,7 @@ struct Keyslot {
 
 struct KeyslotMeta {
     id: [u8; 16],                // random
-    kdf: Option<Argon2Params>,   // None only for Recovery
+    kdf: Option<Argon2Params>,   // None only for Recovery and RecipientHybrid
     salt: [u8; 32],              // HKDF salt for the KEK, random per slot
     factor: Factor,
 }
@@ -78,13 +78,21 @@ enum Factor {
     PasswordPasskeyPrf,          // variant index reserved
     PasswordDevice,              // variant index reserved
     PasswordPhone,               // variant index reserved
-    RecipientHybrid,             // variant index reserved
+    RecipientHybrid {            // a member of a shared collection (3.2)
+        member: [u8; 32],        // fingerprint of the member's sharing identity
+        encapsulated: Vec<u8>,   // X-Wing ciphertext, exactly 1120 bytes
+    },
 }
 
 struct PcrPolicy { bank: u8 /* 1 = SHA-256 */, pcrs: Vec<u8> /* e.g. [7] */ }
 ```
 
 Reserved variants carry no data in v1. A later format version gives them fields and bumps `format_version`.
+
+`RecipientHybrid` was reserved the same way until family sharing gave it its
+fields. It appears only in shared-collection files (section 3.2), never in a
+person's own vault, so `format_version` stays 1: a program from before family
+sharing cannot parse a collection file, and never needs to.
 
 No human-readable labels live in the header. Slot labels ("work laptop", "blue YubiKey") are stored encrypted in the body (section 6).
 
@@ -108,6 +116,21 @@ writer default. In 0.2.0-beta.1 and earlier the maxima were 4 GiB, `t = 20` and
 Secret Vault is affected.
 
 Writers default to `m_kib = 262 144`, `t = 3`, `p = 4`, then calibrate upward to about 0.5 to 1 s on the enrolling machine.
+
+### 3.2 Shared collections
+
+A shared collection (docs/sharing.md) is a vault file of this same format
+with its own vault key, kept apart from each member's own vault. Its header
+has one `RecipientHybrid` slot per member and no other kind of slot (adding a
+password or device slot is refused). Each slot's `kdf` is `None`. Who the
+members are, and that the owner chose them, is in the signed member list
+(section 5.3), which every reader checks against the header before trusting
+the file.
+
+The X-Wing KEM is draft-connolly-cfrg-xwing-kem (ML-KEM-768 + X25519): public
+key `pk_M (1184) || pk_X (32)`, ciphertext `ct_M (1088) || ct_X (32)`, shared
+secret `SHA3-256(ss_M || ss_X || ct_X || pk_X || "\.//^\")`. `vault-core`
+checks it against the draft's first test vector.
 
 ## 4. Unlocking a keyslot
 
@@ -141,6 +164,12 @@ Recovery:
   KEK    = HKDF(ikm  = recovery_secret,
                 salt = meta.salt,
                 info = "vault/kek-recovery/v1" || meta.id)
+
+RecipientHybrid (3.2):
+  ss     = X-Wing.Decapsulate(member's X-Wing secret key, meta.factor.encapsulated)
+  KEK    = HKDF(ikm  = ss,
+                salt = meta.salt,
+                info = "vault/kek-recipient/v1" || meta.id || meta.factor.member)
 ```
 
 `postcard(meta)` is taken from the stored header bytes, so it covers the factor type, KDF parameters, `require_uv`, `rp_id`, the PCR policy and every other field that decides how the KEK is derived.
@@ -279,6 +308,32 @@ Vault-wide settings that every device should have, such as cloud sync's server a
 - **Reading.** A reader drops duplicate names (keeping the winner) and refuses a body with an empty or over-long name or an over-long value.
 - **Versions.** A body without `settings` ("body v3") opens with no settings. Writers write that older encoding as long as the vault has no settings at all, so earlier program versions keep opening it; once any setting is stored (cloud sync), the body has the field and earlier versions cannot open the file, as with `retired_keys`.
 
+### 5.3 Shared collection settings
+
+A shared collection (3.2) keeps who is in it as settings (5.2):
+
+- `collection`: `postcard({ signed, signature })`, where `signed` is
+  `{ vault_id, key, epoch, name, owner, members, slots }`: `key` is the
+  current vault key's fingerprint (the keyed hash retired keys are listed by),
+  `epoch` goes up by one on each change, `owner` is the owner's fingerprint,
+  `members` is `[(fingerprint, display name)]` with the owner first, and
+  `slots` is `[(slot id, member fingerprint)]`, exactly the header's slots.
+  `signature` is the owner's hybrid signature (ML-DSA-65 then Ed25519) over
+  `postcard(signed)` with the context `secret-vault/collection/v1`.
+- `member/<hex of the first 16 bytes of the fingerprint>`: that member's
+  encoded public identity, for every member including the owner.
+
+A reader refuses the collection unless the signature verifies with the stored
+owner identity, `vault_id` and `key` match the file, the header's slots are
+exactly `slots`, every listed member's identity is stored and matches its
+fingerprint, and `owner` is the fingerprint the reader pinned when it joined.
+Removing a member rotates the vault key (as in 6.4, every item re-wrapped and
+the old key retired), so the new list names the new key.
+
+A person's own vault keeps their sharing identity in `sharing-identity`
+(`postcard({ seed, name })`) and the collections they are in, with each one's
+pinned owner and mailbox access, in `shared-collections`.
+
 ## 6. Operations
 
 ### 6.1 Create
@@ -324,7 +379,9 @@ vault/slot-aad/v1      vault/kek/v1           vault/kek-recovery/v1
 vault/enc/v1           vault/commit/v1        vault/header-mac/v1
 vault/body/v1          vault/body-aad/v1      vault/item-key/v1
 vault/item-data/v1     vault/recovery-check/v1 vault/parked-key/v1
-vault/conflict-id/v1   vault/key-order/v1
+vault/conflict-id/v1   vault/key-order/v1     vault/kek-recipient/v1
+vault/identity/v1/     vault/identity-fp/v1   vault/signed/v1
+secret-vault/collection/v1 (signature context)
 ```
 
 ## 9. Test vectors

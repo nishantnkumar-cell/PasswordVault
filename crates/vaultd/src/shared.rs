@@ -293,11 +293,16 @@ impl Shared {
     /// said so in the last few minutes (for example that the owner removed
     /// this person, so the server no longer takes their access).
     fn helper_error(&self, id: &[u8; 16]) -> Option<String> {
-        let text =
-            std::fs::read_to_string(self.dir(id).join("cloud").join(vault_ipc::CLOUD_HELPER_FILE))
-                .ok()?;
+        let text = std::fs::read_to_string(
+            self.dir(id)
+                .join("cloud")
+                .join(vault_ipc::CLOUD_HELPER_FILE),
+        )
+        .ok()?;
         let h = vault_ipc::HelperStatus::from_text(&text)?;
-        (now().saturating_sub(h.written) < 300).then_some(h.error).flatten()
+        (now().saturating_sub(h.written) < 300)
+            .then_some(h.error)
+            .flatten()
     }
 
     pub fn info(&self, me: &[u8; 32]) -> Vec<CollectionInfo> {

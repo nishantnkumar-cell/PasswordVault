@@ -191,7 +191,8 @@ pub fn join(call: &mut Call<'_>, link: &str) -> Result<Vec<CollectionInfo>> {
 }
 
 /// Remove a member, rotate the collection's key, and cut off that member's
-/// access on the server. Owner only.
+/// access on the server, along with any access that is not a current
+/// member's. Owner only.
 pub fn remove(call: &mut Call<'_>, id: [u8; 16], member: [u8; 32]) -> Result<Vec<CollectionInfo>> {
     let list = collections_of(ask(call, Request::CollectionRemoveMember { id, member })?)?;
     let c = list
@@ -199,9 +200,16 @@ pub fn remove(call: &mut Call<'_>, id: [u8; 16], member: [u8; 32]) -> Result<Vec
         .find(|c| c.id == id)
         .ok_or_else(|| err("no such shared collection"))?;
     let m = Mailbox::from_device(mine(c)?)?;
-    let name = device_name(&member);
+    // Every access that is not a current member's goes: the removed
+    // person's, and any other they may have made with it.
+    let keep: Vec<String> = c
+        .members
+        .iter()
+        .map(|x| device_name(&x.fingerprint))
+        .collect();
+    debug_assert!(!keep.contains(&device_name(&member)));
     for d in m.devices()? {
-        if d.name == name && !d.current {
+        if !d.current && !keep.contains(&d.name) {
             m.remove_device(&d.id)?;
         }
     }

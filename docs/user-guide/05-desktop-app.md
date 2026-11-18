@@ -657,6 +657,21 @@ Each shows whether sync is on (green dot) and when the vault last synced.
 | **PIN** box for a security key | Yes | Not shown: Windows asks in its own window | Yes |
 | **Quick unlock with Windows Hello** box | Not shown | Yes | Yes, as **Quick unlock with Touch ID** |
 | **Sync** page | Yes | Yes | Yes |
+| **Sharing** page, **Move to…** | Yes | Yes | Yes |
+
+## Sharing
+
+**Sharing**, under Tools, is for shared collections: a few items you share
+with family while the rest stays private ([chapter 17](17-family-sharing.md)).
+It shows your sharing card and safety code (**Copy my card**), a box to
+**Join** with an invite link, and each collection with its people. The owner
+of a collection also gets **Add a person** (paste their card, then an invite
+link with a QR code), **New invite link**, **Remove** next to each person,
+and **Delete for everyone…**; others get **Leave…**. **Make a shared
+collection** is at the bottom, once cloud sync is on.
+
+To put an item in a collection, open it and use **Move to…** under it.
+Items in a collection have a **Shared** tag in the list.
 
 ## Encrypt and sign
 

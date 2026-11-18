@@ -217,6 +217,10 @@ fn token(rng: &mut OsRandom) -> R<ClientToken> {
     Ok(t)
 }
 
+/// The shared collection an item is in (its id and name), or `None` for
+/// the person's own vault.
+type InCollection = Option<([u8; 16], String)>;
+
 impl Daemon {
     pub fn new(store: Store, hw: Hardware, cost: KdfCost, idle: Duration) -> Daemon {
         let device = store.device_id().unwrap_or_else(|err| {
@@ -1465,10 +1469,12 @@ impl Daemon {
                 // The owner deleting it keeps the items: they come back
                 // into the owner's own vault first. A member leaving gives
                 // up what was never theirs.
-                let owner = self
-                    .joined()
-                    .iter()
-                    .any(|j| j.id == id && self.identity().is_some_and(|(me, _)| j.owner == me.public().fingerprint()));
+                let owner = self.joined().iter().any(|j| {
+                    j.id == id
+                        && self
+                            .identity()
+                            .is_some_and(|(me, _)| j.owner == me.public().fingerprint())
+                });
                 if owner && let Ok(v) = self.shared.vault_mut(&id) {
                     let items: Vec<_> = v.item_ids().collect();
                     let mut moved = Vec::new();
@@ -1823,7 +1829,7 @@ impl Daemon {
 
     /// Every item ID, the person's own first, then each shared collection's,
     /// with the collection (ID and name).
-    fn all_ids(&mut self) -> R<Vec<(ItemId, Option<([u8; 16], String)>)>> {
+    fn all_ids(&mut self) -> R<Vec<(ItemId, InCollection)>> {
         let mut out: Vec<_> = self.vault()?.item_ids().map(|i| (*i, None)).collect();
         for (cid, o) in &self.shared.open {
             let Some(v) = &o.vault else { continue };

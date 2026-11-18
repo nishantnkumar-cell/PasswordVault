@@ -42,6 +42,41 @@ verified developers, rolling out country by country from late 2026; this
 may later need an extra step or block sideloading in some countries. No
 vault file change.
 
+### Share some items with family
+
+- **Shared collections.** Make a collection such as "Family" and add the
+  people you live with. Everyone in it sees and can change the items in it;
+  everything else stays in each person's own vault, which nobody else can
+  open. Move an item in or out with **Move to…** on the item, or
+  `vault share move ID Family`.
+- **Only the person who made it decides who is in it.** They add someone by
+  pasting that person's sharing card, then send them a one-time invite link
+  (with a QR code). Removing someone gives the collection a new key: they
+  keep what they had, and get nothing new.
+- **Check each other once, by voice.** Each person has a safety code. Read
+  them to each other in person or on a call before you share anything, so
+  nobody in between could have swapped a card.
+- **Post-quantum from the start.** The collection's key is wrapped for each
+  person with ML-KEM-768 + X25519 (X-Wing), and the member list is signed
+  with ML-DSA-65 + Ed25519.
+- **It rides on cloud sync.** The person who makes a collection needs cloud
+  sync on their computer; the collection is kept on their sync server.
+  Others need only `vault-sync` running, not cloud sync of their own.
+- How to start: [Sharing with family](user-guide/17-family-sharing.md).
+  How it works: [sharing.md](sharing.md); threats: [threat model, A8](threat-model.md).
+
+| | Linux | Windows | macOS | iPhone, iPad, Android |
+| --- | --- | --- | --- | --- |
+| Sharing page in the desktop app, `vault share` | Yes | Yes | Yes | Not yet |
+| Make a collection | With cloud sync on that computer | The same | The same | n/a |
+
+Known limits: phones and tablets cannot join a shared collection yet. There
+is no way yet to change someone's sharing keys short of leaving and joining
+again. **Vault file change:** making your sharing card stores it in your
+vault's settings (format.md 5.2), so, as with cloud sync, earlier versions
+cannot open that vault afterwards; update every device first. Collection
+files are new files that earlier versions never see.
+
 ### Cloud sync with your own Cloudflare account or your own computer
 
 - **Sync your computers through a server in your own free Cloudflare
@@ -92,8 +127,8 @@ yet against a real account. **Vault file change:** a vault with cloud sync
 set up stores its settings in a new field (format.md 5.2), and earlier
 versions cannot open it, so update every device (phones too, if they use
 folder sync with that vault) before running `vault cloud setup`. Vaults
-without cloud sync are written as before. Family sharing is planned
-separately.
+without cloud sync are written as before. Family sharing: see "Share some
+items with family" above.
 
 ### Linux: one package installs everything, and quick unlock with your login password
 
