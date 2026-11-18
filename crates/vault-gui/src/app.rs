@@ -20,6 +20,7 @@ use zeroize::Zeroizing;
 use crate::client::{Backend, Failure, Paths, Phone, SystemPhone, Work};
 use crate::theme::{self, Icon};
 
+mod cloud;
 mod codes;
 mod keys;
 mod setup;
@@ -161,6 +162,10 @@ enum Op {
     /// Encrypt, decrypt, sign or verify on the OpenPGP page.
     Pgp,
     Sync,
+    /// The vault's cloud sync settings (CloudGet).
+    CloudInfo,
+    /// A cloud sync step; the text is the notice when it worked.
+    Cloud(&'static str),
     QuickUnlock,
     /// An unlock method added from the first-run wizard.
     SetupSlot(setup::Extra),
@@ -719,6 +724,7 @@ pub struct App {
     confirm_remove: Option<SlotId>,
 
     sync_path: String,
+    cloud: cloud::CloudPage,
     /// Programs allowed to use app passwords, from the last listing.
     app_approvals: Vec<vault_ipc::AppApproval>,
     /// Items in the trash, from the last listing.
@@ -790,6 +796,7 @@ impl App {
             new_recovery: None,
             confirm_remove: None,
             sync_path: String::new(),
+            cloud: cloud::CloudPage::default(),
             app_approvals: Vec::new(),
             trash: Vec::new(),
             quick_hours: None,
@@ -867,6 +874,7 @@ impl App {
         self.confirm_remove = None;
         self.palette = None;
         self.pending_copy = None;
+        self.cloud.wipe();
         self.clear_clipboard();
     }
 
@@ -1097,6 +1105,7 @@ impl App {
                 });
                 self.on_status(s);
             }
+            (op @ (Op::CloudInfo | Op::Cloud(_)), r) => self.on_cloud_result(op, r),
             (Op::AppApprovals, Response::AppApprovals(list)) => self.app_approvals = list,
             (Op::ListTrash, Response::Trash(list)) => self.trash = list,
             (Op::TrashAction(what), Response::Ok) => {
@@ -1620,10 +1629,17 @@ impl App {
         page_header(
             ui,
             "Sync",
-            "Keep this vault in step with your other devices through a folder that \
-             OneDrive, Google Drive or Dropbox syncs. The file there is encrypted like \
-             this one, and changes from each device are merged.",
+            "Keep this vault in step with your other devices, through your own sync \
+             server (cloud sync) or a folder that OneDrive, Google Drive or Dropbox syncs. \
+             The copies are encrypted like this one, and changes from each device are \
+             merged. Use one or the other.",
         );
+        self.cloud_card(ui);
+        if self.cloud_on() {
+            return;
+        }
+        ui.add_space(12.0);
+        theme::caption(ui, "Or: folder sync");
         let sync = self.status.as_ref().and_then(|(s, _)| s.sync.clone());
         let ok = self.busy.is_none();
         let Some(sync) = sync else {
@@ -2050,6 +2066,9 @@ impl App {
         }
         if v == View::Trash {
             self.send(Op::ListTrash, Request::ListTrash);
+        }
+        if v == View::Sync {
+            self.cloud_refresh();
         }
     }
 

@@ -146,6 +146,7 @@ fn status() {
                 println!("server:     {}", d.server);
             }
             println!("this device: {} (joined)", d.device);
+            println!("helper:     {}", flows::helper_line(&i).0);
             if let Ok(srv) = Server::with_ca(&d.server, d.ca_cert.as_deref()) {
                 match srv.info() {
                     Ok(si) if si.revision < vault_cloud::worker_revision() => println!(

@@ -14,7 +14,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 
 use vault_cloud::{Fetched, Mailbox, Saved, digest};
-use vault_ipc::{CLOUD_COPY_FILE, CLOUD_DEVICE_FILE, CloudDevice};
+use vault_ipc::{CLOUD_COPY_FILE, CLOUD_DEVICE_FILE, CLOUD_HELPER_FILE, CloudDevice, HelperStatus};
 
 /// How often the local copy is checked for a change `vaultd` wrote.
 const LOCAL_CHECK: Duration = Duration::from_secs(1);
@@ -272,6 +272,53 @@ fn run(dir: &Path) {
     }
 }
 
+fn unix_now() -> u64 {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
+}
+
+/// Tells `vaultd` (and so `vault cloud` and the app) how this helper is
+/// doing: rewritten when something changes and at least once a minute.
+struct Report {
+    path: PathBuf,
+    status: HelperStatus,
+    written: Instant,
+}
+
+impl Report {
+    fn new(dir: &Path) -> Report {
+        Report {
+            path: dir.join(CLOUD_HELPER_FILE),
+            status: HelperStatus::default(),
+            written: Instant::now() - Duration::from_secs(3600),
+        }
+    }
+
+    fn set(&mut self, watching: bool, outcome: Option<Result<(), &str>>) {
+        let mut next = self.status.clone();
+        next.watching = watching;
+        match outcome {
+            Some(Ok(())) => {
+                next.reached = unix_now();
+                next.error = None;
+            }
+            Some(Err(e)) => next.error = Some(e.to_owned()),
+            None => {}
+        }
+        let changed = next.watching != self.status.watching || next.error != self.status.error;
+        self.status = next;
+        if changed || self.written.elapsed() >= Duration::from_secs(60) {
+            self.status.written = unix_now();
+            let tmp = self.path.with_extension("part");
+            if fs::write(&tmp, self.status.to_text()).is_ok() {
+                let _ = fs::rename(&tmp, &self.path);
+            }
+            self.written = Instant::now();
+        }
+    }
+}
+
 /// Mirrors one device's mailbox until its device file changes.
 fn serve(dir: &Path, device: &CloudDevice) {
     let mut m = match Mirror::new(dir, device.clone()) {
@@ -288,7 +335,9 @@ fn serve(dir: &Path, device: &CloudDevice) {
     let mut last_remote = Instant::now() - REMOTE_CHECK_WATCHING;
     let mut failures = 0u32;
     let mut last_error = String::new();
+    let mut report = Report::new(dir);
     loop {
+        report.set(watching, None);
         if read_device(dir).as_ref() != Some(device) {
             log("this device's cloud sync access changed; starting again");
             return;
@@ -303,6 +352,7 @@ fn serve(dir: &Path, device: &CloudDevice) {
             Ok(Notice::Changed) | Ok(Notice::Connected) => {
                 watching = true;
                 remote = true;
+                report.set(true, Some(Ok(())));
             }
             Ok(Notice::Lost) => watching = false,
             Err(RecvTimeoutError::Timeout) => {}
@@ -319,11 +369,13 @@ fn serve(dir: &Path, device: &CloudDevice) {
                 }
                 failures = 0;
                 last_error.clear();
+                report.set(watching, Some(Ok(())));
                 if remote {
                     last_remote = Instant::now();
                 }
             }
             Err(e) => {
+                report.set(watching, Some(Err(&e)));
                 if e != last_error {
                     log(&e);
                     last_error = e;

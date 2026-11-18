@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use vault_ipc::{CloudDevice, CloudInfo, CloudSettings, Request, Response, Secret, StatusInfo};
 
 use crate::{
-    err, Cloudflare, DeviceInfo, Fetched, JoinLink, Mailbox, OwnCa, Result, Server, DEFAULT_WORKER,
+    Cloudflare, DEFAULT_WORKER, DeviceInfo, Fetched, JoinLink, Mailbox, OwnCa, Result, Server, err,
 };
 
 /// Sends one request to `vaultd`.
@@ -95,7 +95,12 @@ pub enum Host {
 /// Sets cloud sync up for this vault: the server (uploaded to Cloudflare, or
 /// the user's own), a new mailbox, this device, and the settings in the
 /// vault. `progress` hears each step. Returns the server's address.
-pub fn setup(call: &mut Call<'_>, host: Host, name: &str, progress: &dyn Fn(&str)) -> Result<String> {
+pub fn setup(
+    call: &mut Call<'_>,
+    host: Host,
+    name: &str,
+    progress: &dyn Fn(&str),
+) -> Result<String> {
     need_unlocked(call)?;
     if info(call)?.settings.is_some() {
         return Err(err(
@@ -109,7 +114,11 @@ pub fn setup(call: &mut Call<'_>, host: Host, name: &str, progress: &dyn Fn(&str
             admin_key,
         } => {
             let url = server.trim().trim_end_matches('/').to_owned();
-            let ca = match fingerprint.as_deref().map(str::trim).filter(|f| !f.is_empty()) {
+            let ca = match fingerprint
+                .as_deref()
+                .map(str::trim)
+                .filter(|f| !f.is_empty())
+            {
                 Some(f) => {
                     progress("Checking the server's certificate...");
                     Some(OwnCa::fetch(&url, f)?)
@@ -120,7 +129,14 @@ pub fn setup(call: &mut Call<'_>, host: Host, name: &str, progress: &dyn Fn(&str
             if key.is_empty() {
                 return Err(err("enter the server's admin key"));
             }
-            (url, String::new(), String::new(), Secret::new(key), None, ca)
+            (
+                url,
+                String::new(),
+                String::new(),
+                Secret::new(key),
+                None,
+                ca,
+            )
         }
         Host::Cloudflare {
             account,
@@ -137,23 +153,39 @@ pub fn setup(call: &mut Call<'_>, host: Host, name: &str, progress: &dyn Fn(&str
             progress("Checking your Cloudflare account...");
             let sub = cf.subdomain()?;
             let admin_key = crate::random_token()?;
-            progress(&format!("Uploading the sync server as the Worker \"{worker}\"..."));
+            progress(&format!(
+                "Uploading the sync server as the Worker \"{worker}\"..."
+            ));
             cf.deploy(&worker, &admin_key)?;
             let url = crate::worker_url(&worker, &sub);
             let kept = keep_token.then(|| Secret::new(token.trim().to_owned()));
-            (url, account.trim().to_owned(), worker, admin_key, kept, None)
+            (
+                url,
+                account.trim().to_owned(),
+                worker,
+                admin_key,
+                kept,
+                None,
+            )
         }
     };
     let ca_pem = ca.as_ref().map(|c| c.pem().to_owned());
     let server = Server::with_ca(&url, ca_pem.as_deref())?;
-    progress(&format!(
-        "Waiting for {url} to answer (a new address can take a minute)..."
-    ));
+    // A Worker just uploaded can take a minute to answer on its new address;
+    // a server the user runs should answer at once.
+    let patience = if account.is_empty() {
+        Duration::ZERO
+    } else {
+        progress(&format!(
+            "Waiting for {url} to answer (a new address can take a minute)..."
+        ));
+        Duration::from_secs(120)
+    };
     let start = Instant::now();
     loop {
         match server.info() {
             Ok(_) => break,
-            Err(e) if start.elapsed() > Duration::from_secs(120) => {
+            Err(e) if start.elapsed() >= patience => {
                 return Err(err(format!(
                     "the server did not come up: {e}. Try again in a few minutes"
                 )));
@@ -259,9 +291,7 @@ pub fn devices(i: &CloudInfo) -> Result<Vec<DeviceInfo>> {
 pub fn remove(i: &CloudInfo, id: &str) -> Result<()> {
     let d = device(i)?;
     if d.device == id {
-        return Err(err(
-            "that is this device; turn cloud sync off here instead",
-        ));
+        return Err(err("that is this device; turn cloud sync off here instead"));
     }
     Mailbox::from_device(d)?.remove_device(id)
 }
@@ -320,4 +350,49 @@ pub fn off(call: &mut Call<'_>, everywhere: bool) -> Result<()> {
         },
     )?;
     Ok(())
+}
+
+/// One line on how the `vault-sync` helper on this computer is doing, and
+/// whether that is a problem.
+pub fn helper_line(i: &CloudInfo) -> (String, bool) {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or_default();
+    let ago = |t: u64| {
+        let s = now.saturating_sub(t);
+        match s {
+            0..60 => "just now".to_owned(),
+            60..7200 => format!("{} minutes ago", s / 60),
+            _ => format!("{} hours ago", s / 3600),
+        }
+    };
+    match &i.helper {
+        Some(h) if now.saturating_sub(h.written) <= 180 => match &h.error {
+            Some(e) => (format!("running, but: {e}"), true),
+            None if h.watching => (
+                "running; connected to the server and listening for changes".into(),
+                false,
+            ),
+            None if h.reached == 0 => ("running, has not reached the server yet".into(), false),
+            None => (
+                format!(
+                    "running; server reached {} (checks every 30 seconds)",
+                    ago(h.reached)
+                ),
+                false,
+            ),
+        },
+        Some(h) => (
+            format!(
+                "not running (last seen {}); start vault-sync",
+                ago(h.written)
+            ),
+            true,
+        ),
+        None => (
+            "not started on this computer yet; start vault-sync".into(),
+            true,
+        ),
+    }
 }

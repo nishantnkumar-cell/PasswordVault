@@ -15,10 +15,10 @@ use vault_core::{
 };
 use vault_hw::protect::ProtectedKey;
 use vault_ipc::{
-    AppApproval, CLOUD_COPY_FILE, CLOUD_DEVICE_FILE, CLOUD_SETTING, ClientScope, ClientToken,
-    CloudDevice, CloudInfo, CloudSettings, Envelope, ImportFormat, ItemSummary, PasskeySlot,
-    PasswordStyle, QuickUnlockInfo, Request, Response, Secret, SlotInfo, StatusInfo, SyncInfo,
-    UnlockMethod,
+    AppApproval, CLOUD_COPY_FILE, CLOUD_DEVICE_FILE, CLOUD_HELPER_FILE, CLOUD_SETTING, ClientScope,
+    ClientToken, CloudDevice, CloudInfo, CloudSettings, Envelope, HelperStatus, ImportFormat,
+    ItemSummary, PasskeySlot, PasswordStyle, QuickUnlockInfo, Request, Response, Secret, SlotInfo,
+    StatusInfo, SyncInfo, UnlockMethod,
 };
 use zeroize::Zeroizing;
 
@@ -1173,7 +1173,14 @@ impl Daemon {
             .ok()
             .map(Zeroizing::new)
             .and_then(|t| CloudDevice::from_text(&t));
-        Ok(Response::Cloud(CloudInfo { settings, device }))
+        let helper = std::fs::read_to_string(self.cloud_dir().join(CLOUD_HELPER_FILE))
+            .ok()
+            .and_then(|t| HelperStatus::from_text(&t));
+        Ok(Response::Cloud(CloudInfo {
+            settings,
+            device,
+            helper,
+        }))
     }
 
     fn cloud_set(&mut self, settings: Option<CloudSettings>) -> R<Response> {
@@ -1198,6 +1205,7 @@ impl Daemon {
                 }
                 _ => {}
             }
+            let _ = std::fs::remove_file(dir.join(CLOUD_HELPER_FILE));
             if self.store.sync_path().as_deref() == Some(copy.as_path()) {
                 return self.set_sync(None);
             }

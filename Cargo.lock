@@ -7276,6 +7276,7 @@ dependencies = [
  "image",
  "qrcode",
  "raw-window-handle",
+ "vault-cloud",
  "vault-core",
  "vault-hw",
  "vault-import",

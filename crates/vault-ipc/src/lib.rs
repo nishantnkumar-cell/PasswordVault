@@ -532,13 +532,64 @@ impl CloudDevice {
     }
 }
 
+/// Name of the file in the cloud folder where `vault-sync` says how it is
+/// doing ([`HelperStatus`]).
+pub const CLOUD_HELPER_FILE: &str = "helper.status";
+
+/// What `vault-sync` last said about itself, rewritten at least once a
+/// minute while it runs.
+#[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
+pub struct HelperStatus {
+    /// When it wrote this (Unix seconds); older than a few minutes means it
+    /// is not running.
+    pub written: u64,
+    /// When the server last answered; 0 if never.
+    pub reached: u64,
+    /// Whether it is listening for changes (the WebSocket is open).
+    pub watching: bool,
+    /// Why the last attempt failed, if it did.
+    pub error: Option<String>,
+}
+
+impl HelperStatus {
+    /// The text kept in [`CLOUD_HELPER_FILE`].
+    pub fn to_text(&self) -> String {
+        format!(
+            "written={}\nreached={}\nwatching={}\n{}",
+            self.written,
+            self.reached,
+            self.watching,
+            self.error
+                .as_ref()
+                .map(|e| format!("error={}\n", e.replace('\n', " ")))
+                .unwrap_or_default()
+        )
+    }
+
+    pub fn from_text(text: &str) -> Option<HelperStatus> {
+        let get = |k: &str| {
+            text.lines()
+                .find_map(|l| l.strip_prefix(k)?.strip_prefix('='))
+                .map(str::trim)
+        };
+        Some(HelperStatus {
+            written: get("written")?.parse().ok()?,
+            reached: get("reached")?.parse().ok()?,
+            watching: get("watching")? == "true",
+            error: get("error").map(|e| e.chars().take(300).collect()),
+        })
+    }
+}
+
 /// What `CloudGet` answers.
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default, Clone)]
 pub struct CloudInfo {
     /// The vault's cloud settings; `None` while locked or not set up.
     pub settings: Option<CloudSettings>,
     /// This device's access, if it has joined.
     pub device: Option<CloudDevice>,
+    /// What the `vault-sync` helper last said, if it ever ran here.
+    pub helper: Option<HelperStatus>,
 }
 
 /// One line of the activity log (`Request::Activity`).
@@ -809,6 +860,13 @@ mod tests {
         };
         assert!(super::CloudDevice::from_text(&own.to_text()) == Some(own));
         assert!(super::CloudDevice::from_text("server=x\n").is_none());
+        let h = super::HelperStatus {
+            written: 1_700_000_000,
+            reached: 1_699_999_990,
+            watching: true,
+            error: Some("could not reach the server".into()),
+        };
+        assert_eq!(super::HelperStatus::from_text(&h.to_text()), Some(h));
     }
 
     use super::*;
