@@ -391,6 +391,7 @@ mod tests {
             has_totp: false,
             key: None,
             key_confirm: false,
+            collection: None,
         }
     }
 

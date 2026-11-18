@@ -2,7 +2,7 @@
 //! operations, rollback refusal and idle lock.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -27,6 +27,7 @@ use crate::hw::Hardware;
 use crate::store::Store;
 use crate::sync::Folder;
 use crate::{pgp, ssh};
+use vault_core::identity::Identity;
 
 /// Relying party ID for FIDO2 credentials created by this daemon.
 pub const RP_ID: &str = vault_hw::RP_ID;
@@ -72,6 +73,9 @@ pub struct Daemon {
     app_allowed: BTreeMap<String, u64>,
     /// Programs declined in the approval window, and when.
     app_declined: HashMap<String, Instant>,
+    /// Shared collections, open while the vault is unlocked.
+    shared: crate::shared::Shared,
+    shared_check: Option<Instant>,
 }
 
 /// A locked vault's key kept for quick unlock (format.md section 4.6). The
@@ -139,6 +143,32 @@ fn now() -> u64 {
 
 fn e(err: vault_core::Error) -> String {
     err.to_string()
+}
+
+/// Check a mailbox access before writing it where `vault-sync` reads it.
+fn check_device(d: &CloudDevice) -> R<()> {
+    let hex = |s: &str, n: usize| {
+        s.len() == n
+            && s.bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    };
+    let token_ok = (43..=128).contains(&d.token.len())
+        && d.token
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
+    // https, or plain http to this computer only (`wrangler dev`, tests).
+    let server_ok = ["https://", "http://127.0.0.1:", "http://localhost:"]
+        .iter()
+        .any(|p| d.server.starts_with(p));
+    if !server_ok
+        || d.server.contains(char::is_whitespace)
+        || !hex(&d.mailbox, 32)
+        || !hex(&d.device, 16)
+        || !token_ok
+    {
+        return Err("malformed cloud sync access".into());
+    }
+    Ok(())
 }
 
 /// A credential for one slot, owned so it can be borrowed as [`Unlock`].
@@ -219,7 +249,11 @@ impl Daemon {
             parked: None,
             app_allowed: BTreeMap::new(),
             app_declined: HashMap::new(),
+            shared: crate::shared::Shared::new(Path::new(".")),
+            shared_check: None,
         };
+        d.shared =
+            crate::shared::Shared::new(d.store.vault_path().parent().unwrap_or(Path::new(".")));
         d.quick_hours = d.store.quick_unlock_hours().min(MAX_QUICK_HOURS);
         d.join_from_sync();
         d
@@ -238,6 +272,92 @@ impl Daemon {
             && let Some(all) = self.sync.as_mut().and_then(|s| s.folder.due())
         {
             self.sync_now(None, all);
+        }
+        if self.vault.is_some()
+            && self
+                .shared_check
+                .is_none_or(|t| t.elapsed() >= Duration::from_secs(5))
+        {
+            self.shared_check = Some(Instant::now());
+            self.sync_shared(false);
+        }
+    }
+
+    /// The person's sharing identity, if they made one.
+    fn identity(&self) -> Option<(Identity, String)> {
+        let raw = self
+            .vault
+            .as_ref()?
+            .setting(crate::shared::IDENTITY_SETTING)?;
+        let s: crate::shared::IdentitySetting = postcard::from_bytes(raw).ok()?;
+        Some((Identity::from_seed(s.seed), s.name.clone()))
+    }
+
+    /// The shared collections listed in the person's own vault.
+    fn joined(&self) -> Vec<crate::shared::Joined> {
+        self.vault
+            .as_ref()
+            .and_then(|v| v.setting(crate::shared::JOINED_SETTING))
+            .and_then(|raw| postcard::from_bytes(raw).ok())
+            .unwrap_or_default()
+    }
+
+    fn set_joined(&mut self, list: &[crate::shared::Joined]) -> R<()> {
+        let raw = postcard::to_allocvec(list).map_err(|e| e.to_string())?;
+        self.vault()?
+            .set_setting(crate::shared::JOINED_SETTING, Some(&raw))
+            .map_err(e)?;
+        self.save()
+    }
+
+    /// Open (or close) shared collections as the person's own vault lists
+    /// them, then merge what came from the server.
+    fn sync_shared(&mut self, all: bool) {
+        let joined = self.joined();
+        if joined.is_empty() && self.shared.open.is_empty() {
+            return;
+        }
+        let Some((me, _)) = self.identity() else {
+            return;
+        };
+        self.shared.load(joined, &me);
+        self.shared.sync(&me, all);
+        for (id, o) in &self.shared.open {
+            if let Some(v) = &o.vault {
+                let _ = self.store.record_generation(id, v.generation());
+            }
+        }
+    }
+
+    /// Where item `id` lives: `None` for the person's own vault.
+    fn place(&mut self, id: &ItemId) -> R<Option<[u8; 16]>> {
+        if self.vault()?.item_ids().any(|i| i == id) {
+            return Ok(None);
+        }
+        Ok(self.shared.holder(id))
+    }
+
+    fn vault_at(&mut self, place: Option<[u8; 16]>) -> R<&mut Vault> {
+        match place {
+            None => self.vault(),
+            Some(c) => self.shared.vault_mut(&c),
+        }
+    }
+
+    /// Write the vault an item lives in.
+    fn save_at(&mut self, place: Option<[u8; 16]>) -> R<()> {
+        match place {
+            None => self.save(),
+            Some(c) => {
+                self.shared.mark_dirty(&c);
+                if let Some((me, _)) = self.identity() {
+                    self.shared.sync(&me, false);
+                }
+                match self.shared.open.get(&c).and_then(|o| o.error.clone()) {
+                    Some(m) if self.shared.open.get(&c).is_some_and(|o| o.dirty) => Err(m),
+                    _ => Ok(()),
+                }
+            }
         }
     }
 
@@ -405,6 +525,7 @@ impl Daemon {
     /// Drop the vault and its keys. With quick unlock on and its window
     /// open, keep the vault key wrapped under a fresh random key first.
     pub fn lock(&mut self) {
+        self.shared.open.clear();
         let Some(v) = self.vault.take() else {
             return;
         };
@@ -481,6 +602,7 @@ impl Daemon {
         v.set_device(self.device);
         self.vault = Some(v);
         self.sync_now(None, true);
+        self.sync_shared(true);
         Ok(Response::Ok)
     }
 
@@ -756,18 +878,20 @@ impl Daemon {
         };
         item.modified = t;
         item.normalize();
-        self.vault()?
+        let place = self.place(&id)?;
+        self.vault_at(place)?
             .put_item(&mut OsRandom, &id, &item.to_bytes())
             .map_err(e)?;
-        self.save()?;
+        self.save_at(place)?;
         Ok(id)
     }
 
     /// Delete item `id` for good, with no stop in the trash. For items that
     /// are not the user's own, such as app passwords.
     pub fn delete_item_for_good(&mut self, id: &ItemId) -> R<()> {
-        self.vault()?.remove_item(id).map_err(e)?;
-        self.save()
+        let place = self.place(id)?;
+        self.vault_at(place)?.remove_item(id).map_err(e)?;
+        self.save_at(place)
     }
 
     /// Delete item `id`: into the trash for 30 days first, and for good if
@@ -775,8 +899,7 @@ impl Daemon {
     pub fn delete_item(&mut self, id: &ItemId) -> R<()> {
         let mut item = self.raw_item(id)?;
         if item.trashed_at().is_some() {
-            self.vault()?.remove_item(id).map_err(e)?;
-            return self.save();
+            return self.delete_item_for_good(id);
         }
         item.set_trashed(Some(now()));
         self.write_item(id, &item)
@@ -1122,6 +1245,7 @@ impl Daemon {
         self.quick_until = (self.quick_hours > 0)
             .then(|| SystemTime::now() + Duration::from_secs(u64::from(self.quick_hours) * 3600));
         self.sync_now(Some(method), true);
+        self.sync_shared(true);
     }
 
     fn set_sync(&mut self, path: Option<String>) -> R<Response> {
@@ -1211,27 +1335,7 @@ impl Daemon {
             }
             return Ok(Response::Status(self.status()));
         };
-        let hex = |s: &str, n: usize| {
-            s.len() == n
-                && s.bytes()
-                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-        };
-        let token_ok = (43..=128).contains(&d.token.len())
-            && d.token
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
-        // https, or plain http to this computer only (`wrangler dev`, tests).
-        let server_ok = ["https://", "http://127.0.0.1:", "http://localhost:"]
-            .iter()
-            .any(|p| d.server.starts_with(p));
-        if !server_ok
-            || d.server.contains(char::is_whitespace)
-            || !hex(&d.mailbox, 32)
-            || !hex(&d.device, 16)
-            || !token_ok
-        {
-            return Err("malformed cloud sync access".into());
-        }
+        check_device(&d)?;
         let mut b = std::fs::DirBuilder::new();
         b.recursive(true);
         #[cfg(unix)]
@@ -1244,6 +1348,141 @@ impl Daemon {
             crate::store::write_atomic(&copy, &f).map_err(|e| e.to_string())?;
         }
         self.set_sync(Some(copy.display().to_string()))
+    }
+
+    fn me(&self) -> R<(Identity, String)> {
+        self.identity().ok_or_else(|| {
+            "make your sharing card first (Sharing page, or `vault share card`)".into()
+        })
+    }
+
+    fn collections(&self) -> Response {
+        let me = self
+            .identity()
+            .map(|(i, _)| i.public().fingerprint())
+            .unwrap_or_default();
+        Response::Collections(self.shared.info(&me))
+    }
+
+    fn sharing(&mut self, req: Request) -> R<Response> {
+        use crate::shared::{Joined, card, read_card};
+        let rng = &mut OsRandom;
+        match req {
+            Request::SharingIdentity { name } => {
+                if self.identity().is_none() {
+                    let name = name
+                        .map(|n| n.trim().to_owned())
+                        .filter(|n| !n.is_empty() && n.len() <= 64)
+                        .ok_or("give the name others will see you as (up to 64 characters)")?;
+                    let id = Identity::generate(rng).map_err(e)?;
+                    let raw = postcard::to_allocvec(&crate::shared::IdentitySetting {
+                        seed: *id.seed(),
+                        name,
+                    })
+                    .map_err(|e| e.to_string())?;
+                    self.vault()?
+                        .set_setting(crate::shared::IDENTITY_SETTING, Some(&raw))
+                        .map_err(e)?;
+                    self.save()?;
+                }
+                let (me, name) = self.me()?;
+                let pk = me.public();
+                Ok(Response::SharingCard {
+                    card: card(&name, &pk),
+                    safety: pk.safety_code(),
+                    name,
+                })
+            }
+            Request::Collections => Ok(self.collections()),
+            Request::CollectionCreate { name, device } => {
+                check_device(&device)?;
+                let (me, my_name) = self.me()?;
+                let mut v = Vault::new_collection(rng, &me, &my_name, name.trim()).map_err(e)?;
+                v.set_device(self.device);
+                let bytes = v.to_bytes(rng).map_err(e)?;
+                let j = Joined {
+                    id: v.vault_id(),
+                    owner: me.public().fingerprint(),
+                    name: name.trim().to_owned(),
+                    device,
+                };
+                let mut list = self.joined();
+                list.push(j.clone());
+                self.shared.create(j, v, &bytes)?;
+                self.set_joined(&list)?;
+                Ok(self.collections())
+            }
+            Request::CollectionAddMember { id, name, card } => {
+                let (me, _) = self.me()?;
+                let (suggested, pk) = read_card(&card)?;
+                let name = Some(name.trim().to_owned())
+                    .filter(|n| !n.is_empty())
+                    .unwrap_or(suggested);
+                self.shared
+                    .vault_mut(&id)?
+                    .add_member(rng, &me, &name, &pk)
+                    .map_err(e)?;
+                self.save_at(Some(id))?;
+                Ok(self.collections())
+            }
+            Request::CollectionRemoveMember { id, member } => {
+                let (me, _) = self.me()?;
+                self.shared
+                    .vault_mut(&id)?
+                    .remove_member(rng, &me, &member)
+                    .map_err(e)?;
+                self.save_at(Some(id))?;
+                Ok(self.collections())
+            }
+            Request::CollectionJoin { device, file } => {
+                check_device(&device)?;
+                let (me, _) = self.me()?;
+                let p = ParsedVault::parse(&file).map_err(e)?;
+                let mut v = p.unlock_member(&me).map_err(|err| match err {
+                    vault_core::Error::NotFound => "you are not a member of this shared collection yet: \
+                         send your sharing card to its owner and ask them to add you, then use a new link"
+                        .to_string(),
+                    err => e(err),
+                })?;
+                let c = v.collection().map_err(e)?;
+                v.set_device(self.device);
+                let j = Joined {
+                    id: v.vault_id(),
+                    owner: c.owner,
+                    name: c.name.clone(),
+                    device,
+                };
+                let mut list = self.joined();
+                list.retain(|x| x.id != j.id);
+                list.push(j.clone());
+                self.shared.open.remove(&j.id);
+                self.shared.create(j, v, &file)?;
+                self.set_joined(&list)?;
+                Ok(self.collections())
+            }
+            Request::CollectionLeave { id } => {
+                let mut list = self.joined();
+                list.retain(|x| x.id != id);
+                self.set_joined(&list)?;
+                if let Some((me, _)) = self.identity() {
+                    self.shared.load(list, &me);
+                }
+                Ok(self.collections())
+            }
+            Request::MoveItem { id, to } => {
+                let from = self.place(&id)?;
+                if from == to {
+                    return Ok(Response::ItemSaved { id });
+                }
+                let data = self.vault_at(from)?.get_item(&id).map_err(e)?;
+                self.vault_at(to)?.put_item(rng, &id, &data).map_err(e)?;
+                self.save_at(to)?;
+                self.vault_at(from)?.remove_item(&id).map_err(e)?;
+                self.save_at(from)?;
+                Ok(Response::ItemSaved { id })
+            }
+            _ => Err("not a sharing request".into()),
+        }
     }
 
     fn status(&self) -> StatusInfo {
@@ -1546,22 +1785,38 @@ impl Daemon {
 
     /// An item, trashed or not.
     fn raw_item(&mut self, id: &ItemId) -> R<ItemData> {
-        let bytes = self.vault()?.get_item(id).map_err(e)?;
+        let place = self.place(id)?;
+        let bytes = self.vault_at(place)?.get_item(id).map_err(e)?;
         ItemData::from_bytes(&bytes).map_err(e)
     }
 
     fn write_item(&mut self, id: &ItemId, item: &ItemData) -> R<()> {
-        self.vault()?
+        let place = self.place(id)?;
+        self.vault_at(place)?
             .put_item(&mut OsRandom, id, &item.to_bytes())
             .map_err(e)?;
-        self.save()
+        self.save_at(place)
+    }
+
+    /// Every item ID, the person's own first, then each shared collection's,
+    /// with the collection (ID and name).
+    fn all_ids(&mut self) -> R<Vec<(ItemId, Option<([u8; 16], String)>)>> {
+        let mut out: Vec<_> = self.vault()?.item_ids().map(|i| (*i, None)).collect();
+        for (cid, o) in &self.shared.open {
+            let Some(v) = &o.vault else { continue };
+            let name = v
+                .collection()
+                .map_or_else(|_| o.joined.name.clone(), |c| c.name);
+            out.extend(v.item_ids().map(|i| (*i, Some((*cid, name.clone())))));
+        }
+        Ok(out)
     }
 
     /// Items in the trash, newest first.
     fn trash(&mut self) -> R<Vec<(ItemId, ItemData, u64)>> {
-        let ids: Vec<ItemId> = self.vault()?.item_ids().copied().collect();
+        let ids = self.all_ids()?;
         let mut out = Vec::new();
-        for id in ids {
+        for (id, _) in ids {
             let Ok(it) = self.raw_item(&id) else { continue };
             if let Some(t) = it.trashed_at() {
                 out.push((id, it, t));
@@ -1585,9 +1840,9 @@ impl Daemon {
             return Ok(());
         }
         for id in &old {
-            self.vault()?.remove_item(id).map_err(e)?;
+            self.delete_item_for_good(id)?;
         }
-        self.save()
+        Ok(())
     }
 
     fn fillable(&mut self, id: &ItemId, origin: &str) -> R<ItemData> {
@@ -1600,9 +1855,9 @@ impl Daemon {
     }
 
     fn summaries(&mut self, keep: impl Fn(&ItemData) -> bool) -> R<Vec<ItemSummary>> {
-        let ids: Vec<ItemId> = self.vault()?.item_ids().copied().collect();
+        let ids = self.all_ids()?;
         let mut out = Vec::new();
-        for id in ids {
+        for (id, collection) in ids {
             let Ok(it) = self.item(&id) else { continue };
             if keep(&it) {
                 out.push(ItemSummary {
@@ -1614,6 +1869,7 @@ impl Daemon {
                     has_totp: it.totp.is_some(),
                     key: it.key.as_ref().map(describe_key),
                     key_confirm: it.key.as_ref().is_some_and(KeyData::confirm),
+                    collection,
                 });
             }
         }
@@ -1873,6 +2129,14 @@ impl Daemon {
                 self.save()?;
                 Ok(Response::Revoked { removed })
             }
+            req @ (Request::SharingIdentity { .. }
+            | Request::Collections
+            | Request::CollectionCreate { .. }
+            | Request::CollectionAddMember { .. }
+            | Request::CollectionRemoveMember { .. }
+            | Request::CollectionJoin { .. }
+            | Request::CollectionLeave { .. }
+            | Request::MoveItem { .. }) => self.sharing(req),
             Request::ListItems => {
                 let _ = self.purge_old_trash();
                 Ok(Response::Items(self.summaries(|_| true)?))
@@ -1992,6 +2256,10 @@ impl Daemon {
             }
             Request::SyncNow => {
                 self.vault()?;
+                self.sync_shared(true);
+                if self.sync.is_none() && !self.shared.open.is_empty() {
+                    return Ok(Response::Status(self.status()));
+                }
                 if self.sync.is_none() {
                     return Err("sync is off; turn it on with `vault sync on PATH`".into());
                 }
