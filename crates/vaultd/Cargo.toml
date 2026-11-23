@@ -45,7 +45,7 @@ zeroize = "1.9.1"
 zxcvbn = { version = "3.1.1", default-features = false }
 
 [target.'cfg(unix)'.dependencies]
-nix = { version = "0.31", features = ["socket", "process", "resource", "fs", "user", "signal", "mman"] }
+nix = { version = "0.32", features = ["socket", "process", "resource", "fs", "user", "signal", "mman"] }
 signal-hook = "0.4"
 
 [target.'cfg(windows)'.dependencies]
