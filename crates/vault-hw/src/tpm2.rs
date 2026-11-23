@@ -767,12 +767,15 @@ pub(crate) mod tests {
     }
 
     fn encrypt_salt(k: &RsaPublic, salt: &[u8]) -> HwResult<Vec<u8>> {
-        use rsa::{BigUint, Oaep, RsaPublicKey};
-        let pk = RsaPublicKey::new(BigUint::from_bytes_be(&k.n), BigUint::from(k.e))
-            .map_err(|e| e.to_string())?;
+        use rsa::{BoxedUint, Oaep, PublicKey};
+        let pk = PublicKey::new(
+            BoxedUint::from_be_slice_vartime(&k.n),
+            BoxedUint::from(u64::from(k.e)),
+        )
+        .map_err(|e| e.to_string())?;
         pk.encrypt(
-            &mut rand::thread_rng(),
-            Oaep::new_with_label::<sha2_010::Sha256, _>("SECRET\0"),
+            &mut rand::rng(),
+            Oaep::<sha2::Sha256>::new_with_label(&b"SECRET\0"[..]),
             salt,
         )
         .map_err(|e| e.to_string())
