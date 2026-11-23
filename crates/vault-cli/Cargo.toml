@@ -12,7 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 data-encoding = "2"
-qrcode = { version = "0.14.1", default-features = false }
+qrcode = { version = "0.15", default-features = false }
 rpassword = "7"
 vault-cloud = { path = "../vault-cloud" }
 vault-core = { path = "../vault-core" }
