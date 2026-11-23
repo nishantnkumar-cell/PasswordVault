@@ -65,7 +65,7 @@ ITEMS                          ID may be any unique prefix of an item ID
   gen --words [N] [--separator S] [--no-capitals] [--number-and-symbol]
                                N random words, 3 by default (UK NCSC style)
   gen --apple                  Apple style: three groups of six, like abcdef-gh1jkl-Mnopqr
-  import bitwarden|csv FILE    import an unencrypted export (delete the file afterwards)
+  import bitwarden|csv|apple|zoho FILE    import an unencrypted export (delete the file afterwards)
   health [--online]            reused, weak and old passwords and logins without a one-time
                                code; --online also checks Have I Been Pwned (sends 5 hash
                                characters per password, never the password)
@@ -1245,20 +1245,36 @@ fn main() {
         "import" => {
             let format = match positional(rest, 0, "format").as_str() {
                 "bitwarden" => ImportFormat::BitwardenJson,
-                "csv" => ImportFormat::BrowserCsv,
-                f => die(format!("unknown format {f}; use bitwarden or csv")),
+                "csv" | "apple" => ImportFormat::BrowserCsv,
+                "zoho" => ImportFormat::ZohoCsv,
+                f => die(format!(
+                    "unknown format {f}; use bitwarden, csv, apple or zoho"
+                )),
             };
             let path = positional(rest, 1, "FILE");
             let data = Zeroizing::new(
                 std::fs::read_to_string(&path).unwrap_or_else(|e| die(format!("{path}: {e}"))),
             );
-            let Response::Imported(n) = Client::connect().call(Request::Import { format, data })
+            let Response::Imported {
+                added,
+                duplicates,
+                conflicts,
+                conflict_sites,
+            } = Client::connect().call(Request::Import { format, data })
             else {
                 die("unexpected response")
             };
-            println!(
-                "Imported {n} items. Delete {path} now: it holds your passwords in plain text."
-            );
+            println!("Imported {added} items; skipped {duplicates} already in the vault.");
+            if conflicts > 0 {
+                println!(
+                    "{conflicts} logins have the same site and user name as an existing one but a \
+                     different password. Both were kept; the new ones are noted. Review them:"
+                );
+                for site in &conflict_sites {
+                    println!("  ! {site}");
+                }
+            }
+            println!("Delete {path} now: it holds your passwords in plain text.");
         }
         "snapshots" => {
             let Response::Snapshots(list) = Client::connect().call(Request::Snapshots) else {

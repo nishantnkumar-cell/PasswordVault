@@ -2273,15 +2273,27 @@ impl Daemon {
                         vault_import::bitwarden_json(&data, t).map(|(i, _)| i)
                     }
                     ImportFormat::BrowserCsv => vault_import::browser_csv(&data, t),
+                    ImportFormat::ZohoCsv => vault_import::zoho_csv(&data, t),
                 }
                 .map_err(|err| err.to_string())?;
+                let existing: Vec<ItemData> = self
+                    .items_where(|_| true)?
+                    .into_iter()
+                    .map(|(_, i)| i)
+                    .collect();
+                let plan = vault_import::plan(&existing, items);
                 let v = self.vault()?;
-                for item in &items {
+                for item in &plan.add {
                     let id = v.new_item_id(rng).map_err(e)?;
                     v.put_item(rng, &id, &item.to_bytes()).map_err(e)?;
                 }
                 self.save()?;
-                Ok(Response::Imported(items.len()))
+                Ok(Response::Imported {
+                    added: plan.add.len(),
+                    duplicates: plan.duplicates,
+                    conflicts: plan.conflicts,
+                    conflict_sites: plan.conflict_sites,
+                })
             }
             Request::SyncNow => {
                 self.vault()?;
