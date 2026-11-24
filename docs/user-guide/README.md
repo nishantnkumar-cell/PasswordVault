@@ -34,6 +34,8 @@ random program on your computer cannot just ask for your passwords.
 
 ## Chapters
 
+**New here?** Start with the short [beginner's guide](00-beginners-guide.md): make a vault, use it, and sync it between devices, in plain words.
+
 1. [Getting started](01-getting-started.md): install, create a vault, save the recovery code, pair the CLI.
    On Windows, use the installer: [Installing and running on Windows](windows-install.md).
    On a Mac: [Installing and running on macOS](13-macos.md).

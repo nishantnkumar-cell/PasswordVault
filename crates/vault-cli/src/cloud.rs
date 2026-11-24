@@ -110,7 +110,9 @@ fn status() {
             return;
         }
         (None, None) => {
-            println!("cloud sync: off (set it up with `vault cloud setup`)");
+            println!("cloud sync: off");
+            println!();
+            crate::print_sync_options();
             return;
         }
         _ => {}
@@ -262,13 +264,14 @@ fn join(rest: &[String]) {
     if let Some(sync) = &s.sync {
         crate::print_sync(sync);
     }
-    println!(
-        "Start the background helper: `systemctl --user enable --now vault-sync` (user guide, chapter 15)."
-    );
-    if !paired && s.initialized {
-        println!(
-            "Then pair this client with `vault pair --password` and unlock with your master password."
-        );
+    println!();
+    println!("Next, on this device:");
+    println!("  1. Start the background helper: `systemctl --user enable --now vault-sync`");
+    println!("     (other systems: user guide, chapter 15)");
+    if !paired {
+        println!("  2. Pair this client:  vault pair --password");
+        println!("  3. Unlock:            vault unlock");
+        println!("(Use the master password you chose on your first device.)");
     }
 }
 

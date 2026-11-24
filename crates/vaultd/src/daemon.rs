@@ -1110,7 +1110,13 @@ impl Daemon {
         }
 
         match env.request {
-            Request::Status => Ok(Response::Status(self.status())),
+            Request::Status => {
+                // A device that just joined cloud or folder sync has the
+                // vault in the synced copy only; adopt it now, so status
+                // (and `vault pair`) do not say "no vault" until a restart.
+                self.join_from_sync();
+                Ok(Response::Status(self.status()))
+            }
             Request::Init {
                 password,
                 client_name,
