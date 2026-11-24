@@ -376,13 +376,24 @@ fn full_lifecycle() {
 
     // Import.
     let csv = "name,url,username,password\nGitHub,https://github.com,me,pw1\n,https://news.ycombinator.com,me,pw2\n";
-    let Response::Imported(n) = c.ok(Request::Import {
+    let Response::Imported { added: n, .. } = c.ok(Request::Import {
         format: ImportFormat::BrowserCsv,
         data: s(csv),
     }) else {
         panic!()
     };
     assert_eq!(n, 2);
+    // Importing the same file again adds nothing.
+    let Response::Imported {
+        added, duplicates, ..
+    } = c.ok(Request::Import {
+        format: ImportFormat::BrowserCsv,
+        data: s(csv),
+    })
+    else {
+        panic!()
+    };
+    assert_eq!((added, duplicates), (0, 2));
 
     // Revoke: keep password + FIDO2; TPM and recovery go, and recovery no longer unlocks.
     let pw_slot: SlotId = slots[0].id;

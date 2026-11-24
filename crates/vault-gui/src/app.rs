@@ -1066,10 +1066,36 @@ impl App {
                     e.password = p;
                 }
             }
-            (Op::Import, Response::Imported(n)) => {
-                self.notice = Some(format!(
-                    "Imported {n} items. Delete the export file now: it is not encrypted."
-                ));
+            (
+                Op::Import,
+                Response::Imported {
+                    added,
+                    duplicates,
+                    conflicts,
+                    conflict_sites,
+                },
+            ) => {
+                let mut m = format!("Imported {added} items");
+                if duplicates > 0 {
+                    m += &format!(", skipped {duplicates} already in the vault");
+                }
+                if conflicts > 0 {
+                    m += &format!(
+                        ". {conflicts} have a different password from an existing login for the same site and user; both kept, review them"
+                    );
+                }
+                if !conflict_sites.is_empty() {
+                    const SHOWN: usize = 8;
+                    m += ":\n";
+                    for site in conflict_sites.iter().take(SHOWN) {
+                        m += &format!("  ! {site}\n");
+                    }
+                    if conflict_sites.len() > SHOWN {
+                        m += &format!("  … and {} more\n", conflict_sites.len() - SHOWN);
+                    }
+                }
+                m += ". Delete the export file now: it is not encrypted.";
+                self.notice = Some(m);
                 self.import_path.clear();
                 self.send(Op::ListItems, Request::ListItems);
             }
@@ -3764,7 +3790,12 @@ impl App {
             ui.radio_value(
                 &mut self.import_format,
                 ImportFormat::BrowserCsv,
-                "Chrome, Edge or Firefox passwords (.csv)",
+                "Chrome, Edge, Firefox or Apple Passwords (.csv)",
+            );
+            ui.radio_value(
+                &mut self.import_format,
+                ImportFormat::ZohoCsv,
+                "Zoho Vault export (.csv)",
             );
             ui.add_space(8.0);
             ui.horizontal(|ui| {

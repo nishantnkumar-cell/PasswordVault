@@ -20,4 +20,4 @@ vault-core = { path = "../vault-core" }
 zeroize = "1.9.1"
 
 [dev-dependencies]
-qrcode = { version = "0.14.1", default-features = false }
+qrcode = { version = "0.15", default-features = false }

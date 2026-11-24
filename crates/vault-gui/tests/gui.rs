@@ -393,7 +393,7 @@ fn import_totp_edit_delete_and_slots() {
     click(&mut h, "Import");
     h.get_by_role_and_label(
         Role::RadioButton,
-        "Chrome, Edge or Firefox passwords (.csv)",
+        "Chrome, Edge, Firefox or Apple Passwords (.csv)",
     )
     .click();
     h.step();

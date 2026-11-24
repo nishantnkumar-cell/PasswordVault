@@ -196,6 +196,8 @@ pub enum ImportFormat {
     BitwardenJson,
     /// Chrome / Edge / Firefox password CSV export.
     BrowserCsv,
+    /// Zoho Vault CSV export.
+    ZohoCsv,
 }
 
 /// Keys `GenerateKey` can make.
@@ -822,8 +824,17 @@ pub enum Response {
     Totp { code: Secret, remaining: u64 },
     /// Generated password.
     Generated(Secret),
-    /// Number of items imported.
-    Imported(usize),
+    /// What an import did.
+    Imported {
+        /// Items stored.
+        added: usize,
+        /// Items skipped because the vault already had them.
+        duplicates: usize,
+        /// Logins stored next to an existing one with another password.
+        conflicts: usize,
+        /// Which sites and accounts conflict, one line each.
+        conflict_sites: Vec<String>,
+    },
     /// A public key.
     PublicKey(String),
     /// An exported private key.
