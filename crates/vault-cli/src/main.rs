@@ -120,20 +120,26 @@ BACKUPS
   snapshots                    list the copies vaultd keeps before merges, imports and revokes
   activity [--last N]          what unlocked, read, exported or signed lately (no secrets)
 
-SYNC                           through a folder that OneDrive, Google Drive or Dropbox syncs
-  sync                         show sync state
+SYNC                           keep one vault on several devices. Pick ONE way (`vault sync` explains):
+  1. A FOLDER                  you already use OneDrive, Google Drive, Dropbox or Syncthing
   sync on FILE                 keep the vault merged with FILE, e.g. ~/OneDrive/vault.svault;
                                on a device with no vault yet, this joins the vault in FILE
+  sync                         show sync state (or, when off, the ways to turn it on)
   sync off                     stop syncing (the copy in the folder stays)
   sync now                     merge now instead of at the next check
+  2. YOUR OWN SERVER           a small server at home or in Docker (user guide, chapter 16)
+  3. YOUR CLOUDFLARE ACCOUNT   free, nothing to host yourself (user guide, chapter 15)
+  Ways 2 and 3 are called cloud sync and use the commands below. Add another device with
+  `cloud link` here, then `cloud join LINK` there.
 
-CLOUD SYNC                     through your own free Cloudflare account (user guide, chapter 15)
+CLOUD SYNC                     ways 2 and 3 above (user guide, chapters 15 and 16)
   cloud                        show cloud sync state
   cloud setup [--account ID] [--worker NAME] [--keep-token] [--name DEVICE]
-  cloud setup --server URL     use a sync server you deployed yourself (asks for its admin key)
-      [--fingerprint FP]       for a server with its own certificate (Docker): its fingerprint
-                               put the sync server in your Cloudflare account and start
+                               way 3: put the sync server in your Cloudflare account and start
                                syncing; asks for an API token (Workers Scripts: Edit)
+  cloud setup --server URL [--fingerprint FP] [--name DEVICE]
+                               way 2: use a sync server you run yourself (asks for its admin
+                               key); --fingerprint for one with its own certificate (Docker)
   cloud link                   a one-time link and QR code (10 minutes) to add a device
   cloud join LINK [--name DEVICE]
                                add this device; on a device with no vault yet, this joins it
@@ -202,6 +208,27 @@ fn print_quick(q: &QuickUnlockInfo) {
             left % 3600 / 60
         );
     }
+}
+
+/// What to do to turn sync on: the three ways, in plain words.
+pub fn print_sync_options() {
+    println!("sync:      off");
+    println!();
+    println!("To keep this vault on more than one device, pick ONE of these:");
+    println!();
+    println!("  1. A folder you already sync (OneDrive, Google Drive, Dropbox, Syncthing)");
+    println!("       vault sync on ~/OneDrive/vault.svault");
+    println!("  2. Your own server (a small computer at home, or Docker)");
+    println!("       vault cloud setup --server https://HOST:8443 --fingerprint FP");
+    println!("  3. Your free Cloudflare account (nothing to host yourself)");
+    println!("       vault cloud setup");
+    println!();
+    println!("Already have the vault on another device and want it here?");
+    println!("  - folder:  vault sync on <the same file>");
+    println!("  - cloud:   run `vault cloud link` on the other device, then");
+    println!("             vault cloud join '<the link>'    (here)");
+    println!();
+    println!("Step by step: user guide, chapter 10 (folder), 15 (Cloudflare), 16 (own server).");
 }
 
 fn print_sync(s: &SyncInfo) {
@@ -937,7 +964,7 @@ fn main() {
             };
             match &s.sync {
                 Some(sync) => print_sync(sync),
-                None => println!("sync:      off"),
+                None => print_sync_options(),
             }
             if was_new && s.initialized {
                 println!("Joined. Pair this client with `vault pair --password`.");

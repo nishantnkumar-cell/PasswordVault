@@ -14,7 +14,20 @@ Google Drive on Linux)? [Chapter 15](15-cloud-sync.md) syncs through a free
 server in your own Cloudflare account instead, and [chapter
 16](16-cloud-sync-docker.md) through a server on a computer of your own.
 
-Use it when:
+## Which way to sync?
+
+Secret Vault has three ways to keep one vault on several devices. Pick one:
+
+| Way | Choose it when | Chapter |
+|---|---|---|
+| **A. A folder** (this chapter) | You already use OneDrive, Google Drive, Dropbox or Syncthing on every device | this one |
+| **B. Your own server** | You have an always-on computer at home that can run Docker | [16](16-cloud-sync-docker.md) |
+| **C. Your Cloudflare account** | You have none of the above and don't mind a free Cloudflare account | [15](15-cloud-sync.md) |
+
+Not sure? Type `vault sync` to see the options. For the short version, see the
+[beginner's guide](00-beginners-guide.md#step-3-use-it-on-more-than-one-device-sync).
+
+Use folder sync when:
 
 - you want the same logins on a Windows desktop and a Linux laptop;
 - you want an always up-to-date copy off the machine, as well as the
