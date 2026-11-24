@@ -441,11 +441,6 @@ pub fn countdown(ui: &mut Ui, left: f32, period: f32) {
     }
 }
 
-/// A small coloured tag such as "2FA".
-pub fn badge(text: &str, fg: Color32) -> RichText {
-    RichText::new(text).small().strong().color(fg)
-}
-
 /// Paint a tag: small semibold text on a tinted pill, right-aligned at `right`.
 /// Returns the pill's left edge.
 fn paint_tag(ui: &Ui, right: f32, cy: f32, text: &str, fg: Color32, bg: Color32) -> f32 {
