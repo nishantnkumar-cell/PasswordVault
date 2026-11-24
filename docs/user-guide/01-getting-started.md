@@ -148,7 +148,7 @@ vaultd
 To have it start with your session, install it as a user service:
 
 ```sh
-mkdir -p ~/.config/systemd/user
+mkdir -p ~/.config/systemd/user ~/.local/share/vault ~/.local/state/vault
 cp contrib/systemd/vaultd.service ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now vaultd

@@ -34,6 +34,11 @@ ProtectSystem=strict
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectControlGroups=yes
+# ProtectSystem=strict needs these folders to exist when the service starts.
+# The runtime one (in tmpfs, gone after every reboot) is made here; install.sh
+# makes the other two once.
+RuntimeDirectory=vault
+RuntimeDirectoryMode=0700
 ReadWritePaths=%h/.local/share/vault %h/.local/state/vault %t/vault
 # FIDO2 keys (hidraw) and the TPM resource manager.
 DeviceAllow=/dev/tpmrm0 rw

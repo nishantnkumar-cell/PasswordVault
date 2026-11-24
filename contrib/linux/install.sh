@@ -24,6 +24,9 @@ if [ -n "$old" ] && [ "$old" != "$new" ] &&
 fi
 
 install -d "$bin" "$units" "$share/applications" "$share/icons/hicolor"
+# The service runs with the rest of the disk read-only and needs these two
+# folders to exist before it starts, or systemd refuses it (status 226).
+install -d -m700 "$share/vault" "${XDG_STATE_HOME:-$HOME/.local/state}/vault"
 for f in "$here"/bin/*; do
     # Replace, not overwrite in place: a running vaultd keeps its old file.
     install -m755 "$f" "$bin/.$(basename "$f").new"

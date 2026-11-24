@@ -14,6 +14,17 @@ to work yet.
 
 ## Unreleased
 
+### The user service starts on a fresh install
+
+- **`./install.sh` then `systemctl --user enable --now vaultd` now works the
+  first time.** The service runs with the disk read-only except for its own
+  folders, and systemd refused to start it (status 226) when they did not
+  exist yet. `install.sh` now makes `~/.local/share/vault` and
+  `~/.local/state/vault`, and the service makes its runtime folder itself,
+  so it also starts after a reboot. If you installed by hand, run
+  `mkdir -p ~/.local/share/vault ~/.local/state/vault` and update
+  `~/.config/systemd/user/vaultd.service` from `contrib/systemd/`.
+
 ### Android app on the Releases page
 
 - **Install the Android app without Google Play.** From `0.2.0-beta.2` on,
