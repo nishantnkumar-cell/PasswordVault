@@ -50,8 +50,35 @@ fn context() -> HwResult<Context> {
         .unwrap_or_else(|| {
             TctiNameConf::Device("/dev/tpmrm0".parse::<DeviceConfig>().unwrap_or_default())
         });
-    Context::new(tcti)
-        .map_err(|e| format!("no usable TPM (is /dev/tpmrm0 present and readable?): {e}"))
+    Context::new(tcti).map_err(|e| {
+        let hint = device_hint(
+            "/dev/tpmrm0",
+            std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open("/dev/tpmrm0")
+                .err()
+                .map(|e| e.kind()),
+        );
+        format!("no usable TPM ({hint}): {e}")
+    })
+}
+
+/// What to tell a person when the TPM cannot be opened, from why opening the
+/// device failed (`None`: it opens, so the fault is elsewhere).
+fn device_hint(dev: &str, why: Option<std::io::ErrorKind>) -> String {
+    use std::io::ErrorKind::{NotFound, PermissionDenied};
+    match why {
+        Some(PermissionDenied) => format!(
+            "{dev} exists but this account may not use it: add yourself to the \"tss\" group with \
+             `sudo usermod -aG tss $USER`, then log out and in again"
+        ),
+        Some(NotFound) => format!(
+            "{dev} is missing: this computer has no TPM 2.0, or it is turned off in the \
+             firmware settings (fTPM or PTT)"
+        ),
+        _ => format!("is {dev} present and readable?"),
+    }
 }
 
 /// The standard ECC P-256 storage key template (TCG EK/SRK profile shape).
@@ -292,6 +319,18 @@ impl Tpm for SystemTpm {
 
 #[cfg(test)]
 mod tests {
+    use super::device_hint;
+    use std::io::ErrorKind;
+
+    #[test]
+    fn the_error_says_how_to_fix_it() {
+        let denied = device_hint("/dev/tpmrm0", Some(ErrorKind::PermissionDenied));
+        assert!(denied.contains("tss") && denied.contains("usermod") && denied.contains("log out"));
+        let missing = device_hint("/dev/tpmrm0", Some(ErrorKind::NotFound));
+        assert!(missing.contains("no TPM") && missing.contains("firmware"));
+        assert!(device_hint("/dev/tpmrm0", None).contains("present and readable"));
+    }
+
     use super::*;
 
     /// Runs against a real or simulated TPM. Start one with

@@ -30,6 +30,26 @@ to work yet.
 - How to start: the new [beginner's guide](user-guide/00-beginners-guide.md)
   explains making a vault and the three ways to sync in plain words.
 
+### The user service starts on a fresh install, and TPM unlock works
+
+- **`install.sh` (and `get.sh --user-service`) now asks for `sudo` once and
+  adds you to the `tss` group.** Without it, adding the TPM as an unlock method
+  failed with "no usable TPM", because `/dev/tpmrm0` belongs to that group.
+  Nothing is installed if sudo is refused. The programs still go into
+  `~/.local` and stay yours. Log out and in once for the group to apply.
+- **The TPM error now says what to do** (join the `tss` group, or that the
+  computer has no TPM / it is off in the firmware) instead of only asking
+  whether `/dev/tpmrm0` is readable.
+
+- **`./install.sh` then `systemctl --user enable --now vaultd` now works the
+  first time.** The service runs with the disk read-only except for its own
+  folders, and systemd refused to start it (status 226) when they did not
+  exist yet. `install.sh` now makes `~/.local/share/vault` and
+  `~/.local/state/vault`, and the service makes its runtime folder itself,
+  so it also starts after a reboot. If you installed by hand, run
+  `mkdir -p ~/.local/share/vault ~/.local/state/vault` and update
+  `~/.config/systemd/user/vaultd.service` from `contrib/systemd/`.
+
 ### Android app on the Releases page
 
 - **Install the Android app without Google Play.** From `0.2.0-beta.2` on,

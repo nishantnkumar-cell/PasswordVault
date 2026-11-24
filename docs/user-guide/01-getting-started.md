@@ -52,9 +52,9 @@ In this mode there is no approval window, because the daemon has no
 desktop: you pair the browser and other programs by proving your password
 (`vault pair`), and keys that ask before each use and Secret Service
 (chapter 12) are not available. If you want those, run the installer with
-`--user-service` instead: it needs no password and puts everything in
-`~/.local`. On some systems it then offers one `sudo` step so that vaultd can
-keep keys out of swap. `--help` lists every option, and `--uninstall`
+`--user-service` instead: it puts the programs in `~/.local` and runs vaultd as
+you. It asks for `sudo` once, to add you to the `tss` group (so TPM unlock
+works) and, on some systems, so that vaultd can keep keys out of swap. `--help` lists every option, and `--uninstall`
 removes the programs and the lines older versions added to your shell
 start-up files. It never deletes a vault or anyone's `vault-<name>` account.
 
@@ -99,8 +99,9 @@ again). Removing the package (`sudo apt remove secret-vault`,
 
 **Any other 64-bit distribution:** unpack
 `secret-vault-<version>-linux-x86_64.tar.gz` and run `./get.sh --from` on
-it, or `./install.sh` (installs into `~/.local`, no root, then start the
-daemon with `systemctl --user enable --now vaultd`).
+it, or `./install.sh` (programs go into `~/.local`; it asks for `sudo` once to
+add you to the `tss` group for TPM unlock; then start the daemon with
+`systemctl --user enable --now vaultd`).
 
 The rest of this section builds the programs from source instead.
 
@@ -148,7 +149,7 @@ vaultd
 To have it start with your session, install it as a user service:
 
 ```sh
-mkdir -p ~/.config/systemd/user
+mkdir -p ~/.config/systemd/user ~/.local/share/vault ~/.local/state/vault
 cp contrib/systemd/vaultd.service ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now vaultd
