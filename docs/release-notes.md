@@ -14,6 +14,22 @@ to work yet.
 
 ## Unreleased
 
+### Clearer sync options, and joining without a restart
+
+- **`vault sync` and `vault cloud` explain your choices.** When sync is off
+  they list the three ways (a folder your cloud drive syncs, your own server,
+  or your Cloudflare account) with the command for each, and `vault help`
+  groups them the same way. `vault cloud join` prints the next steps: start
+  the helper, `vault pair --password`, `vault unlock`.
+- **A new device that joined sync no longer says "no vault" until `vaultd` is
+  restarted.** `vault status` and `vault pair` now see the vault the helper
+  downloaded.
+- **`vault cloud status` shows the vault's `mailbox:` id.** It is the id a
+  server keeps your vault under; you need it to move to another server with
+  `vault-server import` (see the vault-server guide).
+- How to start: the new [beginner's guide](user-guide/00-beginners-guide.md)
+  explains making a vault and the three ways to sync in plain words.
+
 ### The user service starts on a fresh install, and TPM unlock works
 
 - **`install.sh` (and `get.sh --user-service`) now asks for `sudo` once and

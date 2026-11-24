@@ -148,6 +148,11 @@ fn status() {
                 println!("server:     {}", d.server);
             }
             println!("this device: {} (joined)", d.device);
+            // The id of this vault's mailbox on the server. Moving to another
+            // server (vault-server import) needs it: it is not in the server's
+            // files in a form anyone can read. It is not a secret on its own
+            // (access takes this device's token), but it is not shown widely.
+            println!("mailbox:    {}", d.mailbox);
             println!("helper:     {}", flows::helper_line(&i).0);
             if let Ok(srv) = Server::with_ca(&d.server, d.ca_cert.as_deref()) {
                 match srv.info() {

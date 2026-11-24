@@ -304,10 +304,6 @@ impl Store {
         &self.vault
     }
 
-    pub fn forget_clients(&self) -> io::Result<()> {
-        self.save("clients", &Clients::default())
-    }
-
     fn load<T: for<'a> Deserialize<'a> + Default>(&self, name: &str) -> T {
         fs::read(self.state_dir.join(name))
             .ok()
