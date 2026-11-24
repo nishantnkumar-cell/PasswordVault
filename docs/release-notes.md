@@ -14,7 +14,16 @@ to work yet.
 
 ## Unreleased
 
-### The user service starts on a fresh install
+### The user service starts on a fresh install, and TPM unlock works
+
+- **`install.sh` (and `get.sh --user-service`) now asks for `sudo` once and
+  adds you to the `tss` group.** Without it, adding the TPM as an unlock method
+  failed with "no usable TPM", because `/dev/tpmrm0` belongs to that group.
+  Nothing is installed if sudo is refused. The programs still go into
+  `~/.local` and stay yours. Log out and in once for the group to apply.
+- **The TPM error now says what to do** (join the `tss` group, or that the
+  computer has no TPM / it is off in the firmware) instead of only asking
+  whether `/dev/tpmrm0` is readable.
 
 - **`./install.sh` then `systemctl --user enable --now vaultd` now works the
   first time.** The service runs with the disk read-only except for its own

@@ -14,10 +14,11 @@
 # and keys that ask before each use and Secret Service are not available.
 # Debian, Ubuntu and Arch users can install the .deb or Arch package from the
 # release instead, which sets up the same system service.
-# --user-service installs into ~/.local without root instead, with those.
+# --user-service installs into ~/.local instead, with those (it still asks for
+# sudo once, to add you to the tss group for TPM unlock).
 #
 # Options:
-#   --user-service   run vaultd as you (systemd user service), no root
+#   --user-service   run vaultd as you (systemd user service)
 #   --version V      install V (for example 0.2.0-beta.2) instead of the newest
 #   --from FILE      install from a downloaded .tar.gz instead (no download;
 #                    put SHA256SUMS.txt next to it to have it checked)

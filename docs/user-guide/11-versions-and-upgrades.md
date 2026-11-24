@@ -233,7 +233,7 @@ cd secret-vault-0.3.0-linux-x86_64
 ./install.sh
 ```
 
-`install.sh` installs into `~/.local` for you alone (no root). The first
+`install.sh` installs into `~/.local` for you alone (it asks for `sudo` once, only to add you to the `tss` group for TPM unlock). The first
 time it installs the programs, the systemd user service and the desktop
 entry. Run it again from a newer archive and it replaces the programs and
 restarts vaultd if it is running. It asks first before installing an older
