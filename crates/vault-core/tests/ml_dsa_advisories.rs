@@ -23,8 +23,10 @@ fn verifies(pk: &[u8], msg: &[u8], ctx: &[u8], sig: &[u8]) -> bool {
 
 #[test]
 fn the_published_cases_for_both_advisories_pass() {
+    // Git on Windows may check the file out with CR LF line ends.
+    let cases = CASES.replace('\r', "");
     let mut seen = 0;
-    for block in CASES.split("\n\n").filter(|b| b.contains("tcId=")) {
+    for block in cases.split("\n\n").filter(|b| b.contains("tcId=")) {
         let field = |name: &str| {
             block
                 .lines()
