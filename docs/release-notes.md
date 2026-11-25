@@ -14,6 +14,22 @@ to work yet.
 
 ## Unreleased
 
+### Android joins cloud sync
+
+- **The Android app now joins cloud sync with the same one-time link** as an
+  iPhone or iPad. On a new phone tap **Join with a link from my computer** on
+  the first screen; with a vault already on the phone, use **Settings > Cloud
+  sync**. Scan the QR code or paste the link, then unlock with your master
+  password ([chapter 14](user-guide/14-phone-apps.md#join-cloud-sync-with-a-link)).
+- Changes go to your server as you make them and come in when you open the
+  app or tap **Sync now**. **Stop cloud sync on this phone** removes the
+  phone's access; the vault stays.
+- **New permission:** the app now asks for network access. It uses it only
+  once you have joined cloud sync.
+- Known limits: no live updates while the app stays open; shared collections
+  cannot be joined on phones; tested by automated tests and emulators, not
+  yet on a real phone against a real server.
+
 ### Post-quantum signature checks follow the standard
 
 - **Two flaws in the ML-DSA signature library are fixed** in the copy the vault
@@ -115,7 +131,7 @@ vault file change.
   Sync, join with a link. The two copies are merged.
 - **Cut a phone off** from the computer's Devices list, or with **Stop Cloud
   Sync on This Device** on the phone.
-- How to start: [Add an iPhone or iPad](user-guide/15-cloud-sync.md#add-an-iphone-or-ipad).
+- How to start: [Add a phone or tablet](user-guide/15-cloud-sync.md#add-a-phone-or-tablet).
 
 | | iPhone and iPad | Android | Computers |
 | --- | --- | --- | --- |

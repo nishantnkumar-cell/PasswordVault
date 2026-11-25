@@ -67,6 +67,7 @@ class TourTest {
             tap("3 words"); shot("generator-words")
             tap("Apple style"); shot("generator-apple")
             tab("Settings"); shot("settings")
+            cloudJoin()
             tap("Lock now")
             waitFor("Unlock")
             unlock("locked")
@@ -158,6 +159,23 @@ class TourTest {
         waitFor("Example Chat")
         shot("codes")
     }
+
+    /** The cloud sync join dialog: shown, a bad link refused, then closed. */
+    private fun cloudJoin() {
+        tap("Join with a link from my computer")
+        waitFor("Join link")
+        field("Join link").performTextInput("https://example.com/not-a-join-link")
+        shot("cloud-join")
+        tap("Turn on cloud sync")
+        // Refused before anything is sent anywhere.
+        rule.waitUntil(30_000) { shows("not a Secret Vault join link") }
+        shot("cloud-join-refused")
+        tap("Cancel")
+        rule.waitUntil(15_000) { !exists("Join link") }
+    }
+
+    private fun shows(part: String) =
+        rule.onAllNodes(hasText(part, substring = true)).fetchSemanticsNodes().isNotEmpty()
 
     private fun newItem(kind: String) {
         tap("New item")

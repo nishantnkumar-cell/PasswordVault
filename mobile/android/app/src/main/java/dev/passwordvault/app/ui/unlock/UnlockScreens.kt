@@ -63,6 +63,7 @@ import androidx.fragment.app.FragmentActivity
 import dev.passwordvault.app.data.QuickUnlock
 import dev.passwordvault.app.data.VaultRepository
 import dev.passwordvault.app.data.VaultState
+import dev.passwordvault.app.ui.cloud.CloudJoinDialog
 import dev.passwordvault.app.ui.components.AppIcon
 import dev.passwordvault.app.ui.components.SecureClipboard
 import dev.passwordvault.app.ui.theme.Mono
@@ -131,6 +132,7 @@ fun WelcomeScreen(vault: VaultRepository, onCreated: (String) -> Unit) {
     var confirm by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var joining by rememberSaveable { mutableStateOf(false) }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
         context.contentResolver.takePersistableUriPermission(
@@ -147,7 +149,7 @@ fun WelcomeScreen(vault: VaultRepository, onCreated: (String) -> Unit) {
         Text("Secret Vault", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(8.dp))
         Text(
-            "Your passwords, cards and one-time codes, encrypted on this device. Nothing is sent to a server.",
+            "Your passwords, cards and one-time codes, encrypted on this device. Nothing leaves it unless you set up sync.",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
@@ -162,8 +164,12 @@ fun WelcomeScreen(vault: VaultRepository, onCreated: (String) -> Unit) {
                 Text("Use a vault from my computer")
             }
             Spacer(Modifier.height(12.dp))
+            OutlinedButton(onClick = { joining = true }, modifier = Modifier.fillMaxWidth().height(56.dp)) {
+                Text("Join with a link from my computer")
+            }
+            Spacer(Modifier.height(12.dp))
             Text(
-                "To use your desktop vault here, turn on Sync on your computer, then pick the synced .svault file in Google Drive, OneDrive or Dropbox.",
+                "To use your desktop vault here, join its cloud sync with a link, or pick the synced .svault file in Google Drive, OneDrive or Dropbox.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -205,6 +211,7 @@ fun WelcomeScreen(vault: VaultRepository, onCreated: (String) -> Unit) {
             Text(it, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
         }
     }
+    if (joining) CloudJoinDialog(vault) { joining = false }
 }
 
 @Composable

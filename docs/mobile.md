@@ -91,9 +91,9 @@ The apps merge when unlocked, when they come back to the foreground, on
 pull to refresh and before each save. A copy that was re-keyed on another
 device needs the master password once (`merge(bytes, password)`).
 
-### Cloud sync (iOS)
+### Cloud sync (phones)
 
-The iPhone and iPad app also joins cloud sync ([cloud-sync.md](cloud-sync.md))
+The phone and tablet apps also join cloud sync ([cloud-sync.md](cloud-sync.md))
 with the one-time link a computer shows. There is no `vault-sync` helper on
 a phone, so `vault-mobile` does the network part itself
 (`crates/vault-mobile/src/cloud.rs`, over `vault-cloud`, blocking, run off
@@ -109,7 +109,7 @@ the main actor):
   something; a save another device beat is read, merged and saved again.
 - `cloud_leave(access)` deletes this device's access on the server.
 
-The app keeps this device's access (server, mailbox, device id, token, and
+**iOS** keeps this device's access (server, mailbox, device id, token, and
 a Docker server's CA) as one text in the Keychain, shared with the AutoFill
 extension (`Shared/CloudAccess.swift`), and the last server version and a
 "has changes" flag in the App Group's preferences. It syncs when unlocked,
@@ -119,8 +119,15 @@ uploads them. There is no live push: a change made elsewhere arrives the
 next time the app syncs. `NSLocalNetworkUsageDescription` lets it reach a
 server on the home network.
 
-Android does not use cloud sync yet (Android work is parked); the same
-`vault-mobile` calls are there for it.
+**Android** keeps the same text encrypted (AES-GCM) under an Android
+Keystore key, in storage that is never backed up (`data/CloudAccessStore.kt`),
+and the version and the "has changes" flag in preferences. Saves are counted
+(`data/CloudBookkeeping.kt`), so one made while a sync is on its way is
+uploaded by the next round rather than taken as sent. One sync, join or leave
+runs at a time, off the main thread, and only the file writes hold the vault
+lock. It syncs after unlocking, on returning to the foreground, after each
+save and on Sync now. The app asks for the `INTERNET` permission for this
+alone and uses the network only once sync has been joined.
 
 ## AutoFill
 

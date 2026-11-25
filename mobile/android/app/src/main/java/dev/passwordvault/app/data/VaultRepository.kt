@@ -6,6 +6,7 @@ import androidx.fragment.app.FragmentActivity
 import java.io.File
 import java.io.FileNotFoundException
 import java.io.IOException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -25,6 +26,8 @@ import uniffi.vault_mobile.MobileException
 import uniffi.vault_mobile.SlotInfo
 import uniffi.vault_mobile.TotpCode
 import uniffi.vault_mobile.VaultSession
+import uniffi.vault_mobile.cloudJoin
+import uniffi.vault_mobile.cloudLeave
 import uniffi.vault_mobile.createVault
 
 /** Where the app is: no vault yet, locked, or open. */
@@ -43,14 +46,33 @@ data class SyncStatus(
     val conflicts: Int = 0,
 )
 
+/** The state of cloud sync, for Settings. `server` is null when it is off. */
+data class CloudStatus(
+    val server: String? = null,
+    val busy: Boolean = false,
+    val lastSyncMillis: Long = 0,
+    val error: String? = null,
+    val needsPassword: Boolean = false,
+    val conflicts: Int = 0,
+)
+
 /**
  * The one vault on this phone: its file, its unlocked session and the
- * folder sync. Every call that runs Argon2 or touches files is a suspend
- * function on [Dispatchers.IO]/[Dispatchers.Default].
+ * folder and cloud sync. Every call that runs Argon2, touches files or uses
+ * the network is a suspend function on [Dispatchers.IO]/[Dispatchers.Default].
  */
 class VaultRepository(private val context: Context) {
     val settings = Settings(context)
     val quickUnlock = QuickUnlock(context)
+
+    private val cloudAccess = CloudAccessStore(context)
+    private val cloudBook = CloudBookkeeping(settings)
+
+    /** One cloud sync, join or leave at a time. Taken before [lock], never inside it. */
+    private val cloudLock = Mutex()
+
+    /** Goes up when cloud sync is turned off or replaced, so a sync still running is dropped. */
+    @Volatile private var cloudEpoch = 0
 
     private val file = File(context.filesDir, "vault.svault")
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -67,6 +89,9 @@ class VaultRepository(private val context: Context) {
     private val _sync = MutableStateFlow(SyncStatus())
     val sync: StateFlow<SyncStatus> = _sync.asStateFlow()
 
+    private val _cloud = MutableStateFlow(CloudStatus())
+    val cloud: StateFlow<CloudStatus> = _cloud.asStateFlow()
+
     /** Bumped on every change so open detail screens reload. */
     private val _revision = MutableStateFlow(0L)
     val revision: StateFlow<Long> = _revision.asStateFlow()
@@ -77,6 +102,7 @@ class VaultRepository(private val context: Context) {
 
     private fun refreshState() {
         _sync.update { it.copy(enabled = settings.syncUri != null) }
+        _cloud.update { it.copy(server = if (cloudAccess.isOn) settings.cloudServer ?: "your sync server" else null) }
         if (session != null) {
             _state.value = VaultState.Unlocked
             return
@@ -163,7 +189,9 @@ class VaultRepository(private val context: Context) {
                 if (full) settings.lastFullUnlockMillis = System.currentTimeMillis()
             }
             afterOpen()
-            syncNow()
+            syncFolderNow()
+            // The vault is usable at once; the network can take its time.
+            cloudSyncInBackground()
         }
 
     private fun afterOpen() {
@@ -250,6 +278,10 @@ class VaultRepository(private val context: Context) {
                 .onFailure { e -> _sync.update { it.copy(error = "Could not write the synced copy: ${e.message}") } }
         }
         reloadItems()
+        if (cloudAccess.isOn) {
+            cloudBook.changed()
+            cloudSyncInBackground()
+        }
     }
 
     private fun writeLocal(bytes: ByteArray) {
@@ -280,8 +312,13 @@ class VaultRepository(private val context: Context) {
         syncNow()
     }
 
-    /** Merge the synced copy now. Pass the master password after a re-key. */
-    suspend fun syncNow(password: String? = null) = withContext(Dispatchers.IO) {
+    /** Sync now, folder and cloud. Pass the master password after a re-key. */
+    suspend fun syncNow(password: String? = null) {
+        syncFolderNow(password)
+        syncCloudNow(password)
+    }
+
+    private suspend fun syncFolderNow(password: String? = null) = withContext(Dispatchers.IO) {
         lock.withLock {
             val s = session ?: return@withLock
             mergeFolder(s, password)
@@ -290,6 +327,155 @@ class VaultRepository(private val context: Context) {
 
     fun syncInBackground() {
         scope.launch { runCatching { syncNow() } }
+    }
+
+    // ---- cloud sync -------------------------------------------------------------
+
+    private fun cloudSyncInBackground() {
+        if (cloudAccess.isOn) scope.launch { runCatching { syncCloudNow() } }
+    }
+
+    /**
+     * Merge with the sync server's copy and upload when it lacks something.
+     * The vault stays usable meanwhile: only the file writes take [lock].
+     */
+    suspend fun syncCloudNow(password: String? = null) = withContext(Dispatchers.IO) {
+        cloudLock.withLock {
+            // Again while something was saved during the previous round.
+            var rounds = 0
+            while (rounds++ < 3 && cloudRound(password)) Unit
+        }
+    }
+
+    /** One exchange with the server; true when another is due at once. */
+    private suspend fun cloudRound(password: String?): Boolean {
+        val s = session ?: return false
+        if (!cloudAccess.isOn) return false
+        val access = cloudAccess.read()
+        if (access == null) {
+            _cloud.update { it.copy(error = "This phone's cloud sync access can't be read. Stop cloud sync and join again with a new link.") }
+            return false
+        }
+        val epoch = cloudEpoch
+        val ticket = cloudBook.begin()
+        _cloud.update { it.copy(busy = true) }
+        try {
+            val r = s.cloudSync(access, ticket.known?.toULong(), ticket.dirty, password)
+            var more = false
+            lock.withLock {
+                // Locked, removed or turned off meanwhile: leave the file alone
+                // and the version as it was, so the next sync fetches again.
+                if (epoch != cloudEpoch || session !== s) return false
+                if (r.changed) {
+                    writeLocal(s.toBytes())
+                    settings.syncUri?.let { uri -> runCatching { writeUri(uri, s.toBytes()) } }
+                    reloadItems()
+                }
+                more = cloudBook.finished(ticket, r.version.toLong())
+            }
+            _cloud.update {
+                it.copy(
+                    lastSyncMillis = System.currentTimeMillis(),
+                    error = null,
+                    needsPassword = false,
+                    conflicts = it.conflicts + r.conflicts.toInt(),
+                )
+            }
+            return more
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: MobileException.Rekeyed) {
+            if (epoch == cloudEpoch) _cloud.update { it.copy(error = e.message, needsPassword = true) }
+        } catch (e: Exception) {
+            // A session destroyed by locking ends up here too; nothing to report then.
+            if (epoch == cloudEpoch && session === s) _cloud.update { it.copy(error = e.message) }
+        } finally {
+            _cloud.update { it.copy(busy = false) }
+        }
+        return false
+    }
+
+    private fun deviceName(): String =
+        if (context.resources.configuration.smallestScreenWidthDp >= 600) "Android tablet" else "Android phone"
+
+    /**
+     * Join cloud sync with a link from a computer when there is no vault here
+     * yet: keep this phone's access and the downloaded vault, which then
+     * opens with the master password.
+     */
+    suspend fun joinCloud(link: String) = withContext(Dispatchers.IO) {
+        cloudLock.withLock {
+            val j = cloudJoin(link, deviceName())
+            var kept = false
+            try {
+                val bytes = j.file ?: throw IOException(
+                    "The vault is not on the server yet. Open the vault on your computer with its sync helper running, then make a new link.",
+                )
+                LockedVault(bytes).destroy() // throws if it is not a vault
+                lock.withLock {
+                    check(!file.exists()) { "a vault already exists" }
+                    writeLocal(bytes)
+                    keepAccess(j.access, j.server, j.version?.toLong(), upload = false)
+                }
+                kept = true
+            } finally {
+                // Don't leave a device on the server that this phone forgot.
+                if (!kept) runCatching { cloudLeave(j.access) }
+            }
+            refreshState()
+        }
+    }
+
+    /**
+     * Turn cloud sync on for the open vault with a link from a computer. The
+     * vault on the server must be this one; the two are merged.
+     */
+    suspend fun addCloud(link: String) {
+        withContext(Dispatchers.IO) {
+            cloudLock.withLock {
+                val s = session ?: throw IllegalStateException("locked")
+                val j = cloudJoin(link, deviceName())
+                var kept = false
+                try {
+                    j.file?.let { bytes ->
+                        val theirs = LockedVault(bytes)
+                        val same = try { theirs.vaultId() == s.vaultId() } finally { theirs.destroy() }
+                        if (!same) throw IOException(
+                            "The vault on that server is a different vault from the one on this phone. Remove this one first (Settings, Remove the vault from this device) to use that one.",
+                        )
+                    }
+                    keepAccess(j.access, j.server, version = null, upload = true)
+                    kept = true
+                } finally {
+                    if (!kept) runCatching { cloudLeave(j.access) }
+                }
+                refreshState()
+            }
+        }
+        syncCloudNow()
+    }
+
+    private fun keepAccess(access: String, server: String, version: Long?, upload: Boolean) {
+        cloudEpoch++
+        cloudAccess.save(access)
+        settings.cloudServer = server
+        cloudBook.reset(version, upload)
+        _cloud.value = CloudStatus(server = server)
+    }
+
+    /**
+     * Stop cloud sync here: this phone's access on the server is deleted, in
+     * the background; the vault stays on this phone and on the server.
+     */
+    fun leaveCloud() {
+        if (!cloudAccess.isOn) return
+        val access = cloudAccess.read()
+        cloudEpoch++
+        cloudAccess.clear()
+        settings.cloudServer = null
+        cloudBook.reset(version = null, upload = false)
+        _cloud.value = CloudStatus()
+        if (access != null) scope.launch { runCatching { cloudLeave(access) } }
     }
 
     private fun mergeFolder(s: VaultSession, password: String?) {
@@ -305,6 +491,8 @@ class VaultRepository(private val context: Context) {
             if (r.changed) {
                 writeLocal(s.toBytes())
                 reloadItems()
+                // What came from the folder goes to the sync server too.
+                if (cloudAccess.isOn) cloudBook.changed()
             }
             if (r.changed || r.otherBehind) writeUri(uri, s.toBytes())
             _sync.update {
@@ -329,6 +517,7 @@ class VaultRepository(private val context: Context) {
 
     /** Remove the vault from this phone (the synced copy is left alone). */
     fun removeFromDevice() {
+        leaveCloud()
         lock()
         quickUnlock.disable()
         file.delete()

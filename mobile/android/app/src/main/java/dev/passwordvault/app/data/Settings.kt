@@ -5,7 +5,7 @@ import android.net.Uri
 import java.security.SecureRandom
 
 /** App preferences. Nothing here is secret. */
-class Settings(context: Context) {
+class Settings(context: Context) : CloudBookkeeping.Store {
     private val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
     /** This phone's ID in each item's version vector (docs/sync.md). */
@@ -72,12 +72,36 @@ class Settings(context: Context) {
         get() = prefs.getBoolean(KEY_GEN_EXTRA, false)
         set(v) = prefs.edit().putBoolean(KEY_GEN_EXTRA, v).apply()
 
+    /** The sync server's version after the last cloud sync. */
+    override var cloudVersion: Long?
+        get() = if (prefs.contains(KEY_CLOUD_VERSION)) prefs.getLong(KEY_CLOUD_VERSION, 0L) else null
+        set(v) = prefs.edit().apply { if (v == null) remove(KEY_CLOUD_VERSION) else putLong(KEY_CLOUD_VERSION, v) }.apply()
+
+    /** This phone saved something the sync server does not have yet. */
+    override var cloudDirty: Boolean
+        get() = prefs.getBoolean(KEY_CLOUD_DIRTY, false)
+        set(v) = prefs.edit().putBoolean(KEY_CLOUD_DIRTY, v).apply()
+
+    /** Counts saves, to notice one made while a sync was on its way. */
+    override var cloudChanges: Long
+        get() = prefs.getLong(KEY_CLOUD_CHANGES, 0L)
+        set(v) = prefs.edit().putLong(KEY_CLOUD_CHANGES, v).apply()
+
+    /** The sync server's address, to show. */
+    var cloudServer: String?
+        get() = prefs.getString(KEY_CLOUD_SERVER, null)
+        set(v) = prefs.edit().putString(KEY_CLOUD_SERVER, v).apply()
+
     private companion object {
         const val KEY_DEVICE = "device_id"
         const val KEY_AUTOLOCK = "autolock_seconds"
         const val KEY_CLIPBOARD = "clipboard_seconds"
         const val KEY_DYNAMIC = "dynamic_color"
         const val KEY_SYNC = "sync_uri"
+        const val KEY_CLOUD_VERSION = "cloud_version"
+        const val KEY_CLOUD_DIRTY = "cloud_dirty"
+        const val KEY_CLOUD_CHANGES = "cloud_changes"
+        const val KEY_CLOUD_SERVER = "cloud_server"
         const val KEY_FULL_UNLOCK = "full_unlock_at"
         const val KEY_GENERATION = "highest_generation"
         const val KEY_GEN_STYLE = "generator_style"
