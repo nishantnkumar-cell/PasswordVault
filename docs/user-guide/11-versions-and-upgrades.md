@@ -304,7 +304,8 @@ A beta is published from `main` without changing the version in
 
 The tag must be the version in `Cargo.toml` followed by `-beta.N` (or
 `-alpha.N`, `-rc.N`); any other tag fails the workflow before anything is
-published. The next beta is `-beta.2`. When 0.2.0 is ready, release it with
+published. Each further beta takes the next number (`-beta.3` after
+`-beta.2`). When 0.2.0 is ready, release it with
 `release.sh` as above.
 
 If the workflow fails, nothing is published. A failure that looks like a
