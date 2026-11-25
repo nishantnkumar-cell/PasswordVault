@@ -26,7 +26,7 @@ You can still use folder sync instead. Use one or the other on a device,
 not both.
 
 > iPhones and iPads join cloud sync with the same link (see "Add an iPhone
-> or iPad" below). Android phones keep using folder sync for now.
+> or iPad" below). Android phones join with the same link ([chapter 14](14-phone-apps.md#join-cloud-sync-with-a-link)).
 
 ## What you need
 
@@ -232,7 +232,7 @@ If the new computer already had a different vault, its copy is refused
 aside ([chapter 8, "Where your files are"](08-troubleshooting.md#where-your-files-are)),
 start `vaultd` again and join.
 
-### Add an iPhone or iPad
+### Add a phone or tablet
 
 The phone needs no helper program: the app talks to your sync server
 itself.
@@ -306,7 +306,7 @@ the source code, then `vault cloud setup --server https://your-address` (or
 | Desktop app Sync page and `vault cloud` | Yes | Yes | Yes |
 | Background helper | In the packages; systemd service, starts with the computer or at sign-in | Build from source; Startup folder shortcut | Build from source; start it yourself |
 | iPhone and iPad | Join with the link, as above; no helper needed | | |
-| Android | Not yet: use folder sync | | |
+| Android | Join with the link, as above; no helper needed | | |
 
 ## Troubleshooting
 

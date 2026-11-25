@@ -217,7 +217,7 @@ devices stay. A Docker server is updated by rebuilding the image.
 | | Linux | Windows | macOS | iPhone, iPad, Android |
 | --- | --- | --- | --- | --- |
 | `vault cloud` commands | Yes | Yes | Yes | n/a |
-| Join with a link | Yes | Yes | Yes | iPhone and iPad: yes, in the app, no helper ([mobile.md](mobile.md#cloud-sync-ios)); Android: not yet |
+| Join with a link | Yes | Yes | Yes | Yes, in the app, no helper ([mobile.md](mobile.md#cloud-sync-phones)) |
 | Desktop app Sync page | Yes | Yes | Yes | n/a |
 | Docker server | Docker Engine or Docker Desktop | Docker Desktop (WSL 2) | Docker Desktop | n/a |
 | `vault-sync` helper | In the `.deb` and `.tar.gz`; systemd user unit `vault-sync.service`, or `vault-sync@you` next to the system service | Not in the installer yet; build it and start it at sign-in (Startup folder) | Not in the `.pkg` yet; build it and run it | n/a |

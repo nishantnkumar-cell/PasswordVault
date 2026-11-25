@@ -120,11 +120,11 @@ TestFlight app has AutoFill.
 
 ## Set up the app
 
-The first screen offers three choices on iPhone and iPad (two on Android).
+The first screen offers three choices.
 Button names below are the iPhone's; Android uses the same words in
 sentence case (for example *Use a vault from my computer*).
 
-### Join cloud sync with a link (iPhone and iPad)
+### Join cloud sync with a link
 
 If your computer uses cloud sync ([chapter 15](15-cloud-sync.md) or
 [16](16-cloud-sync-docker.md)):
@@ -135,8 +135,13 @@ If your computer uses cloud sync ([chapter 15](15-cloud-sync.md) or
    button and point the camera at it (or paste the link), and tap **Join**.
 3. Type your master password and tap **Unlock**.
 
-From then on changes go both ways through your sync server. Android can't
-join cloud sync yet; use folder sync there.
+From then on changes go both ways through your sync server: as you make
+them, when you open the app, and with **Sync now** in **Settings**. A change
+made on another device arrives the next time the app syncs; there is no live
+update while the app stays open.
+
+On Android, cloud sync needs the app version after `0.2.0-beta.2`. For a
+server on your home network, the phone must be on that network (or your VPN).
 
 ### Use the vault from your computer
 
@@ -165,7 +170,7 @@ item you add on the computer shows up on the phone and the other way round.
    it is shown only now. Tick **I wrote it down** to go on.
 4. Choose whether to unlock with Face ID, Touch ID or your fingerprint.
 
-To use this vault on a computer later, turn on sync in **Settings > Sync**
+To use this vault on a computer later, turn on sync in **Settings > Folder Sync**
 (below), then join it from the computer as described in
 [chapter 10](10-sync.md#join-from-another-device).
 
@@ -486,7 +491,7 @@ server and keeps the vault on the phone. When cloud sync is off, **Join with
 a Link from My Computer** turns it on with a link from your computer, and
 the folder sync settings below are shown instead.
 
-**Settings > Folder Sync** (Android: *Sync*) shows when the vault last
+**Settings > Folder Sync** (Android: *Folder sync*) shows when the vault last
 synced.
 
 - **Sync Now** merges straight away. Pulling down on the item list does the

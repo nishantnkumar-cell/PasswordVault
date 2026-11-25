@@ -41,7 +41,9 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.passwordvault.app.data.CloudStatus
 import dev.passwordvault.app.data.VaultRepository
+import dev.passwordvault.app.ui.cloud.CloudJoinDialog
 import dev.passwordvault.app.ui.components.SectionLabel
 import dev.passwordvault.app.ui.components.segmentShape
 import dev.passwordvault.app.ui.unlock.SecretField
@@ -55,6 +57,10 @@ fun SettingsScreen(vault: VaultRepository, onDynamicColor: (Boolean) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val sync by vault.sync.collectAsStateWithLifecycle()
+    val cloud by vault.cloud.collectAsStateWithLifecycle()
+    var joiningCloud by remember { mutableStateOf(false) }
+    var confirmLeaveCloud by remember { mutableStateOf(false) }
+    var askCloudPassword by remember { mutableStateOf(false) }
     var quick by remember { mutableStateOf(vault.quickUnlock.isEnabled) }
     var autoLock by remember { mutableIntStateOf(vault.settings.autoLockSeconds) }
     var clip by remember { mutableIntStateOf(vault.settings.clipboardSeconds) }
@@ -117,8 +123,33 @@ fun SettingsScreen(vault: VaultRepository, onDynamicColor: (Boolean) -> Unit) {
                 }
             }
 
-            SectionLabel("Sync")
-            Group(if (sync.enabled) 3 else 2) { i, shape ->
+            SectionLabel("Cloud sync")
+            if (cloud.server == null) {
+                Group(1) { _, shape ->
+                    ActionRow(
+                        "Join with a link from my computer",
+                        "Sync through your own server, set up on your computer. The server only ever sees encrypted data.",
+                        shape,
+                    ) { joiningCloud = true }
+                }
+            } else {
+                Group(4) { i, shape ->
+                    when (i) {
+                        0 -> InfoRow("Server", cloud.server.orEmpty(), shape)
+                        1 -> InfoRow("Status", cloudLine(cloud), shape)
+                        2 -> ActionRow(if (cloud.needsPassword) "Merge with master password" else "Sync now", null, shape) {
+                            if (cloud.needsPassword) askCloudPassword = true else scope.launch { vault.syncCloudNow() }
+                        }
+                        else -> ActionRow("Stop cloud sync on this phone", "The vault stays here and on your other devices.", shape) {
+                            confirmLeaveCloud = true
+                        }
+                    }
+                }
+            }
+
+            // With cloud sync on, a synced folder is only shown if one is already set up.
+            if (cloud.server == null || sync.enabled) SectionLabel("Folder sync")
+            if (cloud.server == null || sync.enabled) Group(if (sync.enabled) 3 else 2) { i, shape ->
                 when {
                     !sync.enabled && i == 0 -> ActionRow(
                         "Sync with my computer",
@@ -223,6 +254,40 @@ fun SettingsScreen(vault: VaultRepository, onDynamicColor: (Boolean) -> Unit) {
             dismissButton = { TextButton(onClick = { askPassword = false }) { Text("Cancel") } },
         )
     }
+    if (joiningCloud) CloudJoinDialog(vault) { joiningCloud = false }
+    if (askCloudPassword) {
+        var pw by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { askCloudPassword = false },
+            title = { Text("Merge the re-keyed copy") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("An unlock method was revoked on another device. Enter your master password to take the new key.")
+                    SecretField(pw, { pw = it }, "Master password")
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    askCloudPassword = false
+                    scope.launch { vault.syncCloudNow(pw) }
+                }) { Text("Merge") }
+            },
+            dismissButton = { TextButton(onClick = { askCloudPassword = false }) { Text("Cancel") } },
+        )
+    }
+    if (confirmLeaveCloud) {
+        AlertDialog(
+            onDismissRequest = { confirmLeaveCloud = false },
+            title = { Text("Stop cloud sync on this phone?") },
+            text = { Text("This phone's access to the server is removed. The vault stays on this phone and on your other devices.") },
+            confirmButton = {
+                TextButton(onClick = { confirmLeaveCloud = false; vault.leaveCloud() }) {
+                    Text("Stop cloud sync", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { confirmLeaveCloud = false }) { Text("Cancel") } },
+        )
+    }
     if (confirmRemove) {
         AlertDialog(
             onDismissRequest = { confirmRemove = false },
@@ -236,6 +301,14 @@ fun SettingsScreen(vault: VaultRepository, onDynamicColor: (Boolean) -> Unit) {
             dismissButton = { TextButton(onClick = { confirmRemove = false }) { Text("Cancel") } },
         )
     }
+}
+
+private fun cloudLine(c: CloudStatus) = when {
+    c.busy -> "Syncing…"
+    c.error != null -> c.error
+    c.lastSyncMillis > 0 -> "Synced " + DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(c.lastSyncMillis)) +
+        if (c.conflicts > 0) " · ${c.conflicts} conflict copies made" else ""
+    else -> "Waiting for the first sync"
 }
 
 private fun autoLockLabel(s: Int) = when (s) {
