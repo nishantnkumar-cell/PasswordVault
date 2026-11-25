@@ -14,6 +14,14 @@ to work yet.
 
 ## Unreleased
 
+### Post-quantum signature checks follow the standard
+
+- **Two flaws in the ML-DSA signature library are fixed** in the copy the vault
+  uses (GHSA-5x2r-hc65-25f9 and GHSA-h37v-hp6w-2pp8). A signature could be
+  rewritten into a second one that was also accepted, and a rare genuine
+  signature was refused. Neither let anyone sign without the key. Existing
+  signatures stay valid; there is nothing to do.
+
 ### A broken picture no longer crashes "Add Code"
 
 - Reading a QR code from a damaged image file that claims to have no width or
