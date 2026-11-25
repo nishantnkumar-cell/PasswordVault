@@ -14,6 +14,14 @@ to work yet.
 
 ## Unreleased
 
+### Post-quantum signature checks follow the standard
+
+- **Two flaws in the ML-DSA signature library are fixed** in the copy the vault
+  uses (GHSA-5x2r-hc65-25f9 and GHSA-h37v-hp6w-2pp8). A signature could be
+  rewritten into a second one that was also accepted, and a rare genuine
+  signature was refused. Neither let anyone sign without the key. Existing
+  signatures stay valid; there is nothing to do.
+
 ### Clearer sync options, and joining without a restart
 
 - **`vault sync` and `vault cloud` explain your choices.** When sync is off
