@@ -19,6 +19,16 @@ to work yet.
 - Reading a QR code from a damaged image file that claims to have no width or
   height now says no code was found, instead of crashing the app or command.
 
+### The sync client is stricter about server addresses
+
+- **Plain `http://` is accepted only for this computer.** The check looked only
+  at how an address started, so a crafted join link such as one beginning
+  `http://localhost:1@…` was accepted and the device would have talked,
+  unencrypted, to a different computer. Such addresses are now refused, as is
+  any address with a user name in it. If you joined sync with an ordinary
+  `https://` link, nothing changes.
+- The client accepts only small live-update messages from a sync server.
+
 ### Clearer sync options, and joining without a restart
 
 - **`vault sync` and `vault cloud` explain your choices.** When sync is off
