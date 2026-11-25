@@ -20,14 +20,16 @@ fn use_hint<TwoGamma2: Unsigned>(h: bool, r: Elem) -> Elem {
     let m: u32 = (BaseField::Q - 1) / TwoGamma2::U32;
     let (r1, r0) = r.decompose::<TwoGamma2>();
     let gamma2 = TwoGamma2::U32 / 2;
-    if h && r0.0 <= gamma2 {
-        Elem::new((r1.0 + 1) % m)
-    } else if h && r0.0 >= BaseField::Q - gamma2 {
-        Elem::new((r1.0 + m - 1) % m)
-    } else if h {
-        // We use the Elem encoding even for signed integers.  Since r0 is computed
-        // mod+- 2*gamma2 (possibly minus 1), it is guaranteed to be in [-gamma2, gamma2].
-        unreachable!();
+    if h {
+        if r0.0 > 0 && r0.0 <= gamma2 {
+            Elem::new((r1.0 + 1) % m)
+        } else if (r0.0 == 0) || (r0.0 >= BaseField::Q - gamma2) {
+            Elem::new((r1.0 + m - 1) % m)
+        } else {
+            // We use the Elem encoding even for signed integers.  Since r0 is computed
+            // mod+- 2*gamma2 (possibly minus 1), it is guaranteed to be in [-gamma2, gamma2].
+            unreachable!();
+        }
     } else {
         r1
     }
@@ -115,17 +117,15 @@ where
         y
     }
 
-    fn monotonic(a: &[usize]) -> bool {
-        a.iter().enumerate().all(|(i, x)| i == 0 || a[i - 1] <= *x)
-    }
-
     pub fn bit_unpack(y: &EncodedHint<P>) -> Option<Self> {
         let (indices, cuts) = P::split_hint(y);
         let cuts: Array<usize, P::K> = cuts.iter().map(|x| usize::from(*x)).collect();
 
         let indices: Array<usize, P::Omega> = indices.iter().map(|x| usize::from(*x)).collect();
         let max_cut: usize = cuts.iter().copied().max().unwrap();
-        if !Self::monotonic(&cuts)
+
+        // cuts must be monotonic but can repeat
+        if !cuts.windows(2).all(|w| w[0] <= w[1])
             || max_cut > indices.len()
             || indices[max_cut..].iter().copied().max().unwrap_or(0) > 0
         {
@@ -137,7 +137,8 @@ where
         for (i, &end) in cuts.iter().enumerate() {
             let indices = &indices[start..end];
 
-            if !Self::monotonic(indices) {
+            // indices must be strictly increasing
+            if !indices.windows(2).all(|w| w[0] < w[1]) {
                 return None;
             }
 

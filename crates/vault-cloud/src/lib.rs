@@ -40,6 +40,8 @@ pub const COMPATIBILITY_DATE: &str = "2026-11-01";
 pub const DEFAULT_WORKER: &str = "vault-sync";
 /// Largest vault file the server accepts (`MAX_FILE` in the server).
 pub const MAX_FILE: usize = 4 * 1024 * 1024;
+/// Largest live-update message accepted from the server.
+const MAX_NOTICE: usize = 4 * 1024;
 
 /// `REVISION` in [`WORKER_JS`]: what this program would deploy.
 pub fn worker_revision() -> u32 {
@@ -105,11 +107,27 @@ pub fn random_mailbox() -> Result<String> {
 /// A server address this program talks to: `https://`, or plain `http://` to
 /// this computer only (`wrangler dev`, tests).
 pub fn is_server_address(s: &str) -> bool {
-    let rest = s
-        .strip_prefix("https://")
-        .or_else(|| s.strip_prefix("http://127.0.0.1:"))
-        .or_else(|| s.strip_prefix("http://localhost:"));
-    rest.is_some_and(|r| !r.is_empty() && !r.contains(char::is_whitespace) && !r.contains('#'))
+    if s.contains(char::is_whitespace) || s.contains(['#', '\\']) {
+        return false;
+    }
+    let (rest, plain) = match (s.strip_prefix("https://"), s.strip_prefix("http://")) {
+        (Some(rest), _) => (rest, false),
+        (None, Some(rest)) => (rest, true),
+        (None, None) => return false,
+    };
+    // The part naming the computer. An `@` would put the real name after a
+    // user name that only looks like one, so it is never accepted.
+    let host = rest.split(['/', '?']).next().unwrap_or_default();
+    if host.is_empty() || host.contains('@') {
+        return false;
+    }
+    // Without TLS: exactly this computer, and a numeric port.
+    !plain
+        || matches!(
+            host.split_once(':'),
+            Some(("127.0.0.1" | "localhost", port))
+                if !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit())
+        )
 }
 
 fn is_hex(s: &str, n: usize) -> bool {
@@ -688,7 +706,12 @@ impl Mailbox {
             (Some(ca), true) => Some(tungstenite::Connector::Rustls(Arc::new(ca.rustls()?))),
             _ => None,
         };
-        let (ws, _) = tungstenite::client_tls_with_config(req, stream, None, connector)
+        // The server only ever sends a short version notice: a large message is
+        // not worth holding in memory.
+        let small = tungstenite::protocol::WebSocketConfig::default()
+            .max_message_size(Some(MAX_NOTICE))
+            .max_frame_size(Some(MAX_NOTICE));
+        let (ws, _) = tungstenite::client_tls_with_config(req, stream, Some(small), connector)
             .map_err(|e| err(format!("could not watch the mailbox: {e}")))?;
         Ok(ws)
     }
@@ -929,6 +952,46 @@ pub fn worker_url(worker: &str, subdomain: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    /// Plain HTTP is only for this computer. An address that merely *starts*
+    /// like one, with the real host after an `@`, must be refused, or the
+    /// device token would travel unencrypted to another computer.
+    #[test]
+    fn only_this_computer_may_be_reached_without_tls() {
+        for good in [
+            "https://vault.example.com",
+            "https://vault.example.com:8443/base",
+            "https://[::1]:8443",
+            "http://127.0.0.1:8787",
+            "http://localhost:8787/x",
+        ] {
+            assert!(is_server_address(good), "{good}");
+        }
+        for bad in [
+            "http://localhost:80@evil.example",
+            "http://127.0.0.1:@evil.example",
+            "http://127.0.0.1:x@evil.example/",
+            "http://localhost:8787.evil.example",
+            "http://localhost:",
+            "http://127.0.0.1:port",
+            "http://evil.example",
+            "https://user@evil.example",
+            "https://",
+            "https:///path",
+            "ftp://localhost:1",
+            "https://a b",
+            "https://a#b",
+            "https://a\\b",
+        ] {
+            assert!(!is_server_address(bad), "{bad}");
+        }
+        let link = format!(
+            "http://localhost:1@evil.example/join#v1.{}.{}",
+            "a".repeat(32),
+            "b".repeat(43)
+        );
+        assert!(JoinLink::parse(&link).is_err());
+    }
+
     use super::*;
 
     #[test]

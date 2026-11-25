@@ -38,14 +38,16 @@ jobs:
           else
             echo "HAVE_KEY=true" >> "$GITHUB_ENV"
           fi
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: env.HAVE_KEY == 'true'
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch
         if: env.HAVE_KEY == 'true'
         with:
           toolchain: stable
           targets: aarch64-linux-android,x86_64-linux-android
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
         if: env.HAVE_KEY == 'true'
         with:
           distribution: temurin
@@ -62,7 +64,7 @@ jobs:
           base64 -d <<<"$KEYSTORE_BASE64" > "$VAULT_ANDROID_KEYSTORE"
           mobile/scripts/build-android-release.sh "dist/secret-vault-$VAULT_VERSION-android.apk"
           rm -f "$VAULT_ANDROID_KEYSTORE"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: env.HAVE_KEY == 'true'
         with:
           name: android-apk
@@ -77,8 +79,10 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v8
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: dist
           merge-multiple: true
@@ -86,7 +90,7 @@ jobs:
       # built by this workflow from this tag. Check a download with
       # `gh attestation verify FILE --repo OWNER/REPO` (docs/user-guide/11-versions-and-upgrades.md).
       - name: Attest the downloads
-        uses: actions/attest-build-provenance@v4
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: "dist/*"
       - name: Create the release
