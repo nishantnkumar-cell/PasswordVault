@@ -14,6 +14,11 @@ to work yet.
 
 ## Unreleased
 
+### A broken picture no longer crashes "Add Code"
+
+- Reading a QR code from a damaged image file that claims to have no width or
+  height now says no code was found, instead of crashing the app or command.
+
 ### The sync client is stricter about server addresses
 
 - **Plain `http://` is accepted only for this computer.** The check looked only
