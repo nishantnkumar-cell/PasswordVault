@@ -27,7 +27,7 @@ serde = { version = "1.0.229", features = ["derive"] }
 sha2 = "=0.11.1"
 # rand 0.8 is what pgp 0.21 (its latest release) builds on; move it when pgp does.
 pgp = { version = "0.21.0", default-features = false, features = ["pqc"] }
-rand = "0.8.6"
+rand = "0.10.4"
 # ssh-key is pinned to a release candidate on purpose: 0.6 (the last stable
 # release) signs P-256 keys with crypto-bigint 0.5, which has timing leaks
 # (RUSTSEC-2026-0387). 0.7 uses p256 0.14 on the fixed crypto-bigint 0.7.
@@ -65,6 +65,6 @@ hkdf = { version = "0.13.0", optional = true }
 [dev-dependencies]
 tempfile = "3"
 pgp = { version = "0.21.0", default-features = false, features = ["pqc"] }
-rand = "0.8.6"
+rand = "0.10.4"
 signature = "3.0.0"
 ssh-key = { version = "=0.7.0-rc.12", default-features = false, features = ["std", "ed25519"] }

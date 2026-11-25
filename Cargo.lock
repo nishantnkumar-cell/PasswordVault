@@ -7417,7 +7417,7 @@ version = "0.2.0"
 dependencies = [
  "getrandom 0.4.3",
  "pgp",
- "rand 0.8.8",
+ "rand 0.10.4",
  "ssh-key",
  "thiserror 2.0.21",
  "uniffi",
@@ -7454,7 +7454,7 @@ dependencies = [
  "nix 0.32.0",
  "pgp",
  "postcard",
- "rand 0.8.8",
+ "rand 0.10.4",
  "serde",
  "sha2 0.11.1",
  "signal-hook",
