@@ -24,7 +24,9 @@ jobs:
           - { arch: arm64, runner: windows-11-arm, suffix: "-arm64", artifact: windows-installer-arm64 }
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch
         with:
           toolchain: stable
@@ -65,7 +67,7 @@ jobs:
             $m = [BitConverter]::ToUInt16($b, [BitConverter]::ToInt32($b, 0x3c) + 4)
             if ($m -ne $want) { throw ("{0} is machine 0x{1:x}, not ${{ matrix.arch }}" -f $f.Name, $m) }
           }
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ matrix.artifact }}
           path: target/installer/*.exe
@@ -73,7 +75,9 @@ jobs:
   linux-packages:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch
         with:
           toolchain: stable
@@ -93,7 +97,7 @@ jobs:
           test "$(/usr/bin/vault --version)" = "vault $VAULT_VERSION"
       - name: Check the system service the .deb sets up
         run: contrib/linux/check-system-service.sh deb
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: linux-packages
           path: |
@@ -107,7 +111,9 @@ jobs:
     steps:
       - name: Build tools
         run: pacman -Syu --noconfirm --needed git rust pkgconf hidapi tpm2-tss dbus systemd libxkbcommon wayland libglvnd polkit
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Version
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -129,7 +135,7 @@ jobs:
           contrib/linux/check-system-service.sh arch
           pacman -R --noconfirm secret-vault
           test ! -e /usr/bin/vaultd
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: arch-package
           path: target/packages/*.pkg.tar.zst
@@ -140,7 +146,9 @@ jobs:
   macos-package:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch
         with:
           toolchain: stable
@@ -205,7 +213,7 @@ jobs:
       - name: Remove the signing keychain
         if: always()
         run: if [ -n "${VAULT_SIGNING_KEYCHAIN:-}" ]; then security delete-keychain "$VAULT_SIGNING_KEYCHAIN"; fi
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: macos-package
           path: |
@@ -215,7 +223,9 @@ jobs:
   extension:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Package the extension
         run: |
           # The file name carries the build's version (0.2.0-beta.1, ...); the
@@ -224,7 +234,7 @@ jobs:
           mkdir -p target/packages
           cd extension
           zip -r "../target/packages/secret-vault-extension-$version.zip" manifest.json background.js popup.html popup.css popup.js lib
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: browser-extension
           path: target/packages/*.zip

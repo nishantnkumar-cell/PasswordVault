@@ -1,0 +1,43 @@
+# cargo-deny: licences, banned libraries and where libraries come from. Known
+# security advisories are checked by `cargo audit` (.cargo/audit.toml).
+#   cargo install cargo-deny --locked && cargo deny check licenses bans sources
+
+[graph]
+all-features = true
+
+[licenses]
+# The vault itself is PolyForm Noncommercial. Anything new under another
+# licence fails here until someone has looked at it.
+allow = [
+    "PolyForm-Noncommercial-1.0.0",
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "Unlicense",
+    "BSL-1.0",
+    "CDLA-Permissive-2.0",
+    "MPL-2.0",
+    "OFL-1.1",
+    "Ubuntu-font-1.0",
+]
+# Weak copyleft, allowed only for these two (the Linux phone passkey code).
+exceptions = [
+    { crate = "libwebauthn", allow = ["LGPL-2.1-or-later"] },
+    { crate = "pxp", allow = ["LGPL-2.1-or-later"] },
+]
+confidence-threshold = 0.9
+
+[bans]
+multiple-versions = "allow"
+wildcards = "allow"
+# TLS is rustls everywhere; a system TLS library should not creep in.
+deny = [{ name = "openssl" }, { name = "openssl-sys" }, { name = "native-tls" }]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

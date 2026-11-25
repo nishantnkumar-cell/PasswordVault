@@ -26,7 +26,9 @@ jobs:
       matrix:
         target: [vault_file, ipc_frame, import_bitwarden, import_csv, qr_image]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch
         with:
           toolchain: nightly
@@ -35,11 +37,15 @@ jobs:
           tool: cargo-fuzz
       - name: Fuzz ${{ matrix.target }}
         working-directory: fuzz
+        env:
+          # Passed as a variable, so what is typed in the box is never run as shell.
+          SECONDS_WANTED: ${{ github.event.inputs.seconds }}
         run: |
-          secs="${{ github.event.inputs.seconds }}"
+          secs="$SECONDS_WANTED"
+          case "$secs" in *[!0-9]*) echo "seconds must be a number"; exit 1;; esac
           if [ "${{ github.event_name }}" = pull_request ]; then secs=30; fi
           cargo +nightly fuzz run --target x86_64-unknown-linux-gnu ${{ matrix.target }} -- -max_total_time="${secs:-300}"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
           name: crash-${{ matrix.target }}
