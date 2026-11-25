@@ -14,6 +14,11 @@ to work yet.
 
 ## Unreleased
 
+### A broken picture no longer crashes "Add Code"
+
+- Reading a QR code from a damaged image file that claims to have no width or
+  height now says no code was found, instead of crashing the app or command.
+
 ### Clearer sync options, and joining without a restart
 
 - **`vault sync` and `vault cloud` explain your choices.** When sync is off
